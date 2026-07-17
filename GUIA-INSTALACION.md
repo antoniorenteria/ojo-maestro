@@ -68,8 +68,8 @@ Opción B: copiar la carpeta `ojo-maestro` a la tablet y abrir `index.html` (fun
 
 ## 5. Uso diario del equipo operativo 🕐
 
-1. **Entrada** → elegir nombre + PIN personal → queda la hora exacta (llega correo a Dirección).
-2. **Checklist de apertura** → marcar INVENTARIO, COCINA, MESAS/PASILLO, BAÑO, GENERAL + **foto** + novedades.
+1. **Entrada** → elegir nombre + PIN personal → queda la hora exacta (llega correo a Dirección) y **se marca sola** la tarea "Responsable de turno".
+2. **Checklist del turno** → tareas del día según turno y día de la semana (limpieza de freidoras Lun/Mié/Vie, refrigerador Mar/Jue/Sáb, regar plantas los martes…), cada una con **hora límite** (se marca ⏰ vencida si pasa). Al marcar queda registrado **quién y a qué hora**. Barra de progreso y en el home el panel **"Avance de hoy"** muestra qué falta — quien entra al siguiente turno ve el pendiente de inmediato. También hay campo de **observaciones** directo a Dirección.
 3. **Inventario** → cada producto aparece con su **foto real** para identificarlo sin dudas → contar con los botones +/− → el sistema marca solo **COMPRAR / DISPONIBLE / AGOTADO** según el mínimo → **Confirmar** (manda a Dirección la lista de compras).
 4. **Evidencias** → fotos de inicio de jornada, limpieza, incidencias, cierre.
 5. **💳 Propinas digitales** → cuando llegue una propina por tarjeta/terminal, registrarla con nombre y monto. El equipo ve su acumulado del día; Dirección la suma automáticamente a la nómina para retribuirla. (Las propinas en efectivo se reparten como siempre, sin registro.)
@@ -88,6 +88,19 @@ Desde el teléfono, con el PIN de Dirección:
 - **⚙️ Administrar** — agregar/eliminar **sucursales**, **personal y sueldos** (pago por turno y por hora extra de cada quien), **productos y mínimos**, PIN, correo, WhatsApp y respaldos.
 
 ---
+
+## 6b. Panel de Supervisión (revisora externa) 🔍
+
+En la portada está el acceso **🔍 Supervisión** (PIN propio, de fábrica **4040** — cámbialo en Administrar). Pensado para la persona que revisa a distancia (como hoy se hace por WhatsApp):
+
+- Elige sucursal y fecha → ve **tareas de ambos turnos** (quién las hizo y a qué hora), **evidencias del día** y el **cierre** (ventas, caja, checklist).
+- Puede poner la **doble palomita ✔✔ (Verificada)** a cada tarea — el equipo la ve en verde en su checklist.
+- Envía la **revisión del día**: veredicto ✅ Cumplido / ⚠️ Ajustes / ⛔ No cumplido + % de cumplimiento automático + retroalimentación → llega por correo y aparece en el panel del equipo y de Dirección.
+- El grupo de WhatsApp puede seguir para conversación; la revisión formal queda registrada y auditable aquí.
+
+## 6c. Modo claro / oscuro 🌓
+
+Botón **🌓** en cualquier pantalla. El modo oscuro es la noche cósmica de Cyclos (ideal en tablets del local); el claro es para exteriores o quien lo prefiera. Cada dispositivo recuerda su elección.
 
 ## 7. Seguridad 🔒
 

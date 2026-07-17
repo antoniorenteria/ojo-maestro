@@ -189,6 +189,101 @@ tr:last-child td{border-bottom:none}
 .avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--morado-med),var(--morado-oscuro));
   display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--amarillo);flex-shrink:0;font-size:1.05rem}
 </style>
+<style id="tema-css">
+/* ═══════ CAPA DE TEMA Y CONTRASTE (v1.2) ═══════ */
+:root{
+  --fondo-3:#1A0C30; --fondo-4:#261345;
+  --muted:#AF9ED4;
+  --borde:rgba(168,122,255,.42); --borde-suave:rgba(168,122,255,.22);
+  --velo:rgba(10,2,20,.88);
+}
+/* jerarquía: tarjetas y botones con superficies más claras y bordes definidos */
+.card{border-color:var(--borde);background:linear-gradient(165deg,#1E0F38 0%,#140826 100%)}
+.btn.s{background:#2E1A52;border:1.5px solid var(--borde);color:var(--texto)}
+.btn.s:hover{border-color:var(--amarillo);background:#38215F}
+.menu-item{background:linear-gradient(165deg,#271347 0%,#170A2C 100%);border:1.5px solid var(--borde)}
+.menu-item:hover,.menu-item:active{border-color:var(--amarillo);box-shadow:0 8px 30px rgba(147,51,234,.35)}
+.menu-item .em{width:58px;height:58px;margin:0 auto 10px;border-radius:17px;display:flex;align-items:center;justify-content:center;
+  font-size:1.65rem;background:color-mix(in srgb,var(--tint,#9333EA) 20%,transparent);
+  border:1.5px solid color-mix(in srgb,var(--tint,#9333EA) 45%,transparent)}
+input,select,textarea{background:#0F0722;border-color:var(--borde)}
+.chk,.item-linea{border-color:var(--borde-suave)}
+.inv-row{border-bottom-color:var(--borde-suave);padding:8px 4px}
+.tabs button{border:1.5px solid var(--borde)}
+.chip{border:1.5px solid var(--borde)}
+/* barra superior fija */
+.topbar{position:sticky;top:0;z-index:44;background:var(--velo);backdrop-filter:blur(14px);
+  margin:0 -16px 4px;padding:12px 16px;border-bottom:1px solid var(--borde-suave)}
+/* botón flotante */
+.fab{position:fixed;right:16px;bottom:20px;z-index:46;width:auto;padding:16px 22px;border-radius:99px;
+  box-shadow:0 12px 34px rgba(0,0,0,.55),0 0 0 1.5px rgba(255,213,35,.35)}
+/* barra de progreso */
+.barra{height:12px;border-radius:99px;background:var(--fondo-4);overflow:hidden;border:1px solid var(--borde-suave)}
+.barra i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--amarillo),#F4A400);transition:width .4s}
+/* tarjetas de tarea (checklist por turno) */
+.tarea{display:flex;align-items:center;gap:12px;padding:13px 12px;border-radius:14px;border:1.5px solid var(--borde);
+  margin-bottom:10px;cursor:pointer;background:#190C2E;transition:.15s}
+.tarea .box{width:34px;height:34px;border-radius:10px;border:2px solid var(--morado);flex-shrink:0;display:flex;
+  align-items:center;justify-content:center;font-size:1.05rem;font-weight:800;color:#1A1400}
+.tarea.hecha{border-color:rgba(255,213,35,.6);background:#231536}
+.tarea.hecha .box{background:var(--amarillo);border-color:var(--amarillo)}
+.tarea.verificada{border-color:rgba(74,222,128,.65)}
+.tarea.verificada .box{background:var(--ok);border-color:var(--ok)}
+.tarea .tt{font-weight:600;font-size:.93rem;line-height:1.3}
+.tarea .meta{font-size:.7rem;color:var(--muted);margin-top:2px}
+.tarea .meta .tarde{color:var(--alerta);font-weight:700}
+.tarea .vv{margin-left:auto;flex-shrink:0;font-size:.66rem;font-weight:800;padding:5px 10px;border-radius:99px;white-space:nowrap}
+.tarea .vv.si{background:rgba(74,222,128,.16);color:var(--ok)}
+.tarea .vv.no{background:var(--fondo-4);color:var(--muted)}
+.seg{display:flex;gap:8px;margin-bottom:14px}
+.seg button{flex:1;padding:12px;border-radius:14px;border:1.5px solid var(--borde);background:var(--fondo-3);
+  color:var(--muted);font-family:'Poppins';font-weight:700;font-size:.92rem;cursor:pointer}
+.seg button.on{background:linear-gradient(135deg,var(--amarillo),#F4B400);color:#1A1400;border-color:var(--amarillo)}
+/* avance del turno en home */
+.avance-item{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--borde-suave);font-size:.88rem}
+.avance-item:last-child{border-bottom:none}
+.avance-item .pct{margin-left:auto;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ═══════ MODO CLARO ═══════ */
+html[data-tema="claro"]{
+  --fondo:#F4F0FB; --fondo-2:#FFFFFF; --fondo-3:#F8F5FE; --fondo-4:#EDE6F9;
+  --texto:#261637; --muted:#6E5A90;
+  --borde:rgba(107,33,168,.30); --borde-suave:rgba(107,33,168,.14);
+  --velo:rgba(250,248,255,.9); --sombra:0 8px 26px rgba(80,40,140,.14);
+}
+html[data-tema="claro"] body{background:
+  radial-gradient(1000px 460px at 85% -5%, rgba(147,51,234,.10), transparent 60%),
+  radial-gradient(800px 420px at -10% 30%, rgba(255,213,35,.14), transparent 60%),
+  var(--fondo);background-attachment:fixed}
+html[data-tema="claro"] h1,html[data-tema="claro"] h2,html[data-tema="claro"] h3,
+html[data-tema="claro"] .amar,html[data-tema="claro"] .stat .v,html[data-tema="claro"] .avance-item .pct,
+html[data-tema="claro"] .reloj-grande,html[data-tema="claro"] .avatar,
+html[data-tema="claro"] .menu-item .t{color:#6B21A8}
+html[data-tema="claro"] .stat.verde .v{color:#15803D}
+html[data-tema="claro"] .stat.rojo .v{color:#B91C1C}
+html[data-tema="claro"] .card{background:#FFFFFF;border-color:var(--borde-suave)}
+html[data-tema="claro"] .menu-item{background:#FFFFFF;border-color:var(--borde-suave)}
+html[data-tema="claro"] .menu-item:hover{border-color:#6B21A8;box-shadow:0 10px 28px rgba(107,33,168,.18)}
+html[data-tema="claro"] .btn.s{background:#F3EDFC;border-color:var(--borde);color:#3A2354}
+html[data-tema="claro"] .btn.s:hover{background:#EADFF8;border-color:#6B21A8}
+html[data-tema="claro"] input,html[data-tema="claro"] select,html[data-tema="claro"] textarea{
+  background:#FFFFFF;color:var(--texto);border-color:var(--borde)}
+html[data-tema="claro"] .stat{background:#FBF9FF;border-color:var(--borde-suave)}
+html[data-tema="claro"] .tarea{background:#FDFCFF}
+html[data-tema="claro"] .tarea.hecha{background:#FFF9E3}
+html[data-tema="claro"] .navbar{background:rgba(255,255,255,.93);border-top-color:var(--borde-suave)}
+html[data-tema="claro"] .pinpad button{background:#F3EDFC;color:#3A2354}
+html[data-tema="claro"] #toast{background:#FFFFFF;color:var(--texto)}
+html[data-tema="claro"] .modal{background:#FFFFFF}
+html[data-tema="claro"] .modal-fondo{background:rgba(40,20,70,.45)}
+html[data-tema="claro"] .badge.mor{background:rgba(107,33,168,.12);color:#6B21A8}
+html[data-tema="claro"] .seg button.on{color:#1A1400}
+html[data-tema="claro"] .stepper button{background:#F3EDFC;color:#6B21A8}
+html[data-tema="claro"] .foto-drop{border-color:var(--borde)}
+html[data-tema="claro"] .tabs button{background:#F8F5FE}
+html[data-tema="claro"] .tabs button.on{background:#6B21A8;color:#fff;border-color:#6B21A8}
+html[data-tema="claro"] .topbar .sub{color:var(--muted)}
+</style>
 </head>
 <body>
 
@@ -201,9 +296,11 @@ tr:last-child td{border-bottom:none}
       <h1 style="margin-top:26px;color:var(--amarillo);font-size:2rem">EL OJO MAESTRO</h1>
       <p class="muted" style="letter-spacing:3px;text-transform:uppercase;font-size:.72rem">Centro de operaciones · Universo Cíclope</p>
       <div style="max-width:420px;margin:34px auto 0" id="portada-sucursales"></div>
-      <div style="max-width:420px;margin:14px auto 0">
-        <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección — Toño & Steph</button>
+      <div style="max-width:420px;margin:14px auto 0;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+        <button class="btn s" onclick="pedirPinSupervision()"><span class="ico">🔍</span> Supervisión</button>
+        <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección</button>
       </div>
+      <div style="margin-top:18px"><button class="btn s mini" onclick="toggleTema()">🌓 Cambiar tema</button></div>
       <p class="mini muted" style="margin-top:26px" id="portada-estado"></p>
     </div>
   </section>
@@ -215,6 +312,7 @@ tr:last-child td{border-bottom:none}
       <div><div class="tit amar" id="suc-nombre" style="font-weight:700"></div>
         <div class="sub">Panel de sucursal</div></div>
       <div class="grow"></div>
+      <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red"><span class="dot"></span><span id="chip-red-tx">local</span></span>
     </div>
     <div class="card centrado">
@@ -223,16 +321,17 @@ tr:last-child td{border-bottom:none}
       <div class="sep"></div>
       <div id="suc-en-turno"></div>
     </div>
+    <div class="card amarilla" id="suc-avance"></div>
     <div class="menu-grid">
-      <div class="menu-item" onclick="irEntrada()"><span class="em">🕐</span><span class="t">Registrar Entrada</span><div class="d">Inicio de jornada con PIN</div></div>
-      <div class="menu-item" onclick="irChecklist('apertura')"><span class="em">📋</span><span class="t">Checklist Apertura</span><div class="d">Protocolos + evidencia foto</div></div>
-      <div class="menu-item" onclick="ir('scr-inv')"><span class="em">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
-      <div class="menu-item" onclick="ir('scr-evid')"><span class="em">📸</span><span class="t">Evidencias</span><div class="d">Subir fotos de jornada</div></div>
-      <div class="menu-item" onclick="irPropinas()"><span class="em">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
-      <div class="menu-item" onclick="irCierre()"><span class="em">🌙</span><span class="t">Cierre de Turno</span><div class="d">Ventas, caja y checklist</div></div>
-      <div class="menu-item" onclick="irSalida()"><span class="em">🚪</span><span class="t">Registrar Salida</span><div class="d">Fin de jornada</div></div>
-      <div class="menu-item" onclick="ir('scr-proto')"><span class="em">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
-      <div class="menu-item" onclick="salirASucursales()"><span class="em">🔄</span><span class="t">Cambiar sucursal</span><div class="d">Volver al inicio</div></div>
+      <div class="menu-item" onclick="irEntrada()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Registrar Entrada</span><div class="d">Inicio de jornada con PIN</div></div>
+      <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del Turno</span><div class="d">Tareas del día con hora límite</div></div>
+      <div class="menu-item" onclick="ir('scr-inv')"><span class="em" style="--tint:#A78BFA">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
+      <div class="menu-item" onclick="ir('scr-evid')"><span class="em" style="--tint:#38BDF8">📸</span><span class="t">Evidencias</span><div class="d">Subir fotos de jornada</div></div>
+      <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
+      <div class="menu-item" onclick="irCierre()"><span class="em" style="--tint:#818CF8">🌙</span><span class="t">Cierre de Turno</span><div class="d">Ventas, caja y checklist</div></div>
+      <div class="menu-item" onclick="irSalida()"><span class="em" style="--tint:#F87171">🚪</span><span class="t">Registrar Salida</span><div class="d">Fin de jornada</div></div>
+      <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
+      <div class="menu-item" onclick="salirASucursales()"><span class="em" style="--tint:#9B87B8">🔄</span><span class="t">Cambiar sucursal</span><div class="d">Volver al inicio</div></div>
     </div>
   </section>
 
@@ -268,21 +367,44 @@ tr:last-child td{border-bottom:none}
     <div id="salida-resumen"></div>
   </section>
 
-  <!-- ══════════ CHECKLIST ══════════ -->
+  <!-- ══════════ CHECKLIST DEL TURNO ══════════ -->
   <section class="screen" id="scr-chk">
-    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2 id="chk-titulo">📋 Checklist</h2>
-    <div class="card">
-      <label>Responsable</label>
-      <select id="chk-persona"></select>
-      <div id="chk-items" style="margin-top:14px"></div>
-      <label>Foto de evidencia</label>
-      <div class="foto-drop" id="chk-foto-drop" onclick="document.getElementById('chk-foto').click()">📷 Toca para tomar / subir foto</div>
-      <input type="file" id="chk-foto" accept="image/*" capture="environment" hidden>
-      <label>Novedades del día</label>
-      <textarea id="chk-novedades" placeholder="¿Algo que Dirección deba saber? Faltantes, incidencias, ideas…"></textarea>
-      <div style="margin-top:18px"><button class="btn p gigante" onclick="guardarChecklist()"><span class="ico">🪄</span> Enviar checklist</button></div>
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div>
+      <span class="chip" id="chk-progreso-chip"></span></div>
+    <h2>📋 Checklist del turno</h2>
+    <div class="seg" id="chk-seg">
+      <button data-t="1" onclick="chkTurno=1;renderChecklist()">☀️ Turno 1</button>
+      <button data-t="2" onclick="chkTurno=2;renderChecklist()">🌙 Turno 2</button>
     </div>
+    <div class="card">
+      <div class="fila" style="align-items:center;margin-bottom:10px">
+        <div style="flex:1"><div class="barra"><i id="chk-barra" style="width:0%"></i></div></div>
+        <b class="amar" id="chk-pct" style="flex:0;white-space:nowrap">0%</b>
+      </div>
+      <label>¿Quién está marcando? </label>
+      <select id="chk-persona"></select>
+    </div>
+    <div id="chk-items"></div>
+    <div class="card">
+      <label>🗒️ Observaciones del turno</label>
+      <textarea id="chk-obs" placeholder="Faltantes, incidencias, pendientes para el siguiente turno…"></textarea>
+      <div style="margin-top:12px"><button class="btn s" onclick="enviarObservacion()">📨 Enviar observación a Dirección</button></div>
+    </div>
+    <p class="mini muted centrado">✔ amarillo = realizado por el equipo · ✔ verde = verificado por Supervisión</p>
+  </section>
+
+  <!-- ══════════ SUPERVISIÓN ══════════ -->
+  <section class="screen" id="scr-rev">
+    <div class="topbar"><button class="btn s mini" onclick="salirASucursales()">← Salir</button>
+      <div><div class="tit amar" style="font-weight:700">🔍 Supervisión</div><div class="sub">Revisión y verificación</div></div>
+      <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
+    <div class="card">
+      <div class="fila">
+        <div><label>Sucursal</label><select id="rev-suc" onchange="renderRevision()"></select></div>
+        <div><label>Fecha</label><input type="date" id="rev-fecha" onchange="renderRevision()"></div>
+      </div>
+    </div>
+    <div id="rev-contenido"></div>
   </section>
 
   <!-- ══════════ INVENTARIO ══════════ -->
@@ -293,10 +415,11 @@ tr:last-child td{border-bottom:none}
       <h2 style="margin:0">📦 Inventario</h2>
       <button class="btn s mini" onclick="verListaCompras()">🛒 Lista de compras</button>
     </div>
-    <input id="inv-buscar" placeholder="🔍 Buscar producto…" oninput="renderInventario()" style="margin-bottom:10px">
+    <input id="inv-buscar" placeholder="🔍 Buscar producto…" oninput="renderInventario()" style="margin-bottom:6px">
+    <p class="mini muted" style="margin:0 0 8px">Productos por escala: entero = 1000 · ½ = 500 · ¼ = 250 · casi vacío = 0</p>
     <div class="tabs" id="inv-tabs"></div>
-    <div class="card" id="inv-lista"></div>
-    <button class="btn p gigante" onclick="confirmarInventario()"><span class="ico">✅</span> Confirmar inventario realizado</button>
+    <div class="card" id="inv-lista" style="padding-bottom:80px"></div>
+    <button class="btn p fab" onclick="confirmarInventario()">✅ Confirmar inventario</button>
   </section>
 
   <!-- ══════════ PROPINAS ══════════ -->
@@ -381,6 +504,7 @@ tr:last-child td{border-bottom:none}
       <div><div class="tit amar" style="font-weight:700">👁️ Dirección</div>
         <div class="sub">El ojo que todo lo ve</div></div>
       <div class="grow"></div>
+      <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
       <button class="btn s mini" onclick="salirASucursales()">Salir</button>
     </div>

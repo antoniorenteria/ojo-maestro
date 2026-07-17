@@ -99,17 +99,18 @@ function mezclar(a, b) {
   var base = nuevoEsB ? b : a, otro = nuevoEsB ? a : b;
   var db = JSON.parse(JSON.stringify(base));
 
-  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas'].forEach(function (k) {
+  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
-    (base[k] || []).forEach(function (x) {
-      if (mapa[x.id]) {
-        // si el mismo turno aparece dos veces, conserva el que ya tiene salida
-        if (k === 'turnos' && !x.salida && mapa[x.id].salida) return;
-        delete mapa[x.id];
-      }
+    var baseLista = (base[k] || []).map(function (x) {
+      var o = mapa[x.id];
+      if (!o) return x;
+      delete mapa[x.id];
+      // duplicado: en turnos gana el que tiene salida; en lo demás la versión más reciente
+      if (k === 'turnos') return (!x.salida && o.salida) ? o : x;
+      return ((o.ts || 0) > (x.ts || 0)) ? o : x;
     });
-    db[k] = (base[k] || []).concat(Object.keys(mapa).map(function (id) { return mapa[id]; }));
+    db[k] = baseLista.concat(Object.keys(mapa).map(function (id) { return mapa[id]; }));
     db[k].sort(function (p, q) { return (q.ts || q.entrada || 0) - (p.ts || p.entrada || 0); });
     // corrige duplicado turno-sin-salida vs con-salida en base
     if (k === 'turnos') {
@@ -169,6 +170,8 @@ var ENC = {
   Turnos: ['Fecha', 'Sucursal', 'Colaborador', 'Turno', 'Entrada', 'Salida', 'Horas', 'Pago', 'id'],
   Cierres: ['Fecha', 'Sucursal', 'Responsable', 'VentasNetas', 'DineroCaja', 'PropinasDigitalesDia', 'Checklist', 'Novedades', 'Foto', 'id'],
   Propinas: ['Fecha', 'Hora', 'Sucursal', 'Colaborador', 'Monto', 'Nota', 'id'],
+  Tareas: ['Fecha', 'Sucursal', 'Turno', 'Tarea', 'RealizadaPor', 'Hora', 'Verificada', 'id'],
+  Revisiones: ['Fecha', 'Sucursal', 'Veredicto', 'CumplimientoPct', 'Retroalimentacion', 'id'],
   Eventos: ['FechaHora', 'Asunto', 'Detalle', 'id']
 };
 function registrarNuevosEnHoja(dbAntes, dbAhora) {
@@ -204,6 +207,17 @@ function registrarNuevosEnHoja(dbAntes, dbAhora) {
       var d = destino('Propinas', x.fecha, 7);
       if (!d.ids[x.id]) d.sh.appendRow([x.fecha, new Date(x.ts), nombreSuc[x.sucursalId] || '', nombrePer[x.personalId] || '',
         x.monto, x.nota || '', x.id]);
+    });
+    (dbAhora.tareas || []).forEach(function (t) {
+      if (!t.done || !t.fecha) return;
+      var d = destino('Tareas', t.fecha, 8);
+      if (!d.ids[t.id]) d.sh.appendRow([t.fecha, nombreSuc[t.sucursalId] || '', 'Turno ' + (t.turno || ''),
+        t.nombre || t.tareaId, t.por || '', t.ts ? new Date(t.ts) : '', t.ver ? 'SI' : '', t.id]);
+    });
+    (dbAhora.revisiones || []).forEach(function (r) {
+      if (!r.fecha) return;
+      var d = destino('Revisiones', r.fecha, 6);
+      if (!d.ids[r.id]) d.sh.appendRow([r.fecha, nombreSuc[r.sucursalId] || '', r.veredicto || '', r.pct || 0, r.comentario || '', r.id]);
     });
     (dbAhora.eventos || []).slice(0, 60).forEach(function (ev) {
       var d = destino('Eventos', new Date(ev.ts).toISOString(), 4);

@@ -67,8 +67,53 @@ const SEED_PRODUCTOS = [
   ['Limón pimienta', ESCALA + ' bote', 251, 'COC'], ['Papel Higiénico', 'Pieza (rollos)', 4, 'LIM'],
 ];
 const CATS = { TODOS: '✨ Todos', COC: '🍳 Cocina', BEB: '🥤 Bebidas', POC: '🧪 Pociones y postres', EMP: '📦 Empaques', LIM: '🧽 Limpieza', GEN: '🔧 Generales' };
-const CHECK_APERTURA = ['INVENTARIO', 'COCINA', 'MESAS / PASILLO', 'BAÑO', 'GENERAL'];
 const CHECK_CIERRE = ['Limpieza de áreas completa', 'Equipos apagados', 'Basura fuera', 'Caja contada y registrada', 'Puertas y accesos cerrados'];
+
+/* Checklist operativo por turno (hoja CHECKLIST OPERATIVO v2)
+   dias: null = diario · [0..6] días aplicables (0=Dom) · auto: se marca solo */
+const TAREAS = [
+  { id: 't1-resp', turno: 1, n: 'Responsable de turno (registrar entrada)', hora: '12:55', dias: null, auto: 'entrada' },
+  { id: 't1-wa', turno: 1, n: 'Responder mensajes pendientes de WhatsApp', hora: '13:15', dias: null },
+  { id: 't1-plat', turno: 1, n: 'Encendido de plataformas (DiDi, Uber, Rappi)', hora: '13:15', dias: null },
+  { id: 't1-comedor', turno: 1, n: 'Comedor y pasillo trapeado', hora: '13:30', dias: null },
+  { id: 't1-bano', turno: 1, n: 'Baño trapeado y abastecido', hora: '14:00', dias: null },
+  { id: 't1-salsas', turno: 1, n: 'Rellenar mamilas de salsas', hora: '14:30', dias: null },
+  { id: 't1-refri', turno: 1, n: 'Limpieza de refrigerador', hora: '16:00', dias: [2, 4, 6] },
+  { id: 't1-freidoras', turno: 1, n: 'Limpieza de freidoras', hora: '16:00', dias: [1, 3, 5] },
+  { id: 't1-congelador', turno: 1, n: 'Limpieza de congelador', hora: '14:00', dias: [0] },
+  { id: 't1-plantas', turno: 1, n: 'Regar plantas', hora: '17:00', dias: [2] },
+  { id: 't2-resp', turno: 2, n: 'Responsable de turno (registrar entrada)', hora: '14:55', dias: null, auto: 'entrada' },
+  { id: 't2-cocina', turno: 2, n: 'Cocina barrida y trapeada', hora: '15:30', dias: null },
+  { id: 't2-mesas', turno: 2, n: 'Mesas de trabajo limpias y ordenadas', hora: '16:00', dias: null },
+  { id: 't2-inv', turno: 2, n: 'Realización de inventario', hora: '19:00', dias: null, auto: 'inventario' },
+  { id: 't2-crepera', turno: 2, n: 'Limpieza de crepera', hora: '19:00', dias: [1, 3, 5] },
+  { id: 't2-comedor', turno: 2, n: 'Comedor limpio y ordenado', hora: '20:55', dias: null },
+  { id: 't2-trastes', turno: 2, n: 'Trastes lavados', hora: '20:55', dias: null },
+  { id: 't2-invupd', turno: 2, n: 'Actualización de inventario', hora: '20:55', dias: null },
+  { id: 't2-basura', turno: 2, n: 'Sacar basura', hora: '20:55', dias: [1, 3, 5] },
+];
+function tareasDelDia(turno, fechaISO) {
+  const d = new Date((fechaISO || hoyISO()) + 'T12:00:00').getDay();
+  return TAREAS.filter(t => t.turno === turno && (!t.dias || t.dias.includes(d)));
+}
+const tareaKey = (fecha, sid, tid) => ['tk', fecha, sid, tid].join('|');
+function regTarea(tid, fecha, sid) { return db.tareas.find(x => x.id === tareaKey(fecha || hoyISO(), sid || sucursalActual, tid)); }
+function tareaHecha(t, fecha, sid) {
+  fecha = fecha || hoyISO(); sid = sid || sucursalActual;
+  if (t.auto === 'entrada') {
+    const tt = db.turnos.find(x => x.fecha === fecha && x.sucursalId === sid && x.tipo === (t.turno === 1 ? 'matutino' : 'vespertino'));
+    return tt ? { done: true, por: per(tt.personalId)?.nombre || '', ts: tt.entrada, auto: true, ver: !!regTarea(t.id, fecha, sid)?.ver } : null;
+  }
+  const r = regTarea(t.id, fecha, sid);
+  return (r && r.done) ? r : null;
+}
+function horaLimitePasada(t, fecha) {
+  if ((fecha || hoyISO()) !== hoyISO()) return true;
+  const [h, m] = t.hora.split(':').map(Number);
+  const ahora = new Date();
+  return ahora.getHours() * 60 + ahora.getMinutes() > h * 60 + m;
+}
+function fmtHoraLimite(h) { const [hh, mm] = h.split(':').map(Number); const pm = hh >= 12; return ((hh + 11) % 12 + 1) + ':' + String(mm).padStart(2, '0') + (pm ? ' pm' : ' am'); }
 
 const PROTOCOLOS = [
   ['1. Generales', [
@@ -129,7 +174,7 @@ function seedDB() {
   return {
     v: 1, ts: Date.now(),
     config: {
-      adminPin: '2626', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
+      adminPin: '2626', supervisorPin: '4040', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
       whatsapp: '527711232884', baseHoras: 6, nombreNegocio: 'El Anillo del Cíclope'
     },
     sucursales: [
@@ -144,12 +189,15 @@ function seedDB() {
       { id: uid(), nombre: 'Jaz', pin: '5555', pagoTurno: 300, pagoHora: 50, activo: true },
     ],
     productos: prods, stock,
-    turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [],
+    turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [],
   };
 }
 function migrarDB() {
   // agrega estructuras/productos nuevos a instalaciones existentes
   if (!db.propinas) db.propinas = [];
+  if (!db.tareas) db.tareas = [];
+  if (!db.revisiones) db.revisiones = [];
+  if (!db.config.supervisorPin) db.config.supervisorPin = '4040';
   const nombres = new Set(db.productos.map(p => p.nombre));
   SEED_PRODUCTOS.forEach(sp => {
     if (!nombres.has(sp[0])) {
@@ -305,11 +353,13 @@ function ir(id) {
   window.scrollTo(0, 0);
   renderPantalla(id);
 }
-function salirASucursales() { sucursalActual = null; esAdmin = false; ir('scr-portada'); }
+function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; ir('scr-portada'); }
 function renderPantalla(id) {
   if (id === 'scr-portada') renderPortada();
   if (id === 'scr-suc') renderSucursal();
   if (id === 'scr-inv') renderInventario();
+  if (id === 'scr-chk') renderChecklist();
+  if (id === 'scr-rev') renderRevision();
   if (id === 'scr-prop') renderPropinas();
   if (id === 'scr-evid') renderEvidencias();
   if (id === 'scr-proto') renderProtocolos();
@@ -383,6 +433,36 @@ function renderSucursal() {
   const f = faltantes(sucursalActual).length;
   const chip = $('inv-alerta-chip');
   if (chip) chip.innerHTML = f ? '🛒 ' + f + ' por comprar' : '✅ stock completo';
+  renderAvance();
+}
+function avanceTurno(turno, fecha, sid) {
+  const lista = tareasDelDia(turno, fecha);
+  const hechas = lista.filter(t => tareaHecha(t, fecha, sid));
+  return { total: lista.length, hechas: hechas.length, pendientes: lista.filter(t => !tareaHecha(t, fecha, sid)) };
+}
+function renderAvance() {
+  const hoy = hoyISO();
+  const a1 = avanceTurno(1, hoy, sucursalActual), a2 = avanceTurno(2, hoy, sucursalActual);
+  const cierreHoy = db.cierres.find(c => c.fecha === hoy && c.sucursalId === sucursalActual);
+  const evHoy = db.evidencias.filter(e => e.fecha === hoy && e.sucursalId === sucursalActual).length;
+  const rev = db.revisiones.find(r => r.sucursalId === sucursalActual);
+  const turnoActual = new Date().getHours() < 15 ? 1 : 2;
+  const aA = turnoActual === 1 ? a1 : a2;
+  const pendTxt = aA.pendientes.filter(t => !t.auto).slice(0, 3).map(t => t.n.split('(')[0].trim()).join(' · ');
+  const fila = (icono, nombre, valor, ok) =>
+    '<div class="avance-item"><span>' + icono + '</span><span>' + nombre + '</span><span class="pct" style="' +
+    (ok === true ? 'color:var(--ok)' : ok === false ? 'color:var(--alerta)' : '') + '">' + valor + '</span></div>';
+  $('suc-avance').innerHTML =
+    '<h3 style="margin-bottom:4px">🚀 Avance de hoy — ¿qué falta?</h3>' +
+    fila('☀️', 'Tareas Turno 1', a1.hechas + '/' + a1.total, a1.hechas === a1.total) +
+    fila('🌙', 'Tareas Turno 2', a2.hechas + '/' + a2.total, a2.hechas === a2.total) +
+    fila('📸', 'Evidencias subidas hoy', evHoy || '0', evHoy > 0 ? true : null) +
+    fila('🌙', 'Cierre del día', cierreHoy ? '✅ ' + fmt$(cierreHoy.ventas) : 'pendiente', !!cierreHoy || null) +
+    (rev ? fila('🔍', 'Última revisión (' + fmtFecha(rev.fecha) + ')',
+      rev.veredicto === 'cumplido' ? '✅ ' + rev.pct + '%' : rev.veredicto === 'ajustes' ? '⚠️ ' + rev.pct + '%' : '⛔ ' + rev.pct + '%',
+      rev.veredicto === 'cumplido' ? true : rev.veredicto === 'nocumplido' ? false : null) : '') +
+    (pendTxt ? '<p class="mini" style="margin:8px 0 0;color:var(--aviso)">⏳ Siguiente en Turno ' + turnoActual + ': ' + esc(pendTxt) + '</p>'
+      : '<p class="mini" style="margin:8px 0 0;color:var(--ok)">✨ Turno ' + turnoActual + ' al día. ¡Gran trabajo, Cíclope!</p>');
 }
 
 /* ═══════════ ENTRADA ═══════════ */
@@ -426,48 +506,76 @@ function registrarSalida() {
   toast('👋 ¡Hasta pronto, ' + p.nombre + '!');
 }
 
-/* ═══════════ CHECKLIST ═══════════ */
-let chkTipo = 'apertura', chkFoto = { foto: '' };
-function irChecklist(tipo) {
-  chkTipo = tipo; chkFoto = { foto: '' };
-  $('chk-titulo').textContent = tipo === 'apertura' ? '📋 Checklist de apertura' : '🌙 Checklist de cierre';
+/* ═══════════ CHECKLIST DEL TURNO ═══════════ */
+let chkTurno = 1;
+function irChecklist() {
+  chkTurno = new Date().getHours() < 15 ? 1 : 2;
   opcionesPersonal($('chk-persona'), true);
   if (!$('chk-persona').value) opcionesPersonal($('chk-persona'), false);
-  const items = tipo === 'apertura' ? CHECK_APERTURA : CHECK_CIERRE;
-  $('chk-items').innerHTML = items.map((it, i) =>
-    '<div class="chk" data-i="' + i + '" onclick="this.classList.toggle(\'hecho\')">' +
-    '<div class="box">✔</div><div><div class="tx">' + esc(it) + '</div></div></div>').join('');
-  $('chk-foto-drop').innerHTML = '📷 Toca para tomar / subir foto';
-  $('chk-novedades').value = '';
-  prepararDrop('chk-foto-drop', 'chk-foto', chkFoto);
+  $('chk-obs').value = '';
   ir('scr-chk');
 }
-async function guardarChecklist() {
-  const items = {}; let hechos = 0;
-  document.querySelectorAll('#chk-items .chk').forEach(el => {
-    const nombre = el.querySelector('.tx').textContent;
-    const ok = el.classList.contains('hecho'); items[nombre] = ok; if (ok) hechos++;
-  });
-  if (!hechos) return toast('Marca al menos un punto del checklist');
+function renderChecklist() {
+  document.querySelectorAll('#chk-seg button').forEach(b => b.classList.toggle('on', Number(b.dataset.t) === chkTurno));
+  const lista = tareasDelDia(chkTurno);
+  let hechas = 0;
+  $('chk-items').innerHTML = lista.map(t => {
+    const h = tareaHecha(t);
+    if (h) hechas++;
+    const tarde = !h && horaLimitePasada(t);
+    const cls = 'tarea' + (h ? (h.ver ? ' verificada' : ' hecha') : '');
+    return '<div class="' + cls + '" onclick="toggleTarea(\'' + t.id + '\')">' +
+      '<div class="box">' + (h ? '✔' : '') + '</div>' +
+      '<div><div class="tt">' + esc(t.n) + (t.auto ? ' <span class="badge mor">auto</span>' : '') + '</div>' +
+      '<div class="meta">' + (h
+        ? '✔ ' + esc(h.por || 'Equipo') + ' · ' + fmtHora(h.ts) + (h.ver ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '')
+        : 'Hora límite: <span class="' + (tarde ? 'tarde' : '') + '">' + fmtHoraLimite(t.hora) + (tarde ? ' ⏰ vencida' : '') + '</span>') +
+      '</div></div>' +
+      '<span class="vv ' + (h ? 'si' : 'no') + '">' + (h ? (h.ver ? '✔✔' : 'HECHA') : 'PENDIENTE') + '</span></div>';
+  }).join('');
+  const pct = lista.length ? Math.round(hechas / lista.length * 100) : 0;
+  $('chk-barra').style.width = pct + '%';
+  $('chk-pct').textContent = pct + '%';
+  const chip = $('chk-progreso-chip'); if (chip) chip.textContent = hechas + '/' + lista.length + ' tareas';
+}
+function toggleTarea(tid) {
+  const t = TAREAS.find(x => x.id === tid);
+  if (t.auto === 'entrada') return toast('Esta tarea se marca sola al registrar la entrada del turno 🕐');
+  const key = tareaKey(hoyISO(), sucursalActual, tid);
+  let r = db.tareas.find(x => x.id === key);
+  const p = per($('chk-persona').value);
+  if (r && r.done) {
+    if (r.ver) return toast('Ya fue verificada; solo Supervisión puede modificarla 🔍');
+    r.done = false; r.ts = Date.now();
+    toast('↩️ Tarea desmarcada');
+  } else {
+    if (!p) return toast('Selecciona quién marca la tarea');
+    if (!r) { r = { id: key, fecha: hoyISO(), sucursalId: sucursalActual, tareaId: tid, turno: t.turno, nombre: t.n }; db.tareas.push(r); }
+    r.done = true; r.por = p.nombre; r.personalId = p.id; r.ts = Date.now(); r.ver = false;
+    toast('✅ Hecha por ' + p.nombre);
+  }
+  guardarDB(); renderChecklist();
+}
+function enviarObservacion() {
+  const texto = $('chk-obs').value.trim();
+  if (!texto) return toast('Escribe la observación primero 🗒️');
   const p = per($('chk-persona').value);
   const s = suc(sucursalActual);
-  const fotoFinal = chkFoto.foto ? await subirFotoDrive(chkFoto.foto, { tipo: 'checklist-' + chkTipo, sucursal: s.nombre, fecha: hoyISO() }) : '';
-  const reg = {
-    id: uid(), fecha: hoyISO(), ts: Date.now(), tsFoto: Date.now(), sucursalId: sucursalActual,
-    personalId: p?.id || '', tipo: chkTipo, items, foto: fotoFinal, novedades: $('chk-novedades').value.trim()
-  };
-  db.checklists.unshift(reg);
-  if (chkFoto.foto) db.evidencias.unshift({
-    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p?.id || '',
-    tipo: chkTipo, nota: 'Checklist ' + chkTipo, foto: fotoFinal
+  db.checklists.unshift({
+    id: uid(), fecha: hoyISO(), ts: Date.now(), sucursalId: sucursalActual,
+    personalId: p?.id || '', tipo: 'observacion', novedades: texto
   });
   guardarDB();
-  const total = Object.keys(items).length;
-  notificar('📋 Checklist ' + chkTipo + ' — ' + s.nombre,
-    (p?.nombre || 'Equipo') + ' completó ' + hechos + '/' + total + ' puntos del checklist de ' + chkTipo + ' en ' + s.nombre +
-    (reg.novedades ? '\nNovedades: ' + reg.novedades : '') + (fotoFinal && !fotoFinal.startsWith('data:') ? '\nFoto: ' + fotoFinal : ''));
-  toast('🪄 Checklist enviado (' + hechos + '/' + total + ')');
-  ir('scr-suc');
+  notificar('🗒️ Observación — ' + s.nombre, (p?.nombre || 'Equipo') + ' (Turno ' + chkTurno + '):\n' + texto);
+  $('chk-obs').value = '';
+  toast('📨 Observación enviada a Dirección');
+}
+/* la tarea de inventario del turno 2 se marca sola al confirmar inventario */
+function autoTareaInventario() {
+  const key = tareaKey(hoyISO(), sucursalActual, 't2-inv');
+  let r = db.tareas.find(x => x.id === key);
+  if (!r) { r = { id: key, fecha: hoyISO(), sucursalId: sucursalActual, tareaId: 't2-inv', turno: 2, nombre: 'Realización de inventario' }; db.tareas.push(r); }
+  if (!r.done) { r.done = true; r.por = 'Inventario confirmado'; r.ts = Date.now(); r.ver = !!r.ver; }
 }
 
 /* ═══════════ INVENTARIO ═══════════ */
@@ -485,8 +593,9 @@ function renderInventario() {
     const s = st[p.id] || { c: 0 }; const est = estadoStock(sucursalActual, p);
     const badge = est === 'ok' ? '<span class="badge ok">DISPONIBLE</span>'
       : est === 'agotado' ? '<span class="badge comprar">AGOTADO</span>' : '<span class="badge comprar">COMPRAR</span>';
+    const uCorta = (p.unidad || '').replace(ESCALA, '').trim() || 'escala';
     return '<div class="inv-row">' + miniProd(p) + '<div class="nom"><div class="n">' + esc(p.nombre) + '</div>' +
-      '<div class="u">' + esc(p.unidad) + ' · mín ' + p.minimo + '</div></div>' + badge +
+      '<div class="u">' + esc(uCorta) + ' · mín ' + p.minimo + '</div></div>' + badge +
       '<div class="stepper">' +
       '<button onclick="ajustarStock(\'' + p.id + '\',-1)">−</button>' +
       '<input type="number" inputmode="numeric" value="' + (s.c || 0) + '" onchange="fijarStock(\'' + p.id + '\',this.value)">' +
@@ -509,6 +618,7 @@ function fijarStock(pid, v) {
 function confirmarInventario() {
   const s = suc(sucursalActual);
   const falt = faltantes(sucursalActual);
+  autoTareaInventario();
   notificar('📦 Inventario realizado — ' + s.nombre,
     'Inventario confirmado en ' + s.nombre + ' (' + fmtFecha(hoyISO()) + ').\n' +
     (falt.length ? '🛒 POR COMPRAR (' + falt.length + '):\n' + falt.map(p => '· ' + p.nombre + ' — quedan ' + (stockDe(sucursalActual)[p.id]?.c || 0) + ' (mín ' + p.minimo + ')').join('\n')
@@ -683,6 +793,120 @@ function renderProtocolos() {
       '<div class="mini muted">' + esc(d) + '</div></div></div>').join('') + '</div>').join('');
 }
 
+/* ═══════════ SUPERVISIÓN ═══════════ */
+let esSupervisor = false;
+function pedirPinSupervision() {
+  abrirPin('PIN de Supervisión', pin => {
+    if (pin === db.config.supervisorPin || pin === db.config.adminPin) {
+      esSupervisor = true;
+      $('rev-suc').innerHTML = db.sucursales.filter(s => s.activa).map(s => '<option value="' + s.id + '">' + esc(s.nombre) + '</option>').join('');
+      $('rev-fecha').value = hoyISO();
+      ir('scr-rev');
+    } else toast('⛔ PIN incorrecto');
+  });
+}
+function renderRevision() {
+  if (!esSupervisor) return salirASucursales();
+  const sid = $('rev-suc').value || db.sucursales[0].id;
+  const fecha = $('rev-fecha').value || hoyISO();
+  let html = '';
+  // tareas por turno con botón de verificación
+  [1, 2].forEach(turno => {
+    const lista = tareasDelDia(turno, fecha);
+    const hechas = lista.filter(t => tareaHecha(t, fecha, sid)).length;
+    html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + (turno === 1 ? '☀️ Turno 1' : '🌙 Turno 2') +
+      '</h3><span class="badge ' + (hechas === lista.length ? 'ok' : 'aviso') + '">' + hechas + '/' + lista.length + '</span></div>' +
+      lista.map(t => {
+        const h = tareaHecha(t, fecha, sid);
+        return '<div class="tarea ' + (h ? (h.ver ? 'verificada' : 'hecha') : '') + '" style="cursor:default">' +
+          '<div class="box">' + (h ? '✔' : '') + '</div>' +
+          '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' +
+          (h ? '✔ ' + esc(h.por || '') + ' · ' + fmtHora(h.ts) : 'No realizada · límite ' + fmtHoraLimite(t.hora)) + '</div></div>' +
+          (h ? '<button class="btn ' + (h.ver ? 'p' : 's') + ' mini" style="margin-left:auto" onclick="verificarTarea(\'' + t.id + '\',\'' + fecha + '\',\'' + sid + '\')">' +
+            (h.ver ? '✔✔ Verificada' : 'Verificar ✔✔') + '</button>'
+            : '<span class="vv no" style="margin-left:auto">PENDIENTE</span>') + '</div>';
+      }).join('') + '</div>';
+  });
+  // evidencias del día
+  const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid);
+  html += '<div class="card"><h3>📸 Evidencias del día (' + evs.length + ')</h3>' +
+    (evs.length ? '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div>' : '<p class="muted mini">Sin evidencias este día.</p>') + '</div>';
+  // cierre del día
+  const cie = db.cierres.find(c => c.fecha === fecha && c.sucursalId === sid);
+  html += '<div class="card"><h3>🌙 Cierre del día</h3>' + (cie
+    ? '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(cie.ventas) + '</div><div class="l">ventas netas</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(cie.caja) + '</div><div class="l">caja</div></div>' +
+    '<div class="stat"><div class="v">' + (cie.hechos ?? 0) + '/' + CHECK_CIERRE.length + '</div><div class="l">checklist cierre</div></div></div>' +
+    (cie.novedades ? '<p class="mini muted" style="margin-top:8px">🗞️ ' + esc(cie.novedades) + '</p>' : '')
+    : '<p class="muted mini">Aún sin cierre registrado este día.</p>') + '</div>';
+  // veredicto
+  const a1 = avanceTurno(1, fecha, sid), a2 = avanceTurno(2, fecha, sid);
+  const pct = (a1.total + a2.total) ? Math.round((a1.hechas + a2.hechas) / (a1.total + a2.total) * 100) : 0;
+  html += '<div class="card amarilla"><h3>📝 Enviar revisión del día</h3>' +
+    '<div class="fila" style="margin-bottom:8px"><div class="stat" style="flex:0 0 130px"><div class="v">' + pct + '%</div><div class="l">cumplimiento</div></div>' +
+    '<div style="flex:1"><div class="seg" style="margin:0">' +
+    '<button id="rev-v-cumplido" onclick="revVeredicto=\'cumplido\';marcarVeredicto()">✅ Cumplido</button>' +
+    '<button id="rev-v-ajustes" onclick="revVeredicto=\'ajustes\';marcarVeredicto()">⚠️ Ajustes</button>' +
+    '<button id="rev-v-nocumplido" onclick="revVeredicto=\'nocumplido\';marcarVeredicto()">⛔ No cumplido</button></div></div></div>' +
+    '<label>Retroalimentación para el equipo</label>' +
+    '<textarea id="rev-comentario" placeholder="Ej. Excelente turno, solo faltó rellenar salsas…"></textarea>' +
+    '<div style="margin-top:14px"><button class="btn p gigante" onclick="guardarRevision(\'' + fecha + '\',\'' + sid + '\',' + pct + ')">🔍 Enviar revisión</button></div></div>';
+  // historial
+  const hist = db.revisiones.filter(r => r.sucursalId === sid).slice(0, 7);
+  if (hist.length) html += '<div class="card"><h3>📜 Revisiones recientes</h3>' + hist.map(r =>
+    '<div class="item-linea"><div class="grow"><b>' + (r.veredicto === 'cumplido' ? '✅' : r.veredicto === 'ajustes' ? '⚠️' : '⛔') +
+    ' ' + fmtFecha(r.fecha) + ' · ' + r.pct + '%</b><div class="mini muted">' + esc(r.comentario || '') + '</div></div></div>').join('') + '</div>';
+  $('rev-contenido').innerHTML = html;
+  marcarVeredicto();
+}
+let revVeredicto = 'cumplido';
+function marcarVeredicto() {
+  ['cumplido', 'ajustes', 'nocumplido'].forEach(v => {
+    const b = $('rev-v-' + v); if (b) b.classList.toggle('on', revVeredicto === v);
+  });
+}
+function verificarTarea(tid, fecha, sid) {
+  const t = TAREAS.find(x => x.id === tid);
+  const key = tareaKey(fecha, sid, tid);
+  let r = db.tareas.find(x => x.id === key);
+  if (!r) {
+    // tarea automática (entrada) verificada sin registro manual previo
+    r = { id: key, fecha, sucursalId: sid, tareaId: tid, turno: t.turno, nombre: t.n, done: true, por: 'auto' };
+    db.tareas.push(r);
+  }
+  r.ver = !r.ver; r.verTs = Date.now(); r.ts = Date.now();
+  guardarDB(); renderRevision();
+  toast(r.ver ? '✔✔ Tarea verificada' : '↩️ Verificación retirada');
+}
+function guardarRevision(fecha, sid, pct) {
+  const comentario = $('rev-comentario').value.trim();
+  const s = suc(sid);
+  db.revisiones.unshift({
+    id: uid(), ts: Date.now(), fecha, sucursalId: sid, pct,
+    veredicto: revVeredicto, comentario
+  });
+  db.revisiones = db.revisiones.slice(0, 200);
+  guardarDB();
+  const emoji = revVeredicto === 'cumplido' ? '✅' : revVeredicto === 'ajustes' ? '⚠️' : '⛔';
+  notificar('🔍 Revisión ' + emoji + ' — ' + (s?.nombre || '') + ' (' + fmtFecha(fecha) + ')',
+    'Veredicto: ' + revVeredicto.toUpperCase() + '\nCumplimiento: ' + pct + '%' +
+    (comentario ? '\nRetroalimentación: ' + comentario : ''));
+  toast('🔍 Revisión enviada — el equipo la verá en su panel');
+  $('rev-comentario').value = '';
+  renderRevision();
+}
+
+/* ═══════════ TEMA CLARO / OSCURO ═══════════ */
+function toggleTema() {
+  const claro = document.documentElement.dataset.tema === 'claro';
+  if (claro) { delete document.documentElement.dataset.tema; localStorage.setItem('ojo_tema', 'oscuro'); }
+  else { document.documentElement.dataset.tema = 'claro'; localStorage.setItem('ojo_tema', 'claro'); }
+  toast(claro ? '🌌 Modo oscuro — la noche cósmica de Cyclos' : '☀️ Modo claro');
+}
+function initTema() {
+  if (localStorage.getItem('ojo_tema') === 'claro') document.documentElement.dataset.tema = 'claro';
+}
+
 /* ═══════════ DIRECCIÓN ═══════════ */
 function dirTab(t) {
   tabDir = t;
@@ -706,18 +930,19 @@ function dirHoy() {
   const hoy = hoyISO();
   const ventasHoy = db.cierres.filter(x => x.fecha === hoy).reduce((a, x) => a + x.ventas, 0);
   const abiertos = turnosAbiertos();
-  const chkHoy = db.checklists.filter(x => x.fecha === hoy);
+  const tareasHoy = db.tareas.filter(x => x.fecha === hoy && x.done).length;
   const propHoyTot = propinasDe(hoy).reduce((a, x) => a + x.monto, 0);
   let html = '<div class="grid c4">' +
     '<div class="stat verde"><div class="v">' + fmt$(ventasHoy) + '</div><div class="l">ventas de hoy</div></div>' +
     '<div class="stat"><div class="v">' + abiertos.length + '</div><div class="l">en turno ahora</div></div>' +
-    '<div class="stat"><div class="v">' + chkHoy.length + '</div><div class="l">checklists hoy</div></div>' +
+    '<div class="stat"><div class="v">' + tareasHoy + '</div><div class="l">tareas hechas hoy</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propHoyTot) + '</div><div class="l">💳 propinas hoy</div></div></div>';
   db.sucursales.filter(s => s.activa).forEach(s => {
     const enTurno = turnosAbiertos(s.id);
     const falt = faltantes(s.id);
     const cierresHoy = db.cierres.filter(x => x.fecha === hoy && x.sucursalId === s.id);
-    const chkS = chkHoy.filter(x => x.sucursalId === s.id);
+    const a1 = avanceTurno(1, hoy, s.id), a2 = avanceTurno(2, hoy, s.id);
+    const revS = db.revisiones.find(r => r.sucursalId === s.id);
     html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏬 ' + esc(s.nombre) + '</h3>' +
       (falt.length ? '<span class="badge comprar">🛒 ' + falt.length + ' por comprar</span>' : '<span class="badge ok">stock OK</span>') + '</div>';
     html += enTurno.length ? enTurno.map(t => {
@@ -726,9 +951,12 @@ function dirHoy() {
         '</b><div class="mini muted">' + (t.tipo === 'matutino' ? '☀️' : '🌙') + ' entró ' + fmtHora(t.entrada) + '</div></div><span class="badge mor">en turno</span></div>';
     }).join('') : '<p class="muted mini">Nadie en turno.</p>';
     html += '<div class="sep"></div><div class="fila mini muted">' +
-      '<span>📋 Checklists hoy: <b class="amar">' + chkS.length + '</b></span>' +
-      '<span>🌙 Cierres hoy: <b class="amar">' + cierresHoy.length + '</b>' +
-      (cierresHoy.length ? ' · ' + fmt$(cierresHoy.reduce((a, x) => a + x.ventas, 0)) : '') + '</span></div>';
+      '<span>☀️ T1: <b class="amar">' + a1.hechas + '/' + a1.total + '</b></span>' +
+      '<span>🌙 T2: <b class="amar">' + a2.hechas + '/' + a2.total + '</b></span>' +
+      '<span>Cierres: <b class="amar">' + cierresHoy.length + '</b>' +
+      (cierresHoy.length ? ' · ' + fmt$(cierresHoy.reduce((a, x) => a + x.ventas, 0)) : '') + '</span>' +
+      (revS ? '<span>🔍 Últ. revisión: <b class="amar">' + (revS.veredicto === 'cumplido' ? '✅' : revS.veredicto === 'ajustes' ? '⚠️' : '⛔') +
+        ' ' + revS.pct + '%</b></span>' : '') + '</div>';
     if (falt.length) html += '<div class="mini" style="margin-top:8px;color:var(--alerta)">Faltan: ' +
       falt.slice(0, 8).map(p => esc(p.nombre)).join(', ') + (falt.length > 8 ? ' +' + (falt.length - 8) + ' más' : '') + '</div>';
     html += '</div>';
@@ -927,6 +1155,7 @@ function dirAdmin() {
   /* configuración */
   html += '<div class="card"><h3>⚙️ Configuración</h3>' +
     '<label>PIN de Dirección</label><input id="cfg-pin" value="' + esc(c.adminPin) + '" maxlength="4" inputmode="numeric">' +
+    '<label>PIN de Supervisión (revisora externa)</label><input id="cfg-pin-sup" value="' + esc(c.supervisorPin || '4040') + '" maxlength="4" inputmode="numeric">' +
     '<label>Horas base por turno</label><input id="cfg-base" type="number" value="' + (c.baseHoras || 6) + '">' +
     '<label>Correo de notificaciones</label><input id="cfg-email" value="' + esc(c.emailTo) + '">' +
     '<label>WhatsApp de avisos (con lada país, ej. 52771…)</label><input id="cfg-wa" value="' + esc(c.whatsapp) + '">' +
@@ -1065,6 +1294,8 @@ function guardarConfig() {
   const c = db.config;
   const pin = $('cfg-pin').value.trim();
   if (pin.length === 4) c.adminPin = pin; else return toast('El PIN debe tener 4 dígitos');
+  const pinSup = $('cfg-pin-sup').value.trim();
+  if (pinSup.length === 4) c.supervisorPin = pinSup;
   c.baseHoras = Number($('cfg-base').value) || 6;
   c.emailTo = $('cfg-email').value.trim();
   c.whatsapp = $('cfg-wa').value.replace(/\D/g, '');
@@ -1137,6 +1368,7 @@ setInterval(() => {
     const touch = document.createElement('link'); touch.rel = 'apple-touch-icon'; touch.href = fav.href;
     document.head.appendChild(touch);
   }
+  initTema();
   cargarDB();
   ir('scr-portada');
   pintarRed();
