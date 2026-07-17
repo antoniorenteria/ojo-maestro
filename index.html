@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D0015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ojo Maestro">
+<title>El Ojo Maestro · El Anillo del Cíclope</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --amarillo:#FFD523; --amarillo-suave:#FFE470;
+  --morado:#9333EA; --morado-med:#6B21A8; --morado-oscuro:#3B0764;
+  --fondo:#050008; --fondo-2:#0D0015; --fondo-3:#130020; --fondo-4:#1B0A2E;
+  --texto:#F5F0FF; --muted:#9B87B8;
+  --ok:#4ADE80; --alerta:#F87171; --aviso:#FBBF24;
+  --radio:18px; --sombra:0 10px 34px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--fondo);color:var(--texto);
+  font-family:'Poppins',system-ui,sans-serif;font-size:16px;min-height:100%;}
+body{background:
+  radial-gradient(1100px 500px at 85% -5%, rgba(107,33,168,.28), transparent 60%),
+  radial-gradient(900px 480px at -10% 30%, rgba(59,7,100,.35), transparent 60%),
+  radial-gradient(700px 400px at 50% 110%, rgba(147,51,234,.16), transparent 60%),
+  var(--fondo);
+  background-attachment:fixed;}
+h1,h2,h3,.tit{font-family:'SerifGothic','Poppins',serif;letter-spacing:.5px;}
+h1{font-size:1.55rem;margin:0}
+h2{font-size:1.25rem;margin:0 0 12px;color:var(--amarillo)}
+h3{font-size:1.02rem;margin:0 0 8px;color:var(--amarillo)}
+a{color:var(--amarillo)}
+.screen{display:none;max-width:1080px;margin:0 auto;padding:18px 16px 110px;animation:fadein .25s ease}
+.screen.active{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- barra superior ---------- */
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 4px 16px;}
+.topbar img.logo{height:44px}
+.topbar .sub{font-size:.72rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+.topbar .grow{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;padding:5px 12px;border-radius:99px;
+  background:var(--fondo-3);border:1px solid rgba(147,51,234,.35);color:var(--muted)}
+.chip .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.chip.on .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.chip.off .dot{background:var(--aviso)}
+
+/* ---------- tarjetas / botones ---------- */
+.card{background:linear-gradient(160deg,var(--fondo-3),var(--fondo-2));border:1px solid rgba(147,51,234,.3);
+  border-radius:var(--radio);padding:18px;box-shadow:var(--sombra);margin-bottom:14px}
+.card.amarilla{border-color:rgba(255,213,35,.4)}
+.grid{display:grid;gap:12px}
+.grid.c2{grid-template-columns:1fr 1fr}
+.grid.c3{grid-template-columns:repeat(3,1fr)}
+.grid.c4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:760px){.grid.c3,.grid.c4{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.grid.c2,.grid.c3,.grid.c4{grid-template-columns:1fr}}
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  border:none;border-radius:14px;padding:15px 18px;font-family:'Poppins';font-weight:600;font-size:1rem;
+  cursor:pointer;transition:transform .12s,filter .12s;color:var(--fondo-2)}
+.btn:active{transform:scale(.97)}
+.btn.p{background:linear-gradient(135deg,var(--amarillo),#F4B400);color:#1A1400}
+.btn.s{background:var(--fondo-4);color:var(--texto);border:1px solid rgba(147,51,234,.45)}
+.btn.s:hover{border-color:var(--amarillo)}
+.btn.peligro{background:rgba(248,113,113,.14);color:var(--alerta);border:1px solid rgba(248,113,113,.4)}
+.btn.mini{width:auto;padding:8px 14px;font-size:.82rem;border-radius:10px}
+.btn.gigante{padding:22px;font-size:1.15rem;border-radius:18px}
+.btn .ico{font-size:1.35rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- menú principal sucursal ---------- */
+.menu-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.menu-item{background:linear-gradient(160deg,var(--fondo-3),var(--fondo-2));border:1px solid rgba(147,51,234,.3);
+  border-radius:var(--radio);padding:22px 16px;text-align:center;cursor:pointer;transition:.15s;box-shadow:var(--sombra)}
+.menu-item:hover,.menu-item:active{border-color:var(--amarillo);transform:translateY(-2px)}
+.menu-item .em{font-size:2.2rem;display:block;margin-bottom:8px}
+.menu-item .t{font-weight:700;font-size:1.02rem}
+.menu-item .d{font-size:.76rem;color:var(--muted);margin-top:4px}
+
+/* ---------- formularios ---------- */
+label{display:block;font-size:.8rem;color:var(--muted);margin:12px 0 5px;font-weight:500}
+input,select,textarea{width:100%;background:var(--fondo-2);border:1px solid rgba(147,51,234,.4);
+  color:var(--texto);border-radius:12px;padding:13px 14px;font-family:'Poppins';font-size:1rem;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--amarillo)}
+input[type=number]{-moz-appearance:textfield}
+textarea{min-height:84px;resize:vertical}
+.fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.fila>*{flex:1}
+
+/* ---------- PIN pad ---------- */
+.pinpad{display:grid;grid-template-columns:repeat(3,86px);gap:12px;justify-content:center;margin:16px 0}
+.pinpad button{height:66px;border-radius:16px;border:1px solid rgba(147,51,234,.4);background:var(--fondo-3);
+  color:var(--texto);font-size:1.5rem;font-family:'Poppins';font-weight:600;cursor:pointer}
+.pinpad button:active{background:var(--morado-oscuro)}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin:10px 0}
+.pin-dots span{width:16px;height:16px;border-radius:50%;border:2px solid var(--morado);transition:.15s}
+.pin-dots span.full{background:var(--amarillo);border-color:var(--amarillo);box-shadow:0 0 10px rgba(255,213,35,.6)}
+
+/* ---------- inventario ---------- */
+.inv-row{display:flex;align-items:center;gap:10px;padding:11px 6px;border-bottom:1px solid rgba(147,51,234,.16)}
+.inv-row .nom{flex:1;min-width:0}
+.inv-row .nom .n{font-weight:600;font-size:.95rem}
+.inv-row .nom .u{font-size:.7rem;color:var(--muted)}
+.stepper{display:flex;align-items:center;gap:6px}
+.stepper button{width:44px;height:44px;border-radius:12px;border:1px solid rgba(147,51,234,.5);
+  background:var(--fondo-3);color:var(--amarillo);font-size:1.4rem;cursor:pointer;font-weight:700}
+.stepper input{width:74px;text-align:center;padding:10px 4px;font-weight:700}
+.badge{font-size:.66rem;font-weight:700;padding:4px 10px;border-radius:99px;letter-spacing:.5px;white-space:nowrap}
+.badge.ok{background:rgba(74,222,128,.14);color:var(--ok)}
+.badge.comprar{background:rgba(248,113,113,.16);color:var(--alerta)}
+.badge.aviso{background:rgba(251,191,36,.15);color:var(--aviso)}
+.badge.mor{background:rgba(147,51,234,.2);color:#C4B5FD}
+
+/* ---------- checklist ---------- */
+.chk{display:flex;align-items:center;gap:14px;padding:14px 10px;border-radius:14px;border:1px solid rgba(147,51,234,.25);
+  margin-bottom:10px;cursor:pointer;background:var(--fondo-2)}
+.chk .box{width:30px;height:30px;border-radius:9px;border:2px solid var(--morado);display:flex;align-items:center;
+  justify-content:center;font-size:1.1rem;color:#1A1400;flex-shrink:0}
+.chk.hecho{border-color:rgba(255,213,35,.5)}
+.chk.hecho .box{background:var(--amarillo);border-color:var(--amarillo)}
+.chk .tx{font-weight:600}
+.chk .sx{font-size:.72rem;color:var(--muted)}
+
+/* ---------- tablas ---------- */
+.tabla-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{color:var(--amarillo);text-align:left;font-weight:600;padding:9px 8px;border-bottom:1px solid rgba(255,213,35,.3);white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid rgba(147,51,234,.15)}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- stats ---------- */
+.stat{background:linear-gradient(160deg,var(--fondo-4),var(--fondo-2));border:1px solid rgba(147,51,234,.3);
+  border-radius:16px;padding:16px;text-align:center}
+.stat .v{font-size:1.6rem;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums}
+.stat .l{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+.stat.verde .v{color:var(--ok)} .stat.rojo .v{color:var(--alerta)}
+
+/* ---------- fotos ---------- */
+.foto-drop{border:2px dashed rgba(147,51,234,.5);border-radius:16px;padding:22px;text-align:center;cursor:pointer;color:var(--muted)}
+.foto-drop:hover{border-color:var(--amarillo)}
+.foto-drop img{max-width:100%;max-height:220px;border-radius:12px}
+.galeria{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.galeria .ev{border:1px solid rgba(147,51,234,.3);border-radius:12px;overflow:hidden;background:var(--fondo-2)}
+.galeria .ev img{width:100%;height:100px;object-fit:cover;display:block;cursor:pointer}
+.galeria .ev .m{padding:7px 8px;font-size:.66rem;color:var(--muted);line-height:1.35}
+
+/* ---------- navegación inferior ---------- */
+.navbar{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;gap:6px;
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  background:rgba(13,0,21,.92);backdrop-filter:blur(14px);border-top:1px solid rgba(147,51,234,.3);z-index:50}
+.navbar button{flex:1;max-width:150px;background:none;border:none;color:var(--muted);font-family:'Poppins';
+  font-size:.68rem;cursor:pointer;padding:6px 2px;border-radius:12px}
+.navbar button .em{display:block;font-size:1.35rem;margin-bottom:2px}
+.navbar button.on{color:var(--amarillo)}
+
+/* ---------- toast / modal ---------- */
+#toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);opacity:0;
+  background:var(--fondo-4);border:1px solid var(--amarillo);color:var(--texto);padding:13px 22px;border-radius:14px;
+  font-size:.9rem;z-index:99;transition:.25s;max-width:90vw;text-align:center;box-shadow:var(--sombra)}
+#toast.ver{opacity:1;transform:translateX(-50%) translateY(0)}
+.modal-fondo{position:fixed;inset:0;background:rgba(5,0,8,.8);backdrop-filter:blur(4px);z-index:80;
+  display:none;align-items:center;justify-content:center;padding:18px}
+.modal-fondo.ver{display:flex}
+.modal{background:var(--fondo-3);border:1px solid rgba(147,51,234,.5);border-radius:20px;max-width:520px;width:100%;
+  max-height:88vh;overflow-y:auto;padding:22px;box-shadow:var(--sombra)}
+
+/* ---------- misc ---------- */
+.sep{height:1px;background:rgba(147,51,234,.25);margin:16px 0}
+.centrado{text-align:center}
+.muted{color:var(--muted);font-size:.82rem}
+.mini{font-size:.72rem}
+.amar{color:var(--amarillo)}
+.ojo-pulso{animation:pulso 3s ease-in-out infinite}
+@keyframes pulso{0%,100%{filter:drop-shadow(0 0 6px rgba(255,213,35,.35))}50%{filter:drop-shadow(0 0 22px rgba(255,213,35,.7))}}
+.reloj-grande{font-size:2.6rem;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums;text-align:center}
+.encabezado-seccion{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px}
+.tabs button{white-space:nowrap;background:var(--fondo-3);border:1px solid rgba(147,51,234,.35);color:var(--muted);
+  border-radius:99px;padding:9px 18px;font-family:'Poppins';font-size:.82rem;font-weight:600;cursor:pointer}
+.tabs button.on{background:var(--amarillo);color:#1A1400;border-color:var(--amarillo)}
+.lista-limpia{list-style:none;margin:0;padding:0}
+.item-linea{display:flex;align-items:center;gap:10px;padding:12px 4px;border-bottom:1px solid rgba(147,51,234,.15)}
+.item-linea .grow{flex:1;min-width:0}
+.avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--morado-med),var(--morado-oscuro));
+  display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--amarillo);flex-shrink:0;font-size:1.05rem}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ══════════ PORTADA ══════════ -->
+  <section class="screen" id="scr-portada">
+    <div class="centrado" style="padding-top:7vh">
+      <img id="logo-portada" alt="El Anillo del Cíclope" class="ojo-pulso" style="max-width:290px;width:75%">
+      <h1 style="margin-top:26px;color:var(--amarillo);font-size:2rem">EL OJO MAESTRO</h1>
+      <p class="muted" style="letter-spacing:3px;text-transform:uppercase;font-size:.72rem">Centro de operaciones · Universo Cíclope</p>
+      <div style="max-width:420px;margin:34px auto 0" id="portada-sucursales"></div>
+      <div style="max-width:420px;margin:14px auto 0">
+        <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección — Toño & Steph</button>
+      </div>
+      <p class="mini muted" style="margin-top:26px" id="portada-estado"></p>
+    </div>
+  </section>
+
+  <!-- ══════════ HOME SUCURSAL ══════════ -->
+  <section class="screen" id="scr-suc">
+    <div class="topbar">
+      <img class="logo logo-img" alt="logo">
+      <div><div class="tit amar" id="suc-nombre" style="font-weight:700"></div>
+        <div class="sub">Panel de sucursal</div></div>
+      <div class="grow"></div>
+      <span class="chip" id="chip-red"><span class="dot"></span><span id="chip-red-tx">local</span></span>
+    </div>
+    <div class="card centrado">
+      <div class="reloj-grande" id="reloj">--:--</div>
+      <div class="muted" id="fecha-hoy"></div>
+      <div class="sep"></div>
+      <div id="suc-en-turno"></div>
+    </div>
+    <div class="menu-grid">
+      <div class="menu-item" onclick="irEntrada()"><span class="em">🕐</span><span class="t">Registrar Entrada</span><div class="d">Inicio de jornada con PIN</div></div>
+      <div class="menu-item" onclick="irChecklist('apertura')"><span class="em">📋</span><span class="t">Checklist Apertura</span><div class="d">Protocolos + evidencia foto</div></div>
+      <div class="menu-item" onclick="ir('scr-inv')"><span class="em">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
+      <div class="menu-item" onclick="ir('scr-evid')"><span class="em">📸</span><span class="t">Evidencias</span><div class="d">Subir fotos de jornada</div></div>
+      <div class="menu-item" onclick="irPropinas()"><span class="em">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
+      <div class="menu-item" onclick="irCierre()"><span class="em">🌙</span><span class="t">Cierre de Turno</span><div class="d">Ventas, caja y checklist</div></div>
+      <div class="menu-item" onclick="irSalida()"><span class="em">🚪</span><span class="t">Registrar Salida</span><div class="d">Fin de jornada</div></div>
+      <div class="menu-item" onclick="ir('scr-proto')"><span class="em">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
+      <div class="menu-item" onclick="salirASucursales()"><span class="em">🔄</span><span class="t">Cambiar sucursal</span><div class="d">Volver al inicio</div></div>
+    </div>
+  </section>
+
+  <!-- ══════════ ENTRADA ══════════ -->
+  <section class="screen" id="scr-entrada">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>🕐 Registrar entrada</h2>
+    <div class="card">
+      <label>¿Quién entra a turno?</label>
+      <select id="entrada-persona"></select>
+      <label>Turno</label>
+      <select id="entrada-turno">
+        <option value="matutino">☀️ Matutino</option>
+        <option value="vespertino">🌙 Vespertino</option>
+      </select>
+      <label>PIN personal (4 dígitos)</label>
+      <input id="entrada-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+      <div style="margin-top:18px"><button class="btn p gigante" onclick="registrarEntrada()"><span class="ico">✅</span> Confirmar entrada</button></div>
+    </div>
+  </section>
+
+  <!-- ══════════ SALIDA ══════════ -->
+  <section class="screen" id="scr-salida">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>🚪 Registrar salida</h2>
+    <div class="card">
+      <label>¿Quién termina su turno?</label>
+      <select id="salida-persona"></select>
+      <label>PIN personal</label>
+      <input id="salida-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+      <div style="margin-top:18px"><button class="btn p gigante" onclick="registrarSalida()"><span class="ico">👋</span> Confirmar salida</button></div>
+    </div>
+    <div id="salida-resumen"></div>
+  </section>
+
+  <!-- ══════════ CHECKLIST ══════════ -->
+  <section class="screen" id="scr-chk">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2 id="chk-titulo">📋 Checklist</h2>
+    <div class="card">
+      <label>Responsable</label>
+      <select id="chk-persona"></select>
+      <div id="chk-items" style="margin-top:14px"></div>
+      <label>Foto de evidencia</label>
+      <div class="foto-drop" id="chk-foto-drop" onclick="document.getElementById('chk-foto').click()">📷 Toca para tomar / subir foto</div>
+      <input type="file" id="chk-foto" accept="image/*" capture="environment" hidden>
+      <label>Novedades del día</label>
+      <textarea id="chk-novedades" placeholder="¿Algo que Dirección deba saber? Faltantes, incidencias, ideas…"></textarea>
+      <div style="margin-top:18px"><button class="btn p gigante" onclick="guardarChecklist()"><span class="ico">🪄</span> Enviar checklist</button></div>
+    </div>
+  </section>
+
+  <!-- ══════════ INVENTARIO ══════════ -->
+  <section class="screen" id="scr-inv">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div>
+      <span class="chip" id="inv-alerta-chip"></span></div>
+    <div class="encabezado-seccion">
+      <h2 style="margin:0">📦 Inventario</h2>
+      <button class="btn s mini" onclick="verListaCompras()">🛒 Lista de compras</button>
+    </div>
+    <input id="inv-buscar" placeholder="🔍 Buscar producto…" oninput="renderInventario()" style="margin-bottom:10px">
+    <div class="tabs" id="inv-tabs"></div>
+    <div class="card" id="inv-lista"></div>
+    <button class="btn p gigante" onclick="confirmarInventario()"><span class="ico">✅</span> Confirmar inventario realizado</button>
+  </section>
+
+  <!-- ══════════ PROPINAS ══════════ -->
+  <section class="screen" id="scr-prop">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>💳 Propinas digitales</h2>
+    <p class="muted mini" style="margin-top:-6px">Registra aquí las propinas que llegaron <b>por tarjeta / terminal</b> para que Dirección te las retribuya. Las propinas en efectivo se reparten como siempre.</p>
+    <div class="card">
+      <label>¿A quién le tocó?</label>
+      <select id="prop-persona"></select>
+      <div class="fila">
+        <div><label>Monto ($)</label><input id="prop-monto" type="number" inputmode="decimal" placeholder="0.00"></div>
+        <div><label>Nota (opcional)</label><input id="prop-nota" placeholder="Ej. mesa 4, pedido Didi…"></div>
+      </div>
+      <div style="margin-top:16px"><button class="btn p gigante" onclick="registrarPropina()"><span class="ico">💳</span> Registrar propina</button></div>
+    </div>
+    <div id="prop-resumen"></div>
+    <h3 style="margin-top:16px">Registradas hoy en esta sucursal</h3>
+    <div class="card" id="prop-lista"></div>
+  </section>
+
+  <!-- ══════════ EVIDENCIAS ══════════ -->
+  <section class="screen" id="scr-evid">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>📸 Evidencias</h2>
+    <div class="card">
+      <label>Tipo de evidencia</label>
+      <select id="evid-tipo">
+        <option value="apertura">🌅 Inicio de jornada (apertura)</option>
+        <option value="cierre">🌙 Cierre de jornada</option>
+        <option value="limpieza">🧽 Limpieza</option>
+        <option value="incidencia">⚠️ Incidencia</option>
+        <option value="otra">📎 Otra</option>
+      </select>
+      <label>Responsable</label>
+      <select id="evid-persona"></select>
+      <label>Nota (opcional)</label>
+      <input id="evid-nota" placeholder="Ej. barra lista, cocina limpia…">
+      <label>Foto</label>
+      <div class="foto-drop" id="evid-drop" onclick="document.getElementById('evid-file').click()">📷 Toca para tomar / subir foto</div>
+      <input type="file" id="evid-file" accept="image/*" capture="environment" hidden>
+      <div style="margin-top:16px"><button class="btn p" onclick="guardarEvidencia()"><span class="ico">⬆️</span> Subir evidencia</button></div>
+    </div>
+    <h3>Últimas evidencias de esta sucursal</h3>
+    <div class="galeria" id="evid-galeria"></div>
+  </section>
+
+  <!-- ══════════ CIERRE ══════════ -->
+  <section class="screen" id="scr-cierre">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>🌙 Cierre de turno</h2>
+    <div class="card">
+      <label>Responsable del cierre</label>
+      <select id="cierre-persona"></select>
+      <div class="fila">
+        <div><label>Ventas NETAS del turno ($)</label>
+        <input id="cierre-ventas" type="number" inputmode="decimal" placeholder="0.00"></div>
+        <div><label>Dinero en caja ($)</label>
+        <input id="cierre-caja" type="number" inputmode="decimal" placeholder="0.00"></div>
+      </div>
+      <div id="cierre-checklist" style="margin-top:14px"></div>
+      <label>Foto de evidencia de cierre</label>
+      <div class="foto-drop" id="cierre-drop" onclick="document.getElementById('cierre-foto').click()">📷 Toca para tomar / subir foto</div>
+      <input type="file" id="cierre-foto" accept="image/*" capture="environment" hidden>
+      <label>Novedades del día</label>
+      <textarea id="cierre-novedades" placeholder="Incidencias, faltantes, ideas del equipo…"></textarea>
+      <div style="margin-top:18px"><button class="btn p gigante" onclick="guardarCierre()"><span class="ico">🌙</span> Enviar cierre de turno</button></div>
+    </div>
+  </section>
+
+  <!-- ══════════ PROTOCOLOS ══════════ -->
+  <section class="screen" id="scr-proto">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
+    <h2>📖 Protocolos Cíclope</h2>
+    <div id="proto-lista"></div>
+  </section>
+
+  <!-- ══════════ DIRECCIÓN ══════════ -->
+  <section class="screen" id="scr-dir">
+    <div class="topbar">
+      <img class="logo logo-img" alt="logo">
+      <div><div class="tit amar" style="font-weight:700">👁️ Dirección</div>
+        <div class="sub">El ojo que todo lo ve</div></div>
+      <div class="grow"></div>
+      <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
+      <button class="btn s mini" onclick="salirASucursales()">Salir</button>
+    </div>
+    <div class="tabs" id="dir-tabs">
+      <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
+      <button data-t="mes" onclick="dirTab('mes')">📅 Cierre de mes</button>
+      <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
+      <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>
+      <button data-t="evid" onclick="dirTab('evid')">📸 Evidencias</button>
+      <button data-t="admin" onclick="dirTab('admin')">⚙️ Administrar</button>
+    </div>
+    <div id="dir-contenido"></div>
+  </section>
+
+</div>
+
+<!-- ══════════ MODAL PIN ══════════ -->
+<div class="modal-fondo" id="modal-pin">
+  <div class="modal centrado">
+    <h3 id="pin-titulo">PIN de Dirección</h3>
+    <div class="pin-dots" id="pin-dots"><span></span><span></span><span></span><span></span></div>
+    <div class="pinpad" id="pinpad"></div>
+    <button class="btn s mini" onclick="cerrarPin()">Cancelar</button>
+  </div>
+</div>
+
+<!-- ══════════ MODAL GENERAL ══════════ -->
+<div class="modal-fondo" id="modal-gen" onclick="if(event.target===this)cerrarModal()">
+  <div class="modal" id="modal-gen-cuerpo"></div>
+</div>
+
+<div id="toast"></div>
+
+<script src="assets.js"></script>
+<script src="fotos-productos.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
