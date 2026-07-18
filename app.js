@@ -172,7 +172,7 @@ function seedDB() {
   const prods = SEED_PRODUCTOS.map(p => ({ id: uid(), nombre: p[0], unidad: p[1], minimo: p[2], cat: p[3] }));
   const stock = {}; [s1, s2].forEach(s => { stock[s] = {}; prods.forEach(p => stock[s][p.id] = { c: 0, t: 0 }); });
   return {
-    v: 1, ts: Date.now(),
+    v: 1, ts: Date.now(), catTs: 0,
     config: {
       adminPin: '2626', supervisorPin: '4040', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
       whatsapp: '527711232884', baseHoras: 6, nombreNegocio: 'El Anillo del Cíclope'
@@ -198,6 +198,11 @@ function migrarDB() {
   if (!db.tareas) db.tareas = [];
   if (!db.revisiones) db.revisiones = [];
   if (!db.config.supervisorPin) db.config.supervisorPin = '4040';
+  if (db.catTs === undefined) {
+    // instalaciones previas: si ya fue personalizada, su catálogo manda sobre los de fábrica
+    const personalizada = db.config.adminPin !== '2626' || db.config.supervisorPin !== '4040' || db.personal.length !== 5;
+    db.catTs = personalizada ? Date.now() : 0;
+  }
   const nombres = new Set(db.productos.map(p => p.nombre));
   SEED_PRODUCTOS.forEach(sp => {
     if (!nombres.has(sp[0])) {
@@ -211,6 +216,7 @@ function cargarDB() {
   try { const raw = localStorage.getItem(DB_KEY); if (raw) { db = JSON.parse(raw); migrarDB(); return; } } catch (e) { }
   db = seedDB(); guardarDB(false);
 }
+function tocarCatalogos() { db.catTs = Date.now(); }
 function guardarDB(sincronizar = true) {
   db.ts = Date.now();
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
@@ -1209,13 +1215,13 @@ function guardarSucursal(id) {
     db.sucursales.push({ id: nid, nombre, direccion: $('ms-dir').value.trim(), activa: true });
     db.stock[nid] = {}; db.productos.forEach(p => db.stock[nid][p.id] = { c: 0, t: 0 });
   }
-  guardarDB(); cerrarModal(); renderDireccion(); toast('🏬 Sucursal guardada');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🏬 Sucursal guardada');
 }
 function borrarSucursal(id) {
   if (turnosAbiertos(id).length) return toast('⚠️ Hay turnos abiertos en esta sucursal');
   if (!confirm('¿Eliminar la sucursal "' + suc(id).nombre + '"? Su historial se conserva pero dejará de aparecer.')) return;
   db.sucursales = db.sucursales.filter(s => s.id !== id);
-  guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Sucursal eliminada');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Sucursal eliminada');
 }
 function modalPersona(id) {
   const p = id ? per(id) : null;
@@ -1234,12 +1240,12 @@ function guardarPersona(id) {
   if (!nombre || pin.length !== 4) return toast('Nombre y PIN de 4 dígitos');
   if (id) { const p = per(id); Object.assign(p, { nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1' }); }
   else db.personal.push({ id: uid(), nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true });
-  guardarDB(); cerrarModal(); renderDireccion(); toast('👥 Colaborador guardado');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('👥 Colaborador guardado');
 }
 function borrarPersona(id) {
   if (!confirm('¿Eliminar a ' + per(id).nombre + '? Su historial de turnos se conserva.')) return;
   db.personal = db.personal.filter(p => p.id !== id);
-  guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Colaborador eliminado');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Colaborador eliminado');
 }
 let fotoProductoTmp = null; // null = sin cambio; '' = quitar; 'ruta/dataURL' = nueva
 function modalProducto(id) {
@@ -1291,12 +1297,12 @@ function guardarProducto(id) {
     db.productos.push(np);
     db.sucursales.forEach(s => { stockDe(s.id)[np.id] = { c: 0, t: 0 }; });
   }
-  guardarDB(); cerrarModal(); renderDireccion(); toast('📦 Producto guardado');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('📦 Producto guardado');
 }
 function borrarProducto(id) {
   if (!confirm('¿Eliminar "' + prod(id).nombre + '" del catálogo?')) return;
   db.productos = db.productos.filter(p => p.id !== id);
-  guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Producto eliminado');
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Producto eliminado');
 }
 function guardarConfig() {
   const c = db.config;
@@ -1308,7 +1314,7 @@ function guardarConfig() {
   c.emailTo = $('cfg-email').value.trim();
   c.whatsapp = $('cfg-wa').value.replace(/\D/g, '');
   c.scriptUrl = $('cfg-url').value.trim();
-  guardarDB(); pintarRed(); toast('💾 Configuración guardada');
+  tocarCatalogos(); guardarDB(); pintarRed(); toast('💾 Configuración guardada');
   if (enLinea()) sync(false);
 }
 function enlaceInstalacion() {

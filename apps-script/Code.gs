@@ -96,6 +96,16 @@ function mezclar(a, b) {
   var base = nuevoEsB ? b : a, otro = nuevoEsB ? a : b;
   var db = JSON.parse(JSON.stringify(base));
 
+  /* CATALOGOS (config, personal, productos, sucursales): gana quien tenga
+     la EDICION mas reciente (catTs). Un dispositivo recien instalado nace
+     con catTs=0, asi que nunca pisa la configuracion real del negocio.
+     En empate gana el servidor (a). */
+  var cat = ((b.catTs || 0) > (a.catTs || 0)) ? b : a;
+  ['config', 'personal', 'productos', 'sucursales'].forEach(function (k) {
+    if (cat[k]) db[k] = JSON.parse(JSON.stringify(cat[k]));
+  });
+  db.catTs = Math.max(a.catTs || 0, b.catTs || 0);
+
   ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
