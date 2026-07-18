@@ -67,101 +67,229 @@ const SEED_PRODUCTOS = [
   ['Limón pimienta', ESCALA + ' bote', 251, 'COC'], ['Papel Higiénico', 'Pieza (rollos)', 4, 'LIM'],
 ];
 const CATS = { TODOS: '✨ Todos', COC: '🍳 Cocina', BEB: '🥤 Bebidas', POC: '🧪 Pociones y postres', EMP: '📦 Empaques', LIM: '🧽 Limpieza', GEN: '🔧 Generales' };
+/* checklist de cierre histórico: hoy son las actividades del turno 2, pero los
+   cierres viejos guardaron estos 5 puntos, así que se conserva para leerlos */
 const CHECK_CIERRE = ['Limpieza de áreas completa', 'Equipos apagados', 'Basura fuera', 'Caja contada y registrada', 'Puertas y accesos cerrados'];
+const totalCierre = c => (c && c.total) || CHECK_CIERRE.length;
 
-/* Checklist operativo por turno (hoja CHECKLIST OPERATIVO v2)
-   dias: null = diario · [0..6] días aplicables (0=Dom) · auto: se marca solo */
-const TAREAS = [
-  { id: 't1-resp', turno: 1, n: 'Responsable de turno (registrar entrada)', hora: '12:55', dias: null, auto: 'entrada' },
-  { id: 't1-wa', turno: 1, n: 'Responder mensajes pendientes de WhatsApp', hora: '13:15', dias: null },
-  { id: 't1-plat', turno: 1, n: 'Encendido de plataformas (DiDi, Uber, Rappi)', hora: '13:15', dias: null },
-  { id: 't1-comedor', turno: 1, n: 'Comedor y pasillo trapeado', hora: '13:30', dias: null },
-  { id: 't1-bano', turno: 1, n: 'Baño trapeado y abastecido', hora: '14:00', dias: null },
-  { id: 't1-salsas', turno: 1, n: 'Rellenar mamilas de salsas', hora: '14:30', dias: null },
-  { id: 't1-refri', turno: 1, n: 'Limpieza de refrigerador', hora: '16:00', dias: [2, 4, 6] },
-  { id: 't1-freidoras', turno: 1, n: 'Limpieza de freidoras', hora: '16:00', dias: [1, 3, 5] },
-  { id: 't1-congelador', turno: 1, n: 'Limpieza de congelador', hora: '14:00', dias: [0] },
-  { id: 't1-plantas', turno: 1, n: 'Regar plantas', hora: '17:00', dias: [2] },
-  { id: 't2-resp', turno: 2, n: 'Responsable de turno (registrar entrada)', hora: '14:55', dias: null, auto: 'entrada' },
-  { id: 't2-cocina', turno: 2, n: 'Cocina barrida y trapeada', hora: '15:30', dias: null },
-  { id: 't2-mesas', turno: 2, n: 'Mesas de trabajo limpias y ordenadas', hora: '16:00', dias: null },
-  { id: 't2-inv', turno: 2, n: 'Realización de inventario', hora: '19:00', dias: null, auto: 'inventario' },
-  { id: 't2-crepera', turno: 2, n: 'Limpieza de crepera', hora: '19:00', dias: [1, 3, 5] },
-  { id: 't2-comedor', turno: 2, n: 'Comedor limpio y ordenado', hora: '20:55', dias: null },
-  { id: 't2-trastes', turno: 2, n: 'Trastes lavados', hora: '20:55', dias: null },
-  { id: 't2-invupd', turno: 2, n: 'Actualización de inventario', hora: '20:55', dias: null },
-  { id: 't2-basura', turno: 2, n: 'Sacar basura', hora: '20:55', dias: [1, 3, 5] },
+/* ═══ ESTRUCTURA DEL CHECKLIST (hoja de estructura, julio 2026) ═══
+   Sección 1 · CON EVIDENCIA: foto requerida al finalizar turno.
+   Sección 2 · SIN EVIDENCIA: acciones a lo largo del día.
+   Los dos primeros registros capturan el dinero del cierre. */
+const REGISTROS = [
+  { id: 'r-ventas', n: 'Ventas cierre', em: '💵', tipo: 'cierre', dinero: 'ventas', ph: 'Ventas netas $' },
+  { id: 'r-caja', n: 'Caja de dinero', em: '🧾', tipo: 'cierre', dinero: 'caja', ph: 'Dinero en caja $' },
+  { id: 'r-trastes', n: 'Trastes limpios', em: '🍽️', tipo: 'limpieza' },
+  { id: 'r-mesas', n: 'Mesas preparadas', em: '🪑', tipo: 'limpieza' },
+  { id: 'r-bano', n: 'Baño limpio', em: '🚻', tipo: 'limpieza' },
+  { id: 'r-cocina', n: 'Cocina limpia y ordenada', em: '🍳', tipo: 'limpieza' },
 ];
-function tareasDelDia(turno, fechaISO) {
+/* dias: sin definir = diario · [0..6] días aplicables (0 = domingo) */
+const ACCIONES = [
+  { id: 'a-salsa-abismo', n: 'Preparación Salsa Abismo' },
+  { id: 'a-masa-crepi', n: 'Preparación Masa Crepiburger' },
+  { id: 'a-salsa-aliento', n: 'Preparación Salsa Aliento D' },
+  { id: 'a-mamilas', n: 'Mamilas llenas' },
+  { id: 'a-queso', n: 'Queso rallado' },
+  { id: 'a-alitas', n: 'Alitas precongeladas' },
+  { id: 'a-lechuga', n: 'Lechuga desinfectada' },
+  { id: 'a-stickers', n: 'Empaque stickers' },
+  { id: 'a-papel', n: 'Papel cortado' },
+  { id: 'a-wa', n: 'Responder mensajes pendientes de WhatsApp' },
+  { id: 'a-plataformas', n: 'Encendido de plataformas (DiDi, Uber, Rappi)' },
+  { id: 'a-comedor', n: 'Comedor y pasillo trapeado' },
+  { id: 'a-bano', n: 'Baño trapeado y abastecido' },
+  { id: 'a-refri', n: 'Limpieza de refrigerador', dias: [2, 4, 6] },
+  { id: 'a-freidoras', n: 'Limpieza de freidoras', dias: [1, 3, 5] },
+  { id: 'a-congelador', n: 'Limpieza de congelador', dias: [0] },
+];
+const DIAS_SEM = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
+function tareasDelDia(fechaISO) {
   const d = new Date((fechaISO || hoyISO()) + 'T12:00:00').getDay();
-  return TAREAS.filter(t => t.turno === turno && (!t.dias || t.dias.includes(d)));
+  return ACCIONES.filter(t => !t.dias || t.dias.includes(d));
 }
+function evidenciaDeRegistro(rid, fecha, sid) {
+  fecha = fecha || hoyISO(); sid = sid || sucursalActual;
+  return db.evidencias.find(e => e.regId === rid && e.fecha === fecha && e.sucursalId === sid);
+}
+const cierreDelDia = (fecha, sid) => db.cierres.find(c => c.fecha === (fecha || hoyISO()) && c.sucursalId === (sid || sucursalActual));
+
+/* Preparaciones sugeridas (el equipo puede escribir otra) */
+const PREPARACIONES = ['Salsa Abismo', 'Salsa Aliento D', 'Masa Crepiburger', 'Mamilas de salsas', 'Queso rallado',
+  'Alitas precongeladas', 'Lechuga desinfectada', 'Papel cortado', 'Empaque con stickers', 'Otra'];
 const tareaKey = (fecha, sid, tid) => ['tk', fecha, sid, tid].join('|');
 function regTarea(tid, fecha, sid) { return db.tareas.find(x => x.id === tareaKey(fecha || hoyISO(), sid || sucursalActual, tid)); }
 function tareaHecha(t, fecha, sid) {
-  fecha = fecha || hoyISO(); sid = sid || sucursalActual;
-  if (t.auto === 'entrada') {
-    const tt = db.turnos.find(x => x.fecha === fecha && x.sucursalId === sid && x.tipo === (t.turno === 1 ? 'matutino' : 'vespertino'));
-    return tt ? { done: true, por: per(tt.personalId)?.nombre || '', ts: tt.entrada, auto: true, ver: !!regTarea(t.id, fecha, sid)?.ver } : null;
-  }
-  const r = regTarea(t.id, fecha, sid);
+  const r = regTarea(t.id, fecha || hoyISO(), sid || sucursalActual);
   return (r && r.done) ? r : null;
 }
-function horaLimitePasada(t, fecha) {
-  if ((fecha || hoyISO()) !== hoyISO()) return true;
-  const [h, m] = t.hora.split(':').map(Number);
-  const ahora = new Date();
-  return ahora.getHours() * 60 + ahora.getMinutes() > h * 60 + m;
+/* nota de periodicidad para las acciones que no son diarias */
+function notaTarea(t) {
+  if (!t.dias) return 'Todos los días';
+  const d = t.dias.map(x => DIAS_SEM[x]);
+  return 'Solo ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' y ' + d[d.length - 1] : d[0]);
 }
-function fmtHoraLimite(h) { const [hh, mm] = h.split(':').map(Number); const pm = hh >= 12; return ((hh + 11) % 12 + 1) + ':' + String(mm).padStart(2, '0') + (pm ? ' pm' : ' am'); }
 
+/* Protocolos = Manual de Procedimientos de Sucursal v1.0 (marzo 2026).
+   Mismo orden y secciones que el documento de Dirección. */
 const PROTOCOLOS = [
-  ['1. Generales', [
-    ['Apertura del restaurante', 'Encender luces y música · Encender equipos · Restaurante listo antes de abrir.'],
-    ['Checklist', 'Ingresar nombre y hora de entrada · Completar checklist sin improvisaciones.'],
-    ['Cierre del restaurante', 'Limpiar todas las áreas · Apagar equipos · Registrar todo en el sistema.'],
-    ['Comunicación interna', 'Reportar incidencias por WhatsApp grupal · Lenguaje respetuoso.'],
-    ['Seguridad y emergencia', 'Conocer ubicación de botiquín y extintor · Mantener la calma y proteger a clientes.'],
-    ['Fallas eléctricas', 'Confirmar el corte · Actuar rápido y seguro · Avisar a Dirección.'],
-    ['Control de accesos', 'Solo vendedores, técnicos o proveedores autorizados.'],
+  ['1. Apertura y cierre', [
+    ['Responsable', 'Equipo operativo: abre y cierra la tienda, verifica estado general de la sucursal, revisa el fondo de caja y asegura que instalaciones y equipos queden apagados.'],
+    ['Apertura (Turno 1)', 'Llegar 5 min antes · Luces de pasillo y comedor · TV con Spotify de la cuenta autorizada · Sacar material gráfico · Encender terminal, teléfono, computadora y tablet.'],
+    ['Apertura · plataformas y orden', 'Activar DiDi, Uber Eats y Rappi · Responder WhatsApp pendiente · Verificar limpieza y orden (mesas, pisos, adornos, baño, insumos).'],
+    ['Apertura · caja y equipos', 'Verificar que el fondo de caja autorizado de $350 esté completo · Confirmar que todos los equipos funcionen · Abrir en el horario establecido.'],
+    ['Servicio antes del cierre', '8:15 pm primer aviso: preguntar si desean algo más porque va a cerrar cocina · 8:20 pm servicio solo para llevar · 8:30 pm segundo aviso y retirar platos muertos · Tercer aviso: no se permite abierto después de las 9:00 pm.'],
+    ['Cierre (Turno 2)', 'Ingresar material gráfico 8:20 pm · Finalizar ventas en la tablet · Corte de caja · Verificar que el efectivo coincida con lo registrado · Limpieza de la sucursal.'],
+    ['Cierre · equipos y salida', 'Verificar actualizaciones de inventario · Apagar equipos utilizados · Apagar iluminación · Notificar cualquier anomalía · Cerrar puerta.'],
+    ['Horarios extra', 'Si se trabajan horarios extra se paga proporcionalmente el tiempo con base en el pago base del colaborador.'],
   ]],
-  ['2. Atención al cliente', [
-    ['Bienvenida', 'Saludo cálido y temático — mantener el performance del Universo Cíclope.'],
-    ['Cumpleaños y festividades', 'Felicitar amablemente · Experiencia especial y uniforme.'],
-    ['Toma de pedido', 'Usar la tablet punto de venta · Escuchar con atención y amabilidad.'],
-    ['Entrega de platillos', 'Confirmar con cocina sabor y mesa · Presentación correcta.'],
-    ['Reclamaciones', 'Escuchar sin interrumpir · Disculparse y ofrecer solución.'],
-    ['Juegos y videojuegos', 'Mantener orden y limpieza de juegos de mesa y consolas.'],
-    ['Música y TV', 'Uso exclusivo de las cuentas de El Anillo del Cíclope.'],
-    ['Niveles de afluencia', 'Ejecutar de forma organizada, controlada y proactiva según nivel.'],
-    ['Petfriendly', '2 preguntas filtro: ¿mascota tranquila? · Experiencia segura y positiva.'],
-    ['Mensajería y llamadas', 'Responder en menos de 2 minutos, alineado a la cultura Cíclope.'],
-    ['Despedida', 'Preguntar qué les pareció · Agradecer la visita.'],
+  ['2. Seguridad y emergencias', [
+    ['Prevención', 'Salidas despejadas · Verificar instalaciones eléctricas y de gas · Extintor y botiquín accesibles · Evitar pisos mojados, cables expuestos y aceite en el piso · Supervisar juegos y a los menores · Todo riesgo se corrige de inmediato.'],
+    ['Accidente leve', 'Atender con botiquín · Notificar al encargado · Registrar el incidente.'],
+    ['Incendio', 'Mantener la calma · Usar extintor solo si el fuego es controlable · Evacuar a los clientes · Llamar al 911 · Salir con calma y prontitud · Notificar a Dirección.'],
+    ['Conflicto con cliente', 'Tono calmado y respetuoso · Escalar al encargado · Registrar en el Formato de incidentes · Priorizar la seguridad del equipo y del cliente.'],
+    ['Fallas eléctricas', 'Confirmar fusibles · Confirmar con vecinos si es falla general · Desconectar equipos · Notificar a Dirección · Registrar la incidencia.'],
+    ['Robo o intento de fraude', 'Notificar al encargado de inmediato · Observar y registrar comportamiento · No poner en riesgo al equipo · Registrar el incidente · La seguridad va antes que recuperar producto o dinero.'],
+    ['Manejo de efectivo', 'Mantener el efectivo organizado · No contar dinero frente a clientes · Verificar pagos antes de entregar · Reportar diferencias de inmediato.'],
   ]],
-  ['3. Cocina y producción', [
-    ['Preparaciones', 'Seguir receta base · Respetar gramajes y tiempos · Montaje estándar.'],
-    ['Conservación de insumos', 'Guardar por tipo (seco, frío, congelado) · Evitar desperdicio.'],
-    ['Limpieza y desinfección', 'Lavado de manos y gel · Lavar áreas y utensilios después de usar.'],
+  ['3. Atención al cliente', [
+    ['Tiempos', 'Todo cliente debe ser atendido en máximo 5 segundos · Todo pedido debe ser escuchado, confirmado y registrado correctamente.'],
+    ['Bienvenida', 'Recibir de inmediato · Saludar con entusiasmo y energía · Contacto visual · Invitar a tomar asiento · Ofrecer menú sonriendo · Preguntar si es su primera visita.'],
+    ['Durante la estancia', 'Escuchar activamente · Resolver dudas del menú · Recomendar cuando haga falta · Actitud respetuosa y segura · Sin distracciones: nada de celular ni conversaciones internas.'],
+    ['Seguimiento y entrega', 'Dar seguimiento al pedido · Informar tiempos de espera · Verificar que reciba lo correcto · Estar disponible sin ser invasivo · Confirmar que el pedido esté completo · Agradecer.'],
+    ['Despedida', 'Despedir de forma cordial · Invitar a regresar · Mantener actitud positiva hasta que el cliente se retire.'],
+    ['Incentivos', 'Verificar registro de compras · Confirmar que cumple la condición · Informar la cortesía · Registrar el incentivo · Agregar al ticket con el descuento que aplique.'],
+    ['Quejas y situaciones difíciles', 'Escuchar sin interrumpir · Mantener calma y postura profesional · Validar la inconformidad · Ofrecer solución inmediata si está en tu alcance · Escalar al encargado · Registrar la incidencia.'],
+    ['Mensajes y llamadas', 'Atender a la forma de escribir o hablar · Preguntas filtro (ubicación, anticipo) · A clientes nuevos pedir 50% de anticipo · Notificar a Dirección · Registrar la incidencia.'],
+    ['Estándares de servicio', 'Actitud positiva constante · Comunicación clara · Rapidez · Presentación personal adecuada · Lenguaje respetuoso · Enfoque en la solución.'],
+    ['Consideraciones', 'El cliente nunca debe sentirse ignorado · No discutir ni contradecir · Cada interacción representa a la marca · La experiencia importa tanto como el producto · El servicio no depende del estado de ánimo.'],
   ]],
-  ['4. Tecnología', [
-    ['Uso de Tablet', 'Registrar pedidos sin errores en el punto de venta.'],
-    ['Plataformas Delivery', 'Revisar DiDi, Uber y Rappi activas · Precisión y tiempos.'],
-    ['Computadora', 'Control digital y reportes desde el perfil del restaurante.'],
+  ['4. Experiencia de sucursal', [
+    ['Ambientación', 'Activar música desde la cuenta autorizada · Verificar volumen adecuado · Encender y configurar la televisión · Mantener coherencia del ambiente durante todo el turno.'],
+    ['Juegos y entretenimiento', 'Juegos limpios y en buen estado · Explicar su uso · Supervisar el uso adecuado · Cuidar la seguridad, sobre todo con niños · Recoger y ordenar después de usar.'],
+    ['Supervisión de juegos', 'Detectar riesgo de lesión, daño al juego, molestia a otros clientes o uso inadecuado.'],
+    ['Intervención · nivel 1', 'Explicar el uso correcto y pedir apoyo: "Estos juegos se usan así para evitar accidentes, ¿nos apoyan?"'],
+    ['Intervención · nivel 2', 'Reforzar la indicación: "Lo comentamos antes, es para evitar riesgos. Gracias por apoyarnos."'],
+    ['Intervención · nivel 3', 'Indicar la consecuencia: "Si no se respeta, tendremos que pausar el uso del juego."'],
+    ['Restricciones', 'No discutir · No intervenir físicamente · No ignorar.'],
+    ['Celebraciones', 'Detectar cumpleaños u ocasiones especiales · Notificar al equipo · Activar la dinámica (mañanitas, interacción) · Entregar el detalle correspondiente.'],
+    ['Control durante operación', 'Ajustar la experiencia según el nivel de afluencia · Priorizar operación en alta demanda · Mantener equilibrio entre servicio y experiencia.'],
   ]],
-  ['5. Mantenimiento de áreas', [
-    ['Área de comensales', 'Siempre una persona fuera de cocina · Revisar iluminación y ambientación.'],
-    ['Barra de entrega', 'Sin objetos personales · Zona funcional y limpia.'],
-    ['Baños', 'Revisión cada hora · Reponer papel, jabón y sanitas.'],
+  ['5. Toma de pedidos', [
+    ['Procedimiento', 'Usar la tablet punto de venta · Escuchar con atención y amabilidad · Verificar existencias antes de ofrecer sabores o tamaños · Verificar sabores y solicitudes específicas.'],
+    ['Registro', 'Preguntar nombre y apellido y registrarlo en la tablet · Confirmar el pedido en voz alta · Invitar a jugar los juegos de mesa · Recoger el menú y retirarse con amabilidad: "En un momento vuelvo con su orden".'],
+    ['Cocina y tickets', 'Imprimir ticket y mandar a cocina · Si piden algo nuevo, actualizar el ticket de inmediato · Imprimir el nuevo y desechar el desactualizado.'],
+    ['Cobro', 'Entregar ticket impreso en ataúd con dulce · Confirmar forma de pago · Realizar el cobro · Resguardar billetes de alta denominación.'],
+    ['Facturación', 'Solicitar datos fiscales · Confirmar el uso de CFDI · Solicitar teléfono y correo · Notificar a Dirección para emitir la factura.'],
+    ['Envíos a domicilio', 'Comunicar el precio de envío · Solicitar ubicación por Google Maps y foto de referencia · Confirmar disponibilidad en el grupo de repartidores · Compartir ubicación y contacto.'],
   ]],
-  ['6. Cultura interna', [
-    ['Reglamento interno', 'Trato respetuoso · Conducta y actitud profesional.'],
-    ['Evaluación de desempeño', 'Revisión semanal de cumplimiento · Retroalimentación.'],
-    ['Sanciones y actualización', 'Garantizar orden, seguridad y calidad · Manual vigente.'],
+  ['6. Limpieza y orden', [
+    ['Durante el turno', 'Limpiar mesas después de cada cliente · Mantener piso seco · Ordenar el área de trabajo constantemente · Revisar el baño periódicamente.'],
+    ['Antes del cierre', 'Barrer y trapear toda la sucursal · Limpiar superficies y equipos · Vaciar basura · Reponer insumos básicos · Dejar todo listo para el siguiente turno.'],
+    ['Comedor', 'Mesas limpias y ordenadas · Todas con menú, servilletas y material promocional · Verificar iluminación y ventilación.'],
+    ['Cocina', 'Lavarse las manos constantemente y usar gel · Limpieza de piso constante · Limpiar áreas y utensilios después de usarlos · Solo productos autorizados.'],
+    ['Baño', 'Revisión constante · Limpieza de piso constante · Reponer papel, jabón y secador · Notificar cualquier falla de agua o luz.'],
+    ['Curado de discos', 'Limpiar el disco · Precalentar a medio-bajo 3 min · Humedecer servitoalla en aceite y aplicar · Esperar 8-10 min y repetir de 3 a 5 veces · El humo y el color café son normales · No lavar después del curado.'],
+  ]],
+  ['7. Preparaciones', [
+    ['Procedimiento', 'Lavarse las manos antes de iniciar · Verificar ingredientes y stock · Seguir receta y gramaje establecido · Mantener el área limpia durante la preparación.'],
+    ['Calidad', 'Respetar tiempos de cocción · Montar el producto según el estándar visual · Verificar calidad antes de entregar · Entregar el pedido completo.'],
+    ['Control', 'Cumplir con el checklist de preparación y control de cocina del turno (F-Cocina, en Formatos Operativos).'],
+    ['Recetario', 'Consulta gramajes, aderezos y montaje de cada producto en la pestaña Recetario de la pantalla de Preparaciones.'],
+  ]],
+  ['8. Equipos y sistemas', [
+    ['Encendido y verificación', 'Encender tablet, terminal y equipos de cocina · Verificar conexión a internet · Confirmar funcionamiento de plataformas · Revisar estado general de los equipos.'],
+    ['Tablet (punto de venta)', 'Registrar pedidos correctamente · Confirmar información antes de enviar · Abrir nuevo turno diario · Imprimir ticket de orden para cocina · Cerrar siempre el turno al terminar.'],
+    ['Tablet · cobros', 'Descontar el 4% al pagar con la terminal Mercado Pago · Descontar el 10% en pedidos de plataformas · Indicar correctamente la forma de pago · Reportar incidencias o falta de producto a Dirección.'],
+    ['Plataformas digitales', 'Activar Rappi, Uber Eats y DiDi Food desde el perfil de Google del negocio · Activar al inicio del turno · Revisar pedidos constantemente y confirmarlos en tiempo · Dar seguimiento hasta la entrega.'],
+    ['Plataformas · prioridad', 'Priorizar pedidos de plataformas sobre cualquier otro · Empaquetar correctamente (embolsar cajas y emplayar bebidas) · Mantener el volumen de la computadora al 100 para escuchar los avisos.'],
+    ['Equipos de cocina', 'Operar únicamente equipos autorizados · Verificar temperatura y condiciones antes de usar · Mantener limpieza durante y después · Apagar correctamente al finalizar.'],
+    ['Cierre y resguardo', 'Apagar todos los equipos · Desconectar si es necesario · Limpiar superficies · Reportar fallas o anomalías · Mantener la tablet siempre con batería y sin cargadores no autorizados.'],
+  ]],
+  ['9. Errores operativos', [
+    ['Detección', 'Identificar el error (pedido, producto, tiempo, atención) · Confirmar la situación con el cliente o el equipo · No ignorar ni minimizar.'],
+    ['Reconocimiento', 'Informar al cliente con claridad · Ofrecer una disculpa breve y profesional · No justificar ni culpar a terceros.'],
+    ['Corrección inmediata', 'Determinar la solución adecuada · Priorizar la corrección sobre nuevos pedidos según la afluencia · Notificar a cocina o al área correspondiente · Dar seguimiento hasta resolver.'],
+    ['Comunicación', 'Mantener informado al cliente · Indicar tiempo estimado de corrección · Confirmar su satisfacción al finalizar.'],
+    ['Registro', 'Registrar el incidente en el formato correspondiente · Indicar tipo de error · Identificar la causa si es evidente · Reportar al encargado.'],
+    ['Errores más comunes', 'Pedido mal tomado · Pedido incompleto · Producto incorrecto · Retraso en la entrega · Problema en la atención.'],
+  ]],
+  ['10. Evaluación operativa', [
+    ['Método', 'Observación directa durante la operación · Registro de desempeño · Retroalimentación al finalizar turno o jornada · Definición de mejoras · Seguimiento continuo.'],
+    ['Criterios', 'Atención al cliente · Rapidez · Orden y limpieza · Trabajo en equipo · Cumplimiento de procesos.'],
+  ]],
+  ['11. Incidencias y sanciones', [
+    ['Incidencias operativas', 'Fallas de equipo · Errores en pedidos · Falta de insumos. Se registran en sucursal.'],
+    ['Incidencias del equipo', 'Retardos · Inasistencias · Incumplimiento de procesos · Conducta inapropiada. Las registra Dirección.'],
+    ['Niveles de incidencia', 'Leve · Media · Grave.'],
+    ['Criterios de sanción', 'Se aplica sanción cuando hay reincidencia, la falta es grave, existe negligencia o se afecta la operación.'],
+    ['Sanción nivel 1', 'Llamada de atención.'],
+    ['Sanción nivel 2', 'Llamada de atención + pérdida de beneficios.'],
+    ['Sanción nivel 3', 'Suspensión, descuento o baja.'],
+  ]],
+  ['12. Auditoría de sucursales', [
+    ['Preparación', 'Definir fecha y tipo (programada o sorpresa) · Contar con los formatos de evaluación · Revisar auditorías anteriores · Establecer el enfoque (general o específico).'],
+    ['Inicio', 'Llegar sin interrumpir la operación · Observar el estado general (orden, limpieza, ambiente) · Evaluar sin intervenir al principio.'],
+    ['Qué se evalúa', 'Apertura · Atención al cliente (tiempo, saludo, claridad, actitud) · Preparación de alimentos (recetas, orden, tiempos) · Entrega (exactitud, presentación, tiempo) · Equipos y sistemas · Limpieza · Ambientación · Protocolos.'],
+    ['Evaluación del personal', 'Presentación personal · Actitud y disposición · Trabajo en equipo · Cumplimiento de funciones.'],
+    ['Registro y cierre', 'Completar el formato de auditoría · Asignar calificaciones por área · Identificar desviaciones · Registrar evidencias.'],
+    ['Retroalimentación', 'Comunicar resultados al equipo o encargado · Señalar aciertos y áreas de mejora · Establecer acciones correctivas con responsables y tiempos.'],
+    ['Seguimiento', 'Verificar cumplimiento de mejoras · Programar nueva auditoría · Comparar resultados con auditorías anteriores.'],
+  ]],
+];
+
+/* Recetario — hoja de recetas de Dirección (gramajes y montaje) */
+const RECETAS = [
+  ['Entradas y snacks', [
+    ['Papas Muertas', 'Papa recta 250 g · 1 catsup y queso · Extra: limón pimienta.'],
+    ['Papas Enigma', 'Papa curly 250 g · 1 catsup y queso · Extra: limón pimienta.'],
+    ['Papas Colmillo', 'Papa gajo hot 250 g · Buffalo y limón pimienta.'],
+    ['Papas Abismo', 'Papas de la casa 250 g · Salsa quesos · Extra: tocino ahumado.'],
+    ['Dedos Cíclope', 'Orden de 5 dedos de queso · 1 catsup.'],
+  ]],
+  ['Alimentos y paquetes', [
+    ['7 Cerebros', '7 boneless (220 g) · 1 ranch · 1 espada · 1 salsa · Dip +$10.'],
+    ['14 Cerebros', '14 boneless (440 g) · 2 ranch · 2 espadas · 2 salsas · Dip +$10.'],
+    ['1/2 kg Cerebros', '440 g boneless · 2 ranch · 2 espadas · 2 salsas · Dip +$10.'],
+    ['1 kg Cerebros', '900 g boneless · 3 ranch · 3 espadas · 3 salsas · Dip +$10.'],
+    ['Paquete Cerebritos', 'Mini boneless 100 g · Papa recta 125 g · 1 catsup y queso · 2 dedos · 1 espada · 1 salsa · Cambio de papas +$15.'],
+    ['Paquete Cíclope', 'Boneless 220 g · Papa recta 135 g · 1 catsup y queso · 1 espada · 1 salsa · 1 bebida · Cambio de papas +$15.'],
+    ['Paquete Aquelarre', '1 kg boneless (900 g) · Mix 125 g gajo + 125 g curly · 1 catsup y queso + 2 ranch · 3 dedos · 3 bebidas.'],
+    ['Paquete Volcaneitor', 'Hot dog 50 g · Papa recta 80 g · Salsa volcánica · Brebaje · 1 salsa.'],
+    ['Paquete Espanto', 'Crepiburger (80 g si es Zombie) · Papa recta 81 g · Salsa volcánica · Brebaje · 2 salsas.'],
+    ['Crepiburger Zombie', 'Boneless 80 g · Papa recta 80 g · 1 catsup · 1 salsa.'],
+    ['Crepiburger Minotauro', '1 arrachera · Papa recta 80 g · 1 catsup · BBQ o catsup dentro.'],
+    ['Crepiburger Dragón', '1 pollo · Papa recta 80 g · 1 catsup · BBQ o catsup dentro.'],
+    ['Volcanino', 'Hot dog 40 g · Papa recta 80 g · Salsa volcánica · 1 salsa.'],
+  ]],
+  ['Promociones', [
+    ['Lunes y miércoles', '14 boneless (420 g) · Papa recta 180 g · 1 catsup y queso + 2 ranch · 2 salsas · 2 bebidas.'],
+    ['Martes', 'Crepiburger · Papa recta 80 g · 1 bebida.'],
+    ['Jueves y sábado', '1 kg boneless (900 g) · 3 ranch · 3 espadas · 2 salsas · Dip +$10.'],
+    ['Viernes', '2 pociones · Cambio a poción especial disponible.'],
+    ['Domingo', '7 boneless (220 g) · 1 ranch · Brebaje · 1 salsa · Dip +$10.'],
+  ]],
+  ['Pociones (malteadas)', [
+    ['Baba de Ogro', 'Vainilla · 4 bolas · 4 oz leche evaporada · 2 hielos · 1 chorrito vainilla · Adorno: chocolate líquido.'],
+    ['Materia Gris', 'Vainilla · 4 bolas · 4 oz leche evaporada · 2 hielos · 4 cdas ch de oreo · Adorno: oreo espolvoreado.'],
+    ['Sangre de Hada', 'Fresa · 4 bolas · 4 oz leche evaporada · 2 hielos · 1 cda ch de mermelada · Adorno: brillantina roja.'],
+    ['Lodo del Pantano', 'Chocolate · 4 bolas · 4 oz leche evaporada · 2 hielos · 1 cda de cocoa · Adorno: chocolate líquido.'],
+    ['Abducción', 'Chocomenta · 4 bolas · 4 oz leche evaporada · 2 hielos · 5 chocoretas · 8 gotas de colorante verde · Adorno: chocolate líquido.'],
+    ['Sirena Cósmica', 'Vainilla · 4 bolas · 4 oz leche evaporada · 2 hielos · 1 cda G de avellanas · 8 gotas de colorante verde · Adorno: brillantina azul.'],
+    ['Gansito Hechizado', 'Fresa y chocolate (3 y 1) · 4 oz leche evaporada · 2 hielos · 3/4 gansito molido · 1 cda ch de fresa · Adorno: 1/4 de gansito.'],
+    ['Mazaurio', 'Vainilla · 4 bolas · 4 oz leche evaporada · 2 hielos · Mazapán molido · Adorno: resto de mazapán y huesito.'],
+  ]],
+  ['Brebajes', [
+    ['Draculín', 'Agua 8 oz (marca en vaso) · 2 hielos (vaso al congelador) · Jarabe frutos rojos 1 1/2 · Megalimón 1 oz · 2 huesitos.'],
+    ['Troll', 'Agua 8 oz · 2 hielos (vaso al congelador) · Jarabe mora azul 1 1/2 · Megalimón 1 oz · 2 huesitos.'],
+    ['Medusín', 'Agua 8 oz · 2 hielos (vaso al congelador) · Jarabe manzana verde 1 1/2 oz · Megalimón 3/4 oz · 2 huesitos.'],
+    ['Yeti', '4 oz leche evaporada · 4 oz lechera · 3 hielos (vaso al congelador) · 1 cdta harina de arroz y 1 cdta canela · Mezclar en mixer · 2 huesitos.'],
   ]],
 ];
 
 /* ---------- base de datos ---------- */
-const DB_KEY = 'ojo_maestro_db';
+const DB_KEY = 'ojo_maestro_db_v2';
+const slug = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 let db = null;
 let sucursalActual = null;   // id de sucursal activa en esta tablet
 let esAdmin = false;
@@ -169,27 +297,29 @@ let tabDir = 'hoy';
 
 function seedDB() {
   const s1 = 'suc-revolucion', s2 = 'suc-tulipanes';
-  const prods = SEED_PRODUCTOS.map(p => ({ id: uid(), nombre: p[0], unidad: p[1], minimo: p[2], cat: p[3] }));
+  // ids deterministas: todas las instalaciones comparten los mismos, así la
+  // sincronización une registros en lugar de duplicarlos
+  const prods = SEED_PRODUCTOS.map(p => ({ id: 'p-' + slug(p[0]), nombre: p[0], unidad: p[1], minimo: p[2], cat: p[3], t: 0 }));
   const stock = {}; [s1, s2].forEach(s => { stock[s] = {}; prods.forEach(p => stock[s][p.id] = { c: 0, t: 0 }); });
   return {
-    v: 1, ts: Date.now(), catTs: 0,
+    v: 2, ts: Date.now(), catTs: 0, configTs: {},
     config: {
       adminPin: '2626', supervisorPin: '4040', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
       whatsapp: '527711232884', baseHoras: 6, nombreNegocio: 'El Anillo del Cíclope'
     },
     sucursales: [
-      { id: s1, nombre: 'Revolución', direccion: 'Emilio Asiain 119, Revolución, Pachuca', activa: true },
-      { id: s2, nombre: 'Tulipanes', direccion: 'Av. de los Árboles 147, Los Pinos, Pachuca', activa: true },
+      { id: s1, nombre: 'Revolución', direccion: 'Emilio Asiain 119, Revolución, Pachuca', activa: true, t: 0 },
+      { id: s2, nombre: 'Tulipanes', direccion: 'Av. de los Árboles 147, Los Pinos, Pachuca', activa: true, t: 0 },
     ],
     personal: [
-      { id: uid(), nombre: 'Añex', pin: '1111', pagoTurno: 300, pagoHora: 50, activo: true },
-      { id: uid(), nombre: 'Ambré', pin: '2222', pagoTurno: 300, pagoHora: 50, activo: true },
-      { id: uid(), nombre: 'Alex', pin: '3333', pagoTurno: 300, pagoHora: 50, activo: true },
-      { id: uid(), nombre: 'Mori', pin: '4444', pagoTurno: 300, pagoHora: 50, activo: true },
-      { id: uid(), nombre: 'Jaz', pin: '5555', pagoTurno: 300, pagoHora: 50, activo: true },
+      { id: 'per-anex', nombre: 'Añex', pin: '1111', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-ambre', nombre: 'Ambré', pin: '2222', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-alex', nombre: 'Alex', pin: '3333', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-mori', nombre: 'Mori', pin: '4444', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-jaz', nombre: 'Jaz', pin: '5555', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
     ],
     productos: prods, stock,
-    turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [],
+    turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
   };
 }
 function migrarDB() {
@@ -197,16 +327,14 @@ function migrarDB() {
   if (!db.propinas) db.propinas = [];
   if (!db.tareas) db.tareas = [];
   if (!db.revisiones) db.revisiones = [];
+  if (!db.preparaciones) db.preparaciones = [];
   if (!db.config.supervisorPin) db.config.supervisorPin = '4040';
-  if (db.catTs === undefined) {
-    // instalaciones previas: si ya fue personalizada, su catálogo manda sobre los de fábrica
-    const personalizada = db.config.adminPin !== '2626' || db.config.supervisorPin !== '4040' || db.personal.length !== 5;
-    db.catTs = personalizada ? Date.now() : 0;
-  }
+  if (!db.configTs) db.configTs = {};
+  if (db.catTs === undefined) db.catTs = 0;
   const nombres = new Set(db.productos.map(p => p.nombre));
   SEED_PRODUCTOS.forEach(sp => {
     if (!nombres.has(sp[0])) {
-      const np = { id: uid(), nombre: sp[0], unidad: sp[1], minimo: sp[2], cat: sp[3] };
+      const np = { id: 'p-' + slug(sp[0]), nombre: sp[0], unidad: sp[1], minimo: sp[2], cat: sp[3], t: 0 };
       db.productos.push(np);
       db.sucursales.forEach(s => { if (!db.stock[s.id]) db.stock[s.id] = {}; db.stock[s.id][np.id] = { c: 0, t: 0 }; });
     }
@@ -326,7 +454,7 @@ function estadoStock(sid, p) {
   const s = stockDe(sid)[p.id]; const c = s ? s.c : 0;
   return c <= 0 ? 'agotado' : (c < p.minimo ? 'comprar' : 'ok');
 }
-function faltantes(sid) { return db.productos.filter(p => estadoStock(sid, p) !== 'ok'); }
+function faltantes(sid) { return db.productos.filter(p => !p.del && estadoStock(sid, p) !== 'ok'); }
 function prodFoto(p) { return p.foto || (window.CICLOPE_FOTOS && CICLOPE_FOTOS[p.nombre]) || ''; }
 function miniProd(p, lado = 46) {
   const f = prodFoto(p);
@@ -334,19 +462,32 @@ function miniProd(p, lado = 46) {
     : '<div style="width:' + lado + 'px;height:' + lado + 'px;border-radius:10px;background:var(--fondo-4);display:flex;align-items:center;justify-content:center;flex-shrink:0">📦</div>';
 }
 function turnoSugerido() { return new Date().getHours() < 14 ? 'matutino' : 'vespertino'; }
+/* Pago POR DÍA: entrada + cierre = un turno completo, sin prorrateo por minutos
+   sueltos. Los minutos de más o de menos se capturan en bloques de 20 min
+   (t.ajuste = número de bloques, positivo o negativo). */
+const BLOQUE_MIN = 20;
+const tarifaBloque = p => (p.pagoHora || 0) * BLOQUE_MIN / 60;
 function calcularPago(t) {
-  const p = per(t.personalId); if (!p || !t.salida) return { horas: 0, pago: 0, extra: 0 };
+  const p = per(t.personalId);
+  if (!p || !t.salida) return { horas: 0, pago: 0, extra: 0, bloques: 0, min: 0 };
   const horas = (t.salida - t.entrada) / 36e5;
-  const base = db.config.baseHoras || 6;
-  let pago, extra = 0;
-  if (horas >= base) { extra = (horas - base) * (p.pagoHora || 0); pago = (p.pagoTurno || 0) + extra; }
-  else pago = (p.pagoTurno || 0) * horas / base;
-  return { horas: Math.round(horas * 100) / 100, pago: Math.round(pago * 100) / 100, extra: Math.round(extra * 100) / 100 };
+  const bloques = Number(t.ajuste || 0);
+  const extra = bloques * tarifaBloque(p);
+  const pago = Math.max(0, (p.pagoTurno || 0) + extra);
+  const r = n => Math.round(n * 100) / 100;
+  return { horas: r(horas), pago: r(pago), extra: r(extra), bloques, min: bloques * BLOQUE_MIN };
+}
+function txtAjuste(bloques) {
+  const b = Number(bloques || 0);
+  if (!b) return 'Turno completo';
+  const min = Math.abs(b) * BLOQUE_MIN, h = Math.floor(min / 60), m = min % 60;
+  const dur = ((h ? h + ' h ' : '') + (m ? m + ' min' : '')).trim();
+  return (b > 0 ? '+ ' : '− ') + dur;
 }
 function opcionesPersonal(sel, soloEnTurno) {
   const lista = soloEnTurno
     ? turnosAbiertos(sucursalActual).map(t => per(t.personalId)).filter(Boolean)
-    : db.personal.filter(p => p.activo);
+    : db.personal.filter(p => p.activo && !p.del);
   sel.innerHTML = lista.length
     ? lista.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('')
     : '<option value="">— nadie en turno —</option>';
@@ -367,9 +508,22 @@ function renderPantalla(id) {
   if (id === 'scr-chk') renderChecklist();
   if (id === 'scr-rev') renderRevision();
   if (id === 'scr-prop') renderPropinas();
-  if (id === 'scr-evid') renderEvidencias();
+  if (id === 'scr-asis') renderAsistencia();
+  if (id === 'scr-prep') renderPreparaciones();
   if (id === 'scr-proto') renderProtocolos();
   if (id === 'scr-dir') renderDireccion();
+}
+/* menú del título: saltar entre sucursales y paneles sin volver al inicio */
+function menuNavegacion() {
+  const otras = db.sucursales.filter(s => s.activa && !s.del);
+  abrirModal('<h3>🧭 Ir a…</h3>' +
+    otras.map(s => '<button class="btn ' + (s.id === sucursalActual ? 'p' : 's') + '" style="margin-bottom:10px" ' +
+      'onclick="cerrarModal();entrarSucursal(\'' + s.id + '\')">🏬 ' + esc(s.nombre) +
+      (s.id === sucursalActual ? ' · aquí estás' : '') + '</button>').join('') +
+    '<div class="sep"></div>' +
+    '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinSupervision()">🔍 Supervisión</button>' +
+    '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinAdmin()">👁️ Dirección</button>' +
+    '<button class="btn s" onclick="cerrarModal();salirASucursales()">🏠 Pantalla de inicio</button>');
 }
 function renderTodo() {
   const activa = document.querySelector('.screen.active');
@@ -414,7 +568,7 @@ function cerrarModal() { $('modal-gen').classList.remove('ver'); }
 
 /* ═══════════ PORTADA ═══════════ */
 function renderPortada() {
-  $('portada-sucursales').innerHTML = db.sucursales.filter(s => s.activa).map(s =>
+  $('portada-sucursales').innerHTML = db.sucursales.filter(s => s.activa && !s.del).map(s =>
     '<button class="btn p gigante" style="margin-bottom:12px" onclick="entrarSucursal(\'' + s.id + '\')">' +
     '<span class="ico">🏬</span> Sucursal ' + esc(s.nombre) + '</button>').join('');
   pintarRed();
@@ -441,122 +595,281 @@ function renderSucursal() {
   if (chip) chip.innerHTML = f ? '🛒 ' + f + ' por comprar' : '✅ stock completo';
   renderAvance();
 }
-function avanceTurno(turno, fecha, sid) {
-  const lista = tareasDelDia(turno, fecha);
-  const hechas = lista.filter(t => tareaHecha(t, fecha, sid));
-  return { total: lista.length, hechas: hechas.length, pendientes: lista.filter(t => !tareaHecha(t, fecha, sid)) };
+function avanceDia(fecha, sid) {
+  const lista = tareasDelDia(fecha);
+  const pendientes = lista.filter(t => !tareaHecha(t, fecha, sid));
+  const regHechos = REGISTROS.filter(r => registroListo(r, fecha, sid)).length;
+  return {
+    total: lista.length, hechas: lista.length - pendientes.length, pendientes,
+    regTotal: REGISTROS.length, regHechos,
+    pct: (lista.length + REGISTROS.length)
+      ? Math.round((lista.length - pendientes.length + regHechos) / (lista.length + REGISTROS.length) * 100) : 0
+  };
 }
 function renderAvance() {
   const hoy = hoyISO();
-  const a1 = avanceTurno(1, hoy, sucursalActual), a2 = avanceTurno(2, hoy, sucursalActual);
-  const cierreHoy = db.cierres.find(c => c.fecha === hoy && c.sucursalId === sucursalActual);
-  const evHoy = db.evidencias.filter(e => e.fecha === hoy && e.sucursalId === sucursalActual).length;
+  const a = avanceDia(hoy, sucursalActual);
+  const cierreHoy = cierreDelDia(hoy, sucursalActual);
+  const prepsHoy = db.preparaciones.filter(x => x.fecha === hoy && x.sucursalId === sucursalActual).length;
   const rev = db.revisiones.find(r => r.sucursalId === sucursalActual);
-  const turnoActual = new Date().getHours() < 15 ? 1 : 2;
-  const aA = turnoActual === 1 ? a1 : a2;
-  const pendTxt = aA.pendientes.filter(t => !t.auto).slice(0, 3).map(t => t.n.split('(')[0].trim()).join(' · ');
+  const pendTxt = a.pendientes.slice(0, 3).map(t => t.n.split('(')[0].trim()).join(' · ');
   const fila = (icono, nombre, valor, ok) =>
     '<div class="avance-item"><span>' + icono + '</span><span>' + nombre + '</span><span class="pct" style="' +
     (ok === true ? 'color:var(--ok)' : ok === false ? 'color:var(--alerta)' : '') + '">' + valor + '</span></div>';
   $('suc-avance').innerHTML =
     '<h3 style="margin-bottom:4px">🚀 Avance de hoy — ¿qué falta?</h3>' +
-    fila('☀️', 'Tareas Turno 1', a1.hechas + '/' + a1.total, a1.hechas === a1.total) +
-    fila('🌙', 'Tareas Turno 2', a2.hechas + '/' + a2.total, a2.hechas === a2.total) +
-    fila('📸', 'Evidencias subidas hoy', evHoy || '0', evHoy > 0 ? true : null) +
+    fila('📸', 'Registros con evidencia', a.regHechos + '/' + a.regTotal, a.regHechos === a.regTotal) +
+    fila('✅', 'Acciones del día', a.hechas + '/' + a.total, a.hechas === a.total) +
+    fila('🧪', 'Preparaciones registradas', prepsHoy || '0', prepsHoy > 0 ? true : null) +
     fila('🌙', 'Cierre del día', cierreHoy ? '✅ ' + fmt$(cierreHoy.ventas) : 'pendiente', !!cierreHoy || null) +
     (rev ? fila('🔍', 'Última revisión (' + fmtFecha(rev.fecha) + ')',
       rev.veredicto === 'cumplido' ? '✅ ' + rev.pct + '%' : rev.veredicto === 'ajustes' ? '⚠️ ' + rev.pct + '%' : '⛔ ' + rev.pct + '%',
       rev.veredicto === 'cumplido' ? true : rev.veredicto === 'nocumplido' ? false : null) : '') +
-    (pendTxt ? '<p class="mini" style="margin:8px 0 0;color:var(--aviso)">⏳ Siguiente en Turno ' + turnoActual + ': ' + esc(pendTxt) + '</p>'
-      : '<p class="mini" style="margin:8px 0 0;color:var(--ok)">✨ Turno ' + turnoActual + ' al día. ¡Gran trabajo, Cíclope!</p>');
+    (pendTxt ? '<p class="mini" style="margin:8px 0 0;color:var(--aviso)">⏳ Falta: ' + esc(pendTxt) + '</p>'
+      : '<p class="mini" style="margin:8px 0 0;color:var(--ok)">✨ Acciones del día al corriente. ¡Gran trabajo, Cíclope!</p>');
 }
 
-/* ═══════════ ENTRADA ═══════════ */
-function irEntrada() { opcionesPersonal($('entrada-persona'), false); $('entrada-turno').value = turnoSugerido(); $('entrada-pin').value = ''; ir('scr-entrada'); }
-function registrarEntrada() {
-  const pid = $('entrada-persona').value, pin = $('entrada-pin').value, tipo = $('entrada-turno').value;
+/* ═══════════ ASISTENCIA (entrada y salida en un solo botón) ═══════════ */
+let asisAjuste = 0;
+function irAsistencia() {
+  opcionesPersonal($('asis-persona'), false);
+  const abierto = turnosAbiertos(sucursalActual)[0];
+  if (abierto) $('asis-persona').value = abierto.personalId;
+  $('asis-pin').value = ''; $('asis-resumen').innerHTML = '';
+  ir('scr-asis');
+}
+const turnoAbiertoDe = pid => db.turnos.find(t => !t.salida && t.personalId === pid && t.sucursalId === sucursalActual);
+function renderAsistencia() {
+  const pid = $('asis-persona').value;
+  const p = per(pid);
+  const t = pid ? turnoAbiertoDe(pid) : null;
+  const btn = $('asis-btn');
+  if (!p) { $('asis-estado').innerHTML = '<p class="muted mini">Selecciona quién eres para continuar.</p>'; return; }
+  if (t) {
+    // ── modo SALIDA ──
+    asisAjuste = Number(t.ajuste || 0);
+    const trans = ((Date.now() - t.entrada) / 36e5).toFixed(1);
+    $('asis-estado').innerHTML =
+      '<div class="aviso-turno"><span class="badge mor">EN TURNO</span> ' +
+      '<b>' + esc(p.nombre) + '</b> entró a las <b class="amar">' + fmtHora(t.entrada) + '</b> · ' +
+      (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') + ' · lleva ' + trans + ' h</div>';
+    $('asis-turno-wrap').style.display = 'none';
+    $('asis-ajuste').style.display = '';
+    btn.innerHTML = '<span class="ico">👋</span> Registrar salida';
+    pintarAjuste();
+  } else {
+    // ── modo ENTRADA ──
+    asisAjuste = 0;
+    $('asis-estado').innerHTML = '<p class="muted mini">' + esc(p.nombre) + ' no tiene turno abierto en esta sucursal. Se registrará su <b>entrada</b>.</p>';
+    $('asis-turno-wrap').style.display = '';
+    $('asis-ajuste').style.display = 'none';
+    $('asis-turno').value = turnoSugerido();
+    btn.innerHTML = '<span class="ico">✅</span> Registrar entrada';
+  }
+}
+function ajustarAsis(d) {
+  asisAjuste = Math.max(-18, Math.min(18, asisAjuste + d)); // ±6 h como tope
+  pintarAjuste();
+}
+function pintarAjuste() {
+  const p = per($('asis-persona').value); if (!p) return;
+  const extra = asisAjuste * tarifaBloque(p);
+  $('asis-ajuste-tx').innerHTML = txtAjuste(asisAjuste) +
+    (asisAjuste ? '<div class="mini muted">' + (extra >= 0 ? '+' : '−') + fmt$(Math.abs(extra)) + ' sobre el turno</div>' : '');
+  $('asis-pago-prev').textContent = fmt$(Math.max(0, (p.pagoTurno || 0) + extra));
+}
+function accionAsistencia() {
+  const pid = $('asis-persona').value, pin = $('asis-pin').value;
   const p = per(pid);
   if (!p) return toast('Selecciona a la persona');
   if (pin !== p.pin) return toast('⛔ PIN incorrecto');
-  if (turnosAbiertos().some(t => t.personalId === pid)) return toast('⚠️ ' + p.nombre + ' ya tiene un turno abierto');
-  const t = { id: uid(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: pid, tipo, entrada: Date.now(), salida: null };
-  db.turnos.unshift(t); guardarDB();
   const s = suc(sucursalActual);
-  notificar('🕐 Entrada — ' + p.nombre + ' (' + s.nombre + ')',
-    p.nombre + ' registró ENTRADA en sucursal ' + s.nombre + '\nTurno: ' + tipo + '\nHora: ' + fmtHora(t.entrada) + ' · ' + fmtFecha(t.fecha));
-  toast('✅ ¡Bienvenid@ ' + p.nombre + '! Entrada registrada a las ' + fmtHora(t.entrada));
-  ir('scr-suc');
-}
-
-/* ═══════════ SALIDA ═══════════ */
-function irSalida() { opcionesPersonal($('salida-persona'), true); $('salida-pin').value = ''; $('salida-resumen').innerHTML = ''; ir('scr-salida'); }
-function registrarSalida() {
-  const pid = $('salida-persona').value, pin = $('salida-pin').value;
-  const p = per(pid); if (!p) return toast('Nadie en turno');
-  if (pin !== p.pin) return toast('⛔ PIN incorrecto');
-  const t = db.turnos.find(t => !t.salida && t.personalId === pid && t.sucursalId === sucursalActual);
-  if (!t) return toast('No hay turno abierto de ' + p.nombre + ' aquí');
-  t.salida = Date.now();
-  const c = calcularPago(t); t.horas = c.horas; t.pago = c.pago;
+  const abierto = turnoAbiertoDe(pid);
+  if (!abierto) {
+    // ---- ENTRADA ----
+    if (turnosAbiertos().some(t => t.personalId === pid)) return toast('⚠️ ' + p.nombre + ' ya tiene un turno abierto en otra sucursal');
+    const t = {
+      id: uid(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: pid,
+      tipo: $('asis-turno').value, entrada: Date.now(), salida: null, ajuste: 0
+    };
+    db.turnos.unshift(t); guardarDB();
+    notificar('🕐 Entrada — ' + p.nombre + ' (' + s.nombre + ')',
+      p.nombre + ' registró ENTRADA en sucursal ' + s.nombre + '\nTurno: ' + t.tipo + '\nHora: ' + fmtHora(t.entrada) + ' · ' + fmtFecha(t.fecha));
+    toast('✅ ¡Bienvenid@ ' + p.nombre + '! Entrada a las ' + fmtHora(t.entrada));
+    return ir('scr-suc');
+  }
+  // ---- SALIDA ----
+  abierto.salida = Date.now();
+  abierto.ajuste = asisAjuste;
+  abierto.motivoAjuste = ($('asis-motivo').value || '').trim();
+  const c = calcularPago(abierto); abierto.horas = c.horas; abierto.pago = c.pago;
   guardarDB();
-  const s = suc(sucursalActual);
   notificar('🚪 Salida — ' + p.nombre + ' (' + s.nombre + ')',
-    p.nombre + ' registró SALIDA en ' + s.nombre + '\nEntrada: ' + fmtHora(t.entrada) + ' · Salida: ' + fmtHora(t.salida) +
-    '\nHoras: ' + c.horas + ' h\nPago del turno: ' + fmt$(c.pago));
-  $('salida-resumen').innerHTML =
-    '<div class="card amarilla centrado"><h3>Resumen del turno de ' + esc(p.nombre) + '</h3>' +
-    '<div class="grid c3"><div class="stat"><div class="v">' + c.horas + ' h</div><div class="l">trabajadas</div></div>' +
-    '<div class="stat verde"><div class="v">' + fmt$(c.pago) + '</div><div class="l">pago del turno</div></div>' +
-    '<div class="stat"><div class="v">' + fmt$(c.extra) + '</div><div class="l">horas extra</div></div></div>' +
-    '<p class="mini muted">Base de ' + (db.config.baseHoras || 6) + ' h por turno. ¡Gracias por tu aventura de hoy! 🌌</p></div>';
-  toast('👋 ¡Hasta pronto, ' + p.nombre + '!');
+    p.nombre + ' registró SALIDA en ' + s.nombre + '\nEntrada: ' + fmtHora(abierto.entrada) + ' · Salida: ' + fmtHora(abierto.salida) +
+    '\nEn piso: ' + c.horas + ' h\nAjuste: ' + txtAjuste(c.bloques) + (abierto.motivoAjuste ? ' (' + abierto.motivoAjuste + ')' : '') +
+    '\nPago del día: ' + fmt$(c.pago));
+  $('asis-resumen').innerHTML =
+    '<div class="card amarilla centrado"><h3>Resumen del día de ' + esc(p.nombre) + '</h3>' +
+    '<div class="grid c3"><div class="stat"><div class="v">' + c.horas + ' h</div><div class="l">en piso</div></div>' +
+    '<div class="stat"><div class="v">' + txtAjuste(c.bloques) + '</div><div class="l">ajuste</div></div>' +
+    '<div class="stat verde"><div class="v">' + fmt$(c.pago) + '</div><div class="l">pago del día</div></div></div>' +
+    '<p class="mini muted">Se paga el turno completo; los ajustes de ' + BLOQUE_MIN + ' min suman o restan sobre esa base. ¡Gracias por tu aventura de hoy! 🌌</p></div>';
+  $('asis-pin').value = '';
+  renderAsistencia();
+  toast('👋 ¡Hasta pronto, ' + p.nombre + '! Pago del día: ' + fmt$(c.pago));
 }
 
-/* ═══════════ CHECKLIST DEL TURNO ═══════════ */
-let chkTurno = 1;
+/* ═══════════ CHECKLIST DEL DÍA ═══════════
+   Sección 1 · Registros con evidencia (foto al finalizar turno)
+   Sección 2 · Acciones a lo largo del día (sin evidencia)      */
+let cierreBorrador = { ventas: '', caja: '' };
+let cierreFotos = { 'r-ventas': '', 'r-caja': '' };
+let regPendiente = null;   // id del registro que está capturando foto
 function irChecklist() {
-  chkTurno = new Date().getHours() < 15 ? 1 : 2;
   opcionesPersonal($('chk-persona'), true);
   if (!$('chk-persona').value) opcionesPersonal($('chk-persona'), false);
   $('chk-obs').value = '';
+  cierreBorrador = { ventas: '', caja: '' };
+  cierreFotos = { 'r-ventas': '', 'r-caja': '' };
   ir('scr-chk');
 }
 function renderChecklist() {
-  document.querySelectorAll('#chk-seg button').forEach(b => b.classList.toggle('on', Number(b.dataset.t) === chkTurno));
-  const lista = tareasDelDia(chkTurno);
-  let hechas = 0;
+  renderResumenChk();
+  renderRegistros();
+  renderActividades();
+}
+
+/* ---- cuadro superior principal: solo el dinero y el avance ---- */
+function renderResumenChk() {
+  const lista = tareasDelDia();
+  const hechas = lista.filter(t => tareaHecha(t)).length;
+  const conEv = REGISTROS.filter(r => registroListo(r)).length;
+  const pct = (lista.length + REGISTROS.length)
+    ? Math.round((hechas + conEv) / (lista.length + REGISTROS.length) * 100) : 0;
+  const cie = cierreDelDia();
+  const ventas = cie ? cie.ventas : Number(cierreBorrador.ventas || 0);
+  const caja = cie ? cie.caja : Number(cierreBorrador.caja || 0);
+  const propTot = propinasDe(hoyISO(), sucursalActual).reduce((a, x) => a + x.monto, 0);
+  $('chk-dinero').innerHTML =
+    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas cierre</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(caja) + '</div><div class="l">caja de dinero</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(propTot) + '</div><div class="l">💳 propinas</div></div>';
+  $('chk-barra').style.width = pct + '%';
+  $('chk-pct').textContent = pct + '%';
+  const chip = $('chk-progreso-chip');
+  if (chip) chip.textContent = (hechas + conEv) + '/' + (lista.length + REGISTROS.length);
+}
+/* un registro está listo si ya tiene foto (o, en los de dinero, cierre enviado) */
+function registroListo(r, fecha, sid) {
+  return r.dinero ? !!cierreDelDia(fecha, sid) : !!evidenciaDeRegistro(r.id, fecha, sid);
+}
+
+/* ---- sección 1: registros + evidencia en la misma casilla ---- */
+function renderRegistros() {
+  const cie = cierreDelDia();
+  $('chk-registros').innerHTML = REGISTROS.map(r => r.dinero ? filaDinero(r, cie) : filaEvidencia(r)).join('') +
+    (cie ? '' : '<button class="btn p" style="margin-top:4px" onclick="guardarCierre()">🌙 Enviar cierre del día</button>');
+}
+function filaEvidencia(r) {
+  const ev = evidenciaDeRegistro(r.id);
+  const hecho = !!ev;
+  return '<div class="reg' + (hecho ? ' hecha' : '') + '">' +
+    '<div class="box">' + (hecho ? '✔' : '') + '</div>' +
+    '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div>' +
+    '<div class="meta">' + (hecho
+      ? '📸 ' + esc(per(ev.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(ev.ts)
+      : 'Foto requerida al cerrar') + '</div></div>' +
+    (hecho && ev.foto ? '<img class="reg-thumb" src="' + fotoURL(ev.foto) + '" onclick="verFoto(\'' + ev.id + '\')" loading="lazy">' : '') +
+    '<button class="reg-cam" onclick="tomarFotoRegistro(\'' + r.id + '\')" title="Agregar evidencia">' +
+    (hecho ? '🔄' : '📷') + '</button></div>';
+}
+function filaDinero(r, cie) {
+  const ev = evidenciaDeRegistro(r.id);
+  if (cie) {
+    return '<div class="reg hecha">' +
+      '<div class="box">✔</div>' +
+      '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div>' +
+      '<div class="meta">' + fmt$(r.dinero === 'ventas' ? cie.ventas : cie.caja) + ' · enviado ' + fmtHora(cie.ts) +
+      ' por ' + esc(per(cie.personalId)?.nombre || 'Equipo') + '</div></div>' +
+      (ev && ev.foto ? '<img class="reg-thumb" src="' + fotoURL(ev.foto) + '" onclick="verFoto(\'' + ev.id + '\')" loading="lazy">' : '') +
+      '</div>';
+  }
+  const foto = cierreFotos[r.id];
+  return '<div class="reg fila-cierre">' +
+    '<div class="box"></div>' +
+    '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div>' +
+    '<div class="meta">Monto y foto al cerrar</div></div>' +
+    (foto ? '<img class="reg-thumb" src="' + foto + '">' : '') +
+    '<button class="reg-cam' + (foto ? ' listo' : '') + '" onclick="tomarFotoRegistro(\'' + r.id + '\')" title="Foto de ' + esc(r.n) + '">' +
+    (foto ? '🔄' : '📷') + '</button>' +
+    '<div class="reg-dinero">' +
+    '<input id="chk-' + r.dinero + '" type="number" inputmode="decimal" placeholder="' + r.ph + '" value="' +
+    esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;renderResumenChk()">' +
+    '</div></div>';
+}
+
+/* ---- captura de foto dentro de la casilla ---- */
+function tomarFotoRegistro(rid) {
+  const p = per($('chk-persona').value);
+  if (!p) return toast('Primero indica quién está marcando 👤');
+  regPendiente = rid;
+  const inp = $('chk-file'); inp.value = ''; inp.click();
+}
+function archivoRegistro(input) {
+  const f = input.files && input.files[0];
+  if (!f || !regPendiente) return;
+  const rid = regPendiente; regPendiente = null;
+  comprimirFoto(f, async dataUrl => {
+    const r = REGISTROS.find(x => x.id === rid);
+    if (r.dinero) { cierreFotos[rid] = dataUrl; renderRegistros(); return toast('📷 Foto lista · pulsa Enviar cierre'); }
+    const s = suc(sucursalActual);
+    const p = per($('chk-persona').value);
+    toast('⬆️ Subiendo evidencia…');
+    const fotoFinal = await subirFotoDrive(dataUrl, { tipo: r.tipo, sucursal: s.nombre, fecha: hoyISO() });
+    const previa = evidenciaDeRegistro(rid);
+    if (previa) db.evidencias = db.evidencias.filter(e => e.id !== previa.id);
+    db.evidencias.unshift({
+      id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
+      personalId: p?.id || '', tipo: r.tipo, regId: rid,
+      nota: r.n, foto: fotoFinal
+    });
+    podarFotos(false); guardarDB();
+    notificar('📸 ' + r.n + ' — ' + s.nombre,
+      (p?.nombre || 'Equipo') + ' subió evidencia de "' + r.n + '" en ' + s.nombre + ' · ' + fmtFecha(hoyISO()) +
+      (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''));
+    renderRegistros();
+    toast('✅ Evidencia de ' + r.n.toLowerCase() + ' guardada');
+  });
+}
+
+/* ---- sección 2: acciones del día ---- */
+function renderActividades() {
+  const lista = tareasDelDia();
   $('chk-items').innerHTML = lista.map(t => {
     const h = tareaHecha(t);
-    if (h) hechas++;
-    const tarde = !h && horaLimitePasada(t);
     const cls = 'tarea' + (h ? (h.ver ? ' verificada' : ' hecha') : '');
     return '<div class="' + cls + '" onclick="toggleTarea(\'' + t.id + '\')">' +
       '<div class="box">' + (h ? '✔' : '') + '</div>' +
-      '<div><div class="tt">' + esc(t.n) + (t.auto ? ' <span class="badge mor">auto</span>' : '') + '</div>' +
+      '<div><div class="tt">' + esc(t.n) + '</div>' +
       '<div class="meta">' + (h
         ? '✔ ' + esc(h.por || 'Equipo') + ' · ' + fmtHora(h.ts) + (h.ver ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '')
-        : 'Hora límite: <span class="' + (tarde ? 'tarde' : '') + '">' + fmtHoraLimite(t.hora) + (tarde ? ' ⏰ vencida' : '') + '</span>') +
+        : esc(notaTarea(t))) +
       '</div></div>' +
       '<span class="vv ' + (h ? 'si' : 'no') + '">' + (h ? (h.ver ? '✔✔' : 'HECHA') : 'PENDIENTE') + '</span></div>';
   }).join('');
-  const pct = lista.length ? Math.round(hechas / lista.length * 100) : 0;
-  $('chk-barra').style.width = pct + '%';
-  $('chk-pct').textContent = pct + '%';
-  const chip = $('chk-progreso-chip'); if (chip) chip.textContent = hechas + '/' + lista.length + ' tareas';
 }
 function toggleTarea(tid) {
-  const t = TAREAS.find(x => x.id === tid);
-  if (t.auto === 'entrada') return toast('Esta tarea se marca sola al registrar la entrada del turno 🕐');
+  const t = ACCIONES.find(x => x.id === tid);
   const key = tareaKey(hoyISO(), sucursalActual, tid);
   let r = db.tareas.find(x => x.id === key);
   const p = per($('chk-persona').value);
   if (r && r.done) {
     if (r.ver) return toast('Ya fue verificada; solo Supervisión puede modificarla 🔍');
     r.done = false; r.ts = Date.now();
-    toast('↩️ Tarea desmarcada');
+    toast('↩️ Acción desmarcada');
   } else {
-    if (!p) return toast('Selecciona quién marca la tarea');
-    if (!r) { r = { id: key, fecha: hoyISO(), sucursalId: sucursalActual, tareaId: tid, turno: t.turno, nombre: t.n }; db.tareas.push(r); }
+    if (!p) return toast('Selecciona quién marca la acción');
+    if (!r) { r = { id: key, fecha: hoyISO(), sucursalId: sucursalActual, tareaId: tid, nombre: t.n }; db.tareas.push(r); }
     r.done = true; r.por = p.nombre; r.personalId = p.id; r.ts = Date.now(); r.ver = false;
     toast('✅ Hecha por ' + p.nombre);
   }
@@ -572,16 +885,9 @@ function enviarObservacion() {
     personalId: p?.id || '', tipo: 'observacion', novedades: texto
   });
   guardarDB();
-  notificar('🗒️ Observación — ' + s.nombre, (p?.nombre || 'Equipo') + ' (Turno ' + chkTurno + '):\n' + texto);
+  notificar('🗒️ Observación — ' + s.nombre, (p?.nombre || 'Equipo') + ':\n' + texto);
   $('chk-obs').value = '';
   toast('📨 Observación enviada a Dirección');
-}
-/* la tarea de inventario del turno 2 se marca sola al confirmar inventario */
-function autoTareaInventario() {
-  const key = tareaKey(hoyISO(), sucursalActual, 't2-inv');
-  let r = db.tareas.find(x => x.id === key);
-  if (!r) { r = { id: key, fecha: hoyISO(), sucursalId: sucursalActual, tareaId: 't2-inv', turno: 2, nombre: 'Realización de inventario' }; db.tareas.push(r); }
-  if (!r.done) { r.done = true; r.por = 'Inventario confirmado'; r.ts = Date.now(); r.ver = !!r.ver; }
 }
 
 /* ═══════════ INVENTARIO ═══════════ */
@@ -593,7 +899,7 @@ function renderInventario() {
   const q = ($('inv-buscar').value || '').toLowerCase();
   const st = stockDe(sucursalActual);
   const lista = db.productos
-    .filter(p => (invCat === 'TODOS' || p.cat === invCat) && p.nombre.toLowerCase().includes(q))
+    .filter(p => !p.del && (invCat === 'TODOS' || p.cat === invCat) && p.nombre.toLowerCase().includes(q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
   $('inv-lista').innerHTML = lista.map(p => {
     const s = st[p.id] || { c: 0 }; const est = estadoStock(sucursalActual, p);
@@ -624,7 +930,6 @@ function fijarStock(pid, v) {
 function confirmarInventario() {
   const s = suc(sucursalActual);
   const falt = faltantes(sucursalActual);
-  autoTareaInventario();
   notificar('📦 Inventario realizado — ' + s.nombre,
     'Inventario confirmado en ' + s.nombre + ' (' + fmtFecha(hoyISO()) + ').\n' +
     (falt.length ? '🛒 POR COMPRAR (' + falt.length + '):\n' + falt.map(p => '· ' + p.nombre + ' — quedan ' + (stockDe(sucursalActual)[p.id]?.c || 0) + ' (mín ' + p.minimo + ')').join('\n')
@@ -692,18 +997,7 @@ function borrarPropina(id) {
   guardarDB(); renderDireccion(); toast('🗑️ Propina eliminada');
 }
 
-/* ═══════════ EVIDENCIAS ═══════════ */
-let evidFoto = { foto: '' };
-function renderEvidencias() {
-  opcionesPersonal($('evid-persona'), true);
-  if (!$('evid-persona').value) opcionesPersonal($('evid-persona'), false);
-  evidFoto = { foto: '' };
-  $('evid-drop').innerHTML = '📷 Toca para tomar / subir foto';
-  prepararDrop('evid-drop', 'evid-file', evidFoto);
-  const lista = db.evidencias.filter(e => e.sucursalId === sucursalActual).slice(0, 24);
-  $('evid-galeria').innerHTML = lista.map(e => tarjetaEvidencia(e)).join('') ||
-    '<p class="muted">Aún no hay evidencias aquí.</p>';
-}
+/* ═══════════ EVIDENCIAS (ahora viven dentro del checklist) ═══════════ */
 /* Google ya no muestra los enlaces uc?export=view como imagen;
    se convierten al formato thumbnail que si funciona */
 function fotoURL(f) {
@@ -725,85 +1019,155 @@ function verFoto(id) {
     '<p class="mini muted">' + esc(e.tipo) + ' · ' + fmtFecha(e.fecha) + ' ' + fmtHora(e.ts) + (e.nota ? ' · ' + esc(e.nota) : '') + '</p>' +
     '<button class="btn s" onclick="cerrarModal()">Cerrar</button>');
 }
-async function guardarEvidencia() {
-  if (!evidFoto.foto) return toast('Primero toma o sube la foto 📷');
-  const s = suc(sucursalActual);
-  const tipo = $('evid-tipo').value;
-  const fotoFinal = await subirFotoDrive(evidFoto.foto, { tipo, sucursal: s.nombre, fecha: hoyISO() });
-  db.evidencias.unshift({
-    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
-    personalId: $('evid-persona').value, tipo, nota: $('evid-nota').value.trim(), foto: fotoFinal
-  });
-  podarFotos(false); guardarDB();
-  notificar('📸 Evidencia ' + tipo + ' — ' + s.nombre,
-    'Nueva evidencia (' + tipo + ') en ' + s.nombre + ' · ' + fmtFecha(hoyISO()) +
-    ($('evid-nota').value ? '\nNota: ' + $('evid-nota').value : '') +
-    (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''));
-  toast('⬆️ Evidencia subida');
-  $('evid-nota').value = '';
-  renderEvidencias();
-}
-
-/* ═══════════ CIERRE DE TURNO ═══════════ */
-let cierreFoto = { foto: '' };
-function irCierre() {
-  cierreFoto = { foto: '' };
-  opcionesPersonal($('cierre-persona'), true);
-  if (!$('cierre-persona').value) opcionesPersonal($('cierre-persona'), false);
-  $('cierre-ventas').value = ''; $('cierre-caja').value = ''; $('cierre-novedades').value = '';
-  $('cierre-checklist').innerHTML = '<label>Checklist de cierre</label>' + CHECK_CIERRE.map(it =>
-    '<div class="chk" onclick="this.classList.toggle(\'hecho\')"><div class="box">✔</div><div class="tx">' + esc(it) + '</div></div>').join('');
-  $('cierre-drop').innerHTML = '📷 Toca para tomar / subir foto';
-  prepararDrop('cierre-drop', 'cierre-foto', cierreFoto);
-  ir('scr-cierre');
-}
+/* ═══════════ CIERRE DE TURNO (desde la casilla del checklist) ═══════════ */
 async function guardarCierre() {
-  const ventas = Number($('cierre-ventas').value);
-  if (!ventas && ventas !== 0 || $('cierre-ventas').value === '') return toast('Captura las ventas netas del turno 💰');
-  const caja = Number($('cierre-caja').value) || 0;
-  const p = per($('cierre-persona').value);
+  if (cierreDelDia()) return toast('El cierre de hoy ya fue enviado ✅');
+  if (cierreBorrador.ventas === '') return toast('Captura las ventas del cierre 💵');
+  if (cierreBorrador.caja === '') return toast('Captura la caja de dinero 🧾');
+  const ventas = Number(cierreBorrador.ventas) || 0;
+  const caja = Number(cierreBorrador.caja) || 0;
+  const p = per($('chk-persona').value);
+  if (!p) return toast('Indica quién está cerrando 👤');
   const s = suc(sucursalActual);
-  const items = {}; let hechos = 0;
-  document.querySelectorAll('#cierre-checklist .chk').forEach(el => {
-    const ok = el.classList.contains('hecho'); items[el.querySelector('.tx').textContent] = ok; if (ok) hechos++;
-  });
-  const fotoFinal = cierreFoto.foto ? await subirFotoDrive(cierreFoto.foto, { tipo: 'cierre', sucursal: s.nombre, fecha: hoyISO() }) : '';
+  // el avance del cierre son las acciones del día
+  const acts = tareasDelDia();
+  const hechos = acts.filter(t => tareaHecha(t)).length;
+  const items = {}; acts.forEach(t => items[t.n] = !!tareaHecha(t));
+  // sube las fotos de ventas y caja (si las tomaron) como evidencias del cierre
+  const fotos = {};
+  for (const rid of ['r-ventas', 'r-caja']) {
+    if (!cierreFotos[rid]) continue;
+    const r = REGISTROS.find(x => x.id === rid);
+    fotos[rid] = await subirFotoDrive(cierreFotos[rid], { tipo: 'cierre', sucursal: s.nombre, fecha: hoyISO() });
+    db.evidencias.unshift({
+      id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p.id,
+      tipo: 'cierre', regId: rid, nota: r.n, foto: fotos[rid]
+    });
+  }
   const reg = {
     id: uid(), fecha: hoyISO(), ts: Date.now(), tsFoto: Date.now(), sucursalId: sucursalActual,
-    personalId: p?.id || '', ventas, caja, items, hechos, foto: fotoFinal, novedades: $('cierre-novedades').value.trim()
+    personalId: p.id, ventas, caja, items, hechos, total: acts.length,
+    foto: fotos['r-ventas'] || fotos['r-caja'] || '',
+    novedades: ($('chk-obs').value || '').trim()
   };
   db.cierres.unshift(reg);
-  if (cierreFoto.foto) db.evidencias.unshift({
-    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p?.id || '',
-    tipo: 'cierre', nota: 'Cierre de turno · ventas ' + fmt$(ventas), foto: fotoFinal
-  });
-  guardarDB();
+  const fotoFinal = reg.foto;
+  podarFotos(false); guardarDB();
   const propHoy = propinasDe(reg.fecha, sucursalActual);
   const propTotal = propHoy.reduce((a, x) => a + x.monto, 0);
   const propDetalle = Object.entries(propHoy.reduce((m, x) => { m[x.personalId] = (m[x.personalId] || 0) + x.monto; return m; }, {}))
     .map(([pid, m]) => (per(pid)?.nombre || '¿?') + ' ' + fmt$(m)).join(' · ');
-  const resumen = '🌙 CIERRE DE TURNO — ' + s.nombre + ' (' + fmtFecha(reg.fecha) + ')\n' +
-    'Responsable: ' + (p?.nombre || 'Equipo') + '\nVentas NETAS: ' + fmt$(ventas) + '\nDinero en caja: ' + fmt$(caja) +
+  const resumen = '🌙 CIERRE DEL DÍA — ' + s.nombre + ' (' + fmtFecha(reg.fecha) + ')\n' +
+    'Responsable: ' + p.nombre + '\nVentas cierre: ' + fmt$(ventas) + '\nCaja de dinero: ' + fmt$(caja) +
     '\n💳 Propinas digitales del día: ' + fmt$(propTotal) + (propDetalle ? ' (' + propDetalle + ')' : '') +
-    '\nChecklist: ' + hechos + '/' + CHECK_CIERRE.length +
+    '\nAcciones del día: ' + hechos + '/' + reg.total +
     (reg.novedades ? '\nNovedades: ' + reg.novedades : '') +
     (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : '');
   notificar('🌙 Cierre ' + s.nombre + ' — ventas ' + fmt$(ventas), resumen);
+  cierreBorrador = { ventas: '', caja: '' }; cierreFotos = { 'r-ventas': '', 'r-caja': '' };
+  renderChecklist();
   abrirModal('<h3>🌙 Cierre enviado</h3>' +
-    '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas netas</div></div>' +
-    '<div class="stat"><div class="v">' + fmt$(caja) + '</div><div class="l">dinero en caja</div></div>' +
+    '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas cierre</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(caja) + '</div><div class="l">caja de dinero</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propTotal) + '</div><div class="l">💳 propinas digitales</div></div></div>' +
-    '<p class="mini muted centrado" style="margin-top:10px">Checklist ' + hechos + '/' + CHECK_CIERRE.length + ' · Dirección ya fue notificada' + (enLinea() ? ' por correo 📧' : ' (bitácora local)') + '</p>' +
+    '<p class="mini muted centrado" style="margin-top:10px">Acciones ' + hechos + '/' + reg.total + ' · Dirección ya fue notificada' + (enLinea() ? ' por correo 📧' : ' (bitácora local)') + '</p>' +
     '<a class="btn p" href="' + linkWhatsApp(resumen) + '" target="_blank">📲 Avisar por WhatsApp</a>' +
     '<div style="height:8px"></div><button class="btn s" onclick="cerrarModal();ir(\'scr-suc\')">Terminar</button>');
 }
 
-/* ═══════════ PROTOCOLOS ═══════════ */
+/* ═══════════ PROTOCOLOS ═══════════
+   título fijo + menú horizontal deslizable: se cambia de sección sin scroll */
+let protoCat = 0;
 function renderProtocolos() {
-  $('proto-lista').innerHTML = PROTOCOLOS.map(([mod, items]) =>
-    '<div class="card"><h3>' + esc(mod) + '</h3>' + items.map(([t, d]) =>
-      '<div class="item-linea"><div class="grow"><b style="font-size:.9rem">' + esc(t) + '</b>' +
-      '<div class="mini muted">' + esc(d) + '</div></div></div>').join('') + '</div>').join('');
+  $('proto-tabs').innerHTML = PROTOCOLOS.map(([mod], i) =>
+    '<button class="' + (protoCat === i ? 'on' : '') + '" onclick="protoCat=' + i + ';renderProtocolos()">' +
+    esc(mod.replace(/^\d+\.\s*/, '')) + '</button>').join('');
+  const [mod, items] = PROTOCOLOS[protoCat];
+  $('proto-lista').innerHTML = '<div class="card"><h3>' + esc(mod) + '</h3>' + items.map(([t, d]) =>
+    '<div class="item-linea"><div class="grow"><b style="font-size:.9rem">' + esc(t) + '</b>' +
+    '<div class="mini muted">' + esc(d) + '</div></div></div>').join('') + '</div>';
+  // deja visible en el menú la sección activa
+  const act = $('proto-tabs').children[protoCat];
+  if (act) act.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+}
+
+/* ═══════════ PREPARACIONES ═══════════ */
+let prepFoto = { foto: '' };
+let prepTab = 'reg';   // reg = registrar lo preparado · rec = consultar recetario
+let recCat = 0;
+function renderRecetario() {
+  $('prep-rec-tabs').innerHTML = RECETAS.map(([cat], i) =>
+    '<button class="' + (recCat === i ? 'on' : '') + '" onclick="recCat=' + i + ';renderRecetario()">' + esc(cat) + '</button>').join('');
+  const [cat, items] = RECETAS[recCat];
+  $('prep-rec-lista').innerHTML = '<div class="card"><h3>' + esc(cat) + '</h3>' + items.map(([n, d]) =>
+    '<div class="item-linea"><div class="grow"><b style="font-size:.9rem">' + esc(n) + '</b>' +
+    '<div class="mini muted">' + esc(d) + '</div></div></div>').join('') + '</div>' +
+    '<p class="mini muted centrado">Gramajes y montaje según el recetario de Dirección. Ante cualquier duda, consulta a tu encargado.</p>';
+  const act = $('prep-rec-tabs').children[recCat];
+  if (act) act.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+}
+function irPreparaciones() {
+  prepTab = 'reg';
+  prepFoto = { foto: '' };
+  $('prep-que').innerHTML = PREPARACIONES.map(x => '<option>' + esc(x) + '</option>').join('');
+  $('prep-otra').value = ''; $('prep-cant').value = ''; $('prep-unidad').value = ''; $('prep-nota').value = '';
+  ir('scr-prep');
+}
+function renderPreparaciones() {
+  document.querySelectorAll('#prep-seg button').forEach(b => b.classList.toggle('on', b.dataset.t === prepTab));
+  $('prep-recetario').style.display = prepTab === 'rec' ? '' : 'none';
+  $('prep-registro').style.display = prepTab === 'rec' ? 'none' : '';
+  if (prepTab === 'rec') return renderRecetario();
+  opcionesPersonal($('prep-persona'), true);
+  if (!$('prep-persona').value) opcionesPersonal($('prep-persona'), false);
+  if (!$('prep-que').options.length) $('prep-que').innerHTML = PREPARACIONES.map(x => '<option>' + esc(x) + '</option>').join('');
+  cambioPrepQue();
+  $('prep-drop').innerHTML = prepFoto.foto ? '<img src="' + prepFoto.foto + '">' : '📷 Foto del resultado (opcional)';
+  prepararDrop('prep-drop', 'prep-file', prepFoto);
+  const hoy = db.preparaciones.filter(x => x.fecha === hoyISO() && x.sucursalId === sucursalActual);
+  $('prep-lista').innerHTML = hoy.length ? hoy.map(x =>
+    '<div class="item-linea">' + (x.foto ? '<img src="' + fotoURL(x.foto) + '" style="width:42px;height:42px;object-fit:cover;border-radius:10px">' : '<div class="avatar">🧪</div>') +
+    '<div class="grow"><b>' + esc(x.que) + '</b><div class="mini muted">' +
+    esc(x.cantidad || '') + ' ' + esc(x.unidad || '') + ' · ' + esc(per(x.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(x.ts) +
+    (x.nota ? ' · ' + esc(x.nota) : '') + '</div></div>' +
+    '<button class="btn s mini" onclick="borrarPreparacion(\'' + x.id + '\')">🗑️</button></div>').join('')
+    : '<p class="muted mini">Aún no se registran preparaciones hoy.</p>';
+}
+function cambioPrepQue() {
+  $('prep-otra').style.display = $('prep-que').value === 'Otra' ? '' : 'none';
+}
+async function registrarPreparacion() {
+  const p = per($('prep-persona').value);
+  if (!p) return toast('Selecciona quién preparó');
+  let que = $('prep-que').value;
+  if (que === 'Otra') {
+    que = $('prep-otra').value.trim();
+    if (!que) return toast('Escribe qué se preparó 🧪');
+  }
+  const cantidad = $('prep-cant').value.trim();
+  const s = suc(sucursalActual);
+  const fotoFinal = prepFoto.foto ? await subirFotoDrive(prepFoto.foto, { tipo: 'preparacion', sucursal: s.nombre, fecha: hoyISO() }) : '';
+  db.preparaciones.unshift({
+    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p.id,
+    turno: new Date().getHours() < 15 ? 1 : 2, que, cantidad, unidad: $('prep-unidad').value.trim(),
+    nota: $('prep-nota').value.trim(), foto: fotoFinal
+  });
+  db.preparaciones = db.preparaciones.slice(0, 400);
+  podarFotos(false); guardarDB();
+  notificar('🧪 Preparación — ' + s.nombre,
+    p.nombre + ' preparó ' + que + (cantidad ? ' · ' + cantidad + ' ' + $('prep-unidad').value : '') +
+    ' en ' + s.nombre + ' · ' + fmtFecha(hoyISO()) + ' ' + fmtHora(Date.now()) +
+    (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''));
+  prepFoto = { foto: '' };
+  $('prep-cant').value = ''; $('prep-nota').value = ''; $('prep-otra').value = '';
+  renderPreparaciones();
+  toast('🧪 ' + que + ' registrada');
+}
+function borrarPreparacion(id) {
+  const x = db.preparaciones.find(y => y.id === id); if (!x) return;
+  if (!confirm('¿Borrar el registro de "' + x.que + '"?')) return;
+  db.preparaciones = db.preparaciones.filter(y => y.id !== id);
+  guardarDB(); renderPreparaciones(); toast('🗑️ Registro borrado');
 }
 
 /* ═══════════ SUPERVISIÓN ═══════════ */
@@ -812,7 +1176,7 @@ function pedirPinSupervision() {
   abrirPin('PIN de Supervisión', pin => {
     if (pin === db.config.supervisorPin || pin === db.config.adminPin) {
       esSupervisor = true;
-      $('rev-suc').innerHTML = db.sucursales.filter(s => s.activa).map(s => '<option value="' + s.id + '">' + esc(s.nombre) + '</option>').join('');
+      $('rev-suc').innerHTML = db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '">' + esc(s.nombre) + '</option>').join('');
       $('rev-fecha').value = hoyISO();
       ir('scr-rev');
     } else toast('⛔ PIN incorrecto');
@@ -823,38 +1187,61 @@ function renderRevision() {
   const sid = $('rev-suc').value || db.sucursales[0].id;
   const fecha = $('rev-fecha').value || hoyISO();
   let html = '';
-  // tareas por turno con botón de verificación
-  [1, 2].forEach(turno => {
-    const lista = tareasDelDia(turno, fecha);
-    const hechas = lista.filter(t => tareaHecha(t, fecha, sid)).length;
-    html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + (turno === 1 ? '☀️ Turno 1' : '🌙 Turno 2') +
-      '</h3><span class="badge ' + (hechas === lista.length ? 'ok' : 'aviso') + '">' + hechas + '/' + lista.length + '</span></div>' +
-      lista.map(t => {
-        const h = tareaHecha(t, fecha, sid);
-        return '<div class="tarea ' + (h ? (h.ver ? 'verificada' : 'hecha') : '') + '" style="cursor:default">' +
-          '<div class="box">' + (h ? '✔' : '') + '</div>' +
-          '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' +
-          (h ? '✔ ' + esc(h.por || '') + ' · ' + fmtHora(h.ts) : 'No realizada · límite ' + fmtHoraLimite(t.hora)) + '</div></div>' +
-          (h ? '<button class="btn ' + (h.ver ? 'p' : 's') + ' mini" style="margin-left:auto" onclick="verificarTarea(\'' + t.id + '\',\'' + fecha + '\',\'' + sid + '\')">' +
-            (h.ver ? '✔✔ Verificada' : 'Verificar ✔✔') + '</button>'
-            : '<span class="vv no" style="margin-left:auto">PENDIENTE</span>') + '</div>';
-      }).join('') + '</div>';
-  });
-  // evidencias del día
-  const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid);
-  html += '<div class="card"><h3>📸 Evidencias del día (' + evs.length + ')</h3>' +
-    (evs.length ? '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div>' : '<p class="muted mini">Sin evidencias este día.</p>') + '</div>';
+  // acciones del día con botón de verificación
+  const lista = tareasDelDia(fecha);
+  const hechas = lista.filter(t => tareaHecha(t, fecha, sid)).length;
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">✅ Acciones del día</h3>' +
+    '<span class="badge ' + (hechas === lista.length ? 'ok' : 'aviso') + '">' + hechas + '/' + lista.length + '</span></div>' +
+    lista.map(t => {
+      const h = tareaHecha(t, fecha, sid);
+      return '<div class="tarea ' + (h ? (h.ver ? 'verificada' : 'hecha') : '') + '" style="cursor:default">' +
+        '<div class="box">' + (h ? '✔' : '') + '</div>' +
+        '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' +
+        (h ? '✔ ' + esc(h.por || '') + ' · ' + fmtHora(h.ts) : 'No realizada · ' + esc(notaTarea(t))) + '</div></div>' +
+        (h ? '<button class="btn ' + (h.ver ? 'p' : 's') + ' mini" style="margin-left:auto" onclick="verificarTarea(\'' + t.id + '\',\'' + fecha + '\',\'' + sid + '\')">' +
+          (h.ver ? '✔✔ Verificada' : 'Verificar ✔✔') + '</button>'
+          : '<span class="vv no" style="margin-left:auto">PENDIENTE</span>') + '</div>';
+    }).join('') + '</div>';
+  // registros con evidencia (sección 1 del checklist del equipo)
+  const cieDia = cierreDelDia(fecha, sid);
+  const conEv = REGISTROS.filter(r => registroListo(r, fecha, sid)).length;
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📸 Registros del día</h3>' +
+    '<span class="badge ' + (conEv === REGISTROS.length ? 'ok' : 'aviso') + '">' + conEv + '/' + REGISTROS.length + '</span></div>' +
+    REGISTROS.map(r => {
+      const ev = evidenciaDeRegistro(r.id, fecha, sid);
+      const ok = registroListo(r, fecha, sid);
+      const detalle = r.dinero
+        ? (cieDia ? fmt$(r.dinero === 'ventas' ? cieDia.ventas : cieDia.caja) + ' · ' + esc(per(cieDia.personalId)?.nombre || 'Equipo')
+          : 'Sin cierre registrado')
+        : (ev ? esc(per(ev.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(ev.ts) : 'Sin evidencia');
+      return '<div class="reg' + (ok ? ' hecha' : '') + '" style="cursor:default">' +
+        '<div class="box">' + (ok ? '✔' : '') + '</div>' +
+        '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div><div class="meta">' + detalle + '</div></div>' +
+        (ev && ev.foto ? '<img class="reg-thumb" src="' + fotoURL(ev.foto) + '" onclick="verFoto(\'' + ev.id + '\')" loading="lazy">' : '') +
+        '</div>';
+    }).join('') + '</div>';
+  // otras evidencias sueltas del día
+  const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid && !e.regId);
+  if (evs.length) html += '<div class="card"><h3>📎 Otras evidencias (' + evs.length + ')</h3>' +
+    '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div></div>';
+  // preparaciones del día
+  const preps = db.preparaciones.filter(x => x.fecha === fecha && x.sucursalId === sid);
+  html += '<div class="card"><h3>🧪 Preparaciones del día (' + preps.length + ')</h3>' + (preps.length
+    ? preps.map(x => '<div class="item-linea">' +
+      (x.foto ? '<img src="' + fotoURL(x.foto) + '" style="width:42px;height:42px;object-fit:cover;border-radius:10px">' : '<div class="avatar">🧪</div>') +
+      '<div class="grow"><b>' + esc(x.que) + '</b><div class="mini muted">' + esc(x.cantidad || '') + ' ' + esc(x.unidad || '') +
+      ' · ' + esc(per(x.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(x.ts) + '</div></div></div>').join('')
+    : '<p class="muted mini">Sin preparaciones registradas este día.</p>') + '</div>';
   // cierre del día
   const cie = db.cierres.find(c => c.fecha === fecha && c.sucursalId === sid);
   html += '<div class="card"><h3>🌙 Cierre del día</h3>' + (cie
-    ? '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(cie.ventas) + '</div><div class="l">ventas netas</div></div>' +
-    '<div class="stat"><div class="v">' + fmt$(cie.caja) + '</div><div class="l">caja</div></div>' +
-    '<div class="stat"><div class="v">' + (cie.hechos ?? 0) + '/' + CHECK_CIERRE.length + '</div><div class="l">checklist cierre</div></div></div>' +
+    ? '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(cie.ventas) + '</div><div class="l">ventas cierre</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(cie.caja) + '</div><div class="l">caja de dinero</div></div>' +
+    '<div class="stat"><div class="v">' + (cie.hechos ?? 0) + '/' + totalCierre(cie) + '</div><div class="l">acciones del día</div></div></div>' +
     (cie.novedades ? '<p class="mini muted" style="margin-top:8px">🗞️ ' + esc(cie.novedades) + '</p>' : '')
     : '<p class="muted mini">Aún sin cierre registrado este día.</p>') + '</div>';
   // veredicto
-  const a1 = avanceTurno(1, fecha, sid), a2 = avanceTurno(2, fecha, sid);
-  const pct = (a1.total + a2.total) ? Math.round((a1.hechas + a2.hechas) / (a1.total + a2.total) * 100) : 0;
+  const pct = avanceDia(fecha, sid).pct;
   html += '<div class="card amarilla"><h3>📝 Enviar revisión del día</h3>' +
     '<div class="fila" style="margin-bottom:8px"><div class="stat" style="flex:0 0 130px"><div class="v">' + pct + '%</div><div class="l">cumplimiento</div></div>' +
     '<div style="flex:1"><div class="seg" style="margin:0">' +
@@ -879,14 +1266,10 @@ function marcarVeredicto() {
   });
 }
 function verificarTarea(tid, fecha, sid) {
-  const t = TAREAS.find(x => x.id === tid);
+  const t = ACCIONES.find(x => x.id === tid);
   const key = tareaKey(fecha, sid, tid);
   let r = db.tareas.find(x => x.id === key);
-  if (!r) {
-    // tarea automática (entrada) verificada sin registro manual previo
-    r = { id: key, fecha, sucursalId: sid, tareaId: tid, turno: t.turno, nombre: t.n, done: true, por: 'auto' };
-    db.tareas.push(r);
-  }
+  if (!r) { r = { id: key, fecha, sucursalId: sid, tareaId: tid, nombre: t.n, done: true, por: 'auto' }; db.tareas.push(r); }
   r.ver = !r.ver; r.verTs = Date.now(); r.ts = Date.now();
   guardarDB(); renderRevision();
   toast(r.ver ? '✔✔ Tarea verificada' : '↩️ Verificación retirada');
@@ -950,11 +1333,11 @@ function dirHoy() {
     '<div class="stat"><div class="v">' + abiertos.length + '</div><div class="l">en turno ahora</div></div>' +
     '<div class="stat"><div class="v">' + tareasHoy + '</div><div class="l">tareas hechas hoy</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propHoyTot) + '</div><div class="l">💳 propinas hoy</div></div></div>';
-  db.sucursales.filter(s => s.activa).forEach(s => {
+  db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
     const enTurno = turnosAbiertos(s.id);
     const falt = faltantes(s.id);
     const cierresHoy = db.cierres.filter(x => x.fecha === hoy && x.sucursalId === s.id);
-    const a1 = avanceTurno(1, hoy, s.id), a2 = avanceTurno(2, hoy, s.id);
+    const a = avanceDia(hoy, s.id);
     const revS = db.revisiones.find(r => r.sucursalId === s.id);
     html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏬 ' + esc(s.nombre) + '</h3>' +
       (falt.length ? '<span class="badge comprar">🛒 ' + falt.length + ' por comprar</span>' : '<span class="badge ok">stock OK</span>') + '</div>';
@@ -963,9 +1346,13 @@ function dirHoy() {
       return '<div class="item-linea"><div class="avatar">' + esc((p?.nombre || '?')[0]) + '</div><div class="grow"><b>' + esc(p?.nombre || '') +
         '</b><div class="mini muted">' + (t.tipo === 'matutino' ? '☀️' : '🌙') + ' entró ' + fmtHora(t.entrada) + '</div></div><span class="badge mor">en turno</span></div>';
     }).join('') : '<p class="muted mini">Nadie en turno.</p>';
+    const prepsHoy = db.preparaciones.filter(x => x.fecha === hoy && x.sucursalId === s.id).length;
+    const evHoyS = db.evidencias.filter(e => e.fecha === hoy && e.sucursalId === s.id).length;
     html += '<div class="sep"></div><div class="fila mini muted">' +
-      '<span>☀️ T1: <b class="amar">' + a1.hechas + '/' + a1.total + '</b></span>' +
-      '<span>🌙 T2: <b class="amar">' + a2.hechas + '/' + a2.total + '</b></span>' +
+      '<span>✅ Acciones: <b class="amar">' + a.hechas + '/' + a.total + '</b></span>' +
+      '<span>📸 Registros: <b class="amar">' + a.regHechos + '/' + a.regTotal + '</b></span>' +
+      '<span>📎 Evidencias: <b class="amar">' + evHoyS + '</b></span>' +
+      '<span>🧪 Preparaciones: <b class="amar">' + prepsHoy + '</b></span>' +
       '<span>Cierres: <b class="amar">' + cierresHoy.length + '</b>' +
       (cierresHoy.length ? ' · ' + fmt$(cierresHoy.reduce((a, x) => a + x.ventas, 0)) : '') + '</span>' +
       (revS ? '<span>🔍 Últ. revisión: <b class="amar">' + (revS.veredicto === 'cumplido' ? '✅' : revS.veredicto === 'ajustes' ? '⚠️' : '⛔') +
@@ -1002,14 +1389,14 @@ function dirMes() {
     '<button class="btn s mini" onclick="cambiarMes(1)">→</button>' +
     '<button class="btn s mini" onclick="exportarMesCSV()">⬇️ CSV</button></div></div>';
   html += '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(total) + '</div><div class="l">ventas del mes</div></div>' +
-    db.sucursales.filter(s => s.activa).map(s => '<div class="stat"><div class="v">' + fmt$(porSuc[s.id] || 0) + '</div><div class="l">' + esc(s.nombre) + '</div></div>').join('') + '</div>';
+    db.sucursales.filter(s => s.activa && !s.del).map(s => '<div class="stat"><div class="v">' + fmt$(porSuc[s.id] || 0) + '</div><div class="l">' + esc(s.nombre) + '</div></div>').join('') + '</div>';
   const fechas = Object.keys(dias).sort().reverse();
   html += '<div class="card"><h3>Cierres por día</h3><div class="tabla-wrap"><table><tr><th>Fecha</th>' +
-    db.sucursales.filter(s => s.activa).map(s => '<th class="num">' + esc(s.nombre) + '</th>').join('') + '<th class="num">Total día</th></tr>';
+    db.sucursales.filter(s => s.activa && !s.del).map(s => '<th class="num">' + esc(s.nombre) + '</th>').join('') + '<th class="num">Total día</th></tr>';
   if (!fechas.length) html += '<tr><td colspan="9" class="muted">Aún no hay cierres este mes.</td></tr>';
   fechas.forEach(f => {
     const tot = Object.values(dias[f]).reduce((a, b) => a + b, 0);
-    html += '<tr><td>' + fmtFecha(f) + '</td>' + db.sucursales.filter(s => s.activa).map(s =>
+    html += '<tr><td>' + fmtFecha(f) + '</td>' + db.sucursales.filter(s => s.activa && !s.del).map(s =>
       '<td class="num">' + (dias[f][s.id] ? fmt$(dias[f][s.id]) : '—') + '</td>').join('') +
       '<td class="num"><b class="amar">' + fmt$(tot) + '</b></td></tr>';
   });
@@ -1017,7 +1404,7 @@ function dirMes() {
   // detalle de cierres
   html += '<div class="card"><h3>Detalle de cierres</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th>Checklist</th><th>Novedades</th></tr>' +
     (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' + esc(per(c.personalId)?.nombre || '—') +
-      '</td><td class="num">' + fmt$(c.ventas) + '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + CHECK_CIERRE.length +
+      '</td><td class="num">' + fmt$(c.ventas) + '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + totalCierre(c) +
       '</td><td class="mini">' + esc(c.novedades || '') + '</td></tr>').join('') || '<tr><td colspan="7" class="muted">Sin cierres.</td></tr>') +
     '</table></div></div>';
   return html;
@@ -1032,7 +1419,7 @@ function exportarMesCSV() {
   const cierres = db.cierres.filter(c => c.fecha.startsWith(mesVista));
   let csv = 'Fecha,Sucursal,Responsable,VentasNetas,DineroCaja,Checklist,Novedades\n';
   cierres.forEach(c => csv += [c.fecha, suc(c.sucursalId)?.nombre || '', per(c.personalId)?.nombre || '',
-    c.ventas, c.caja, (c.hechos ?? '') + '/' + CHECK_CIERRE.length, '"' + (c.novedades || '').replace(/"/g, "'") + '"'].join(',') + '\n');
+    c.ventas, c.caja, (c.hechos ?? '') + '/' + totalCierre(c), '"' + (c.novedades || '').replace(/"/g, "'") + '"'].join(',') + '\n');
   descargar('cierres-' + mesVista + '.csv', csv);
   toast('⬇️ CSV del mes descargado');
 }
@@ -1069,7 +1456,8 @@ function dirNomina() {
       return '<tr><td>' + esc(p?.nombre || '¿?') + '</td><td class="num">' + x.turnos + '</td><td class="num">' + x.horas.toFixed(1) +
         ' h</td><td class="num">' + fmt$(x.pago) + '</td><td class="num">' + fmt$(x.propinas) + '</td><td class="num"><b class="amar">' + fmt$(x.pago + x.propinas) + '</b></td></tr>';
     }).join('') || '<tr><td colspan="6" class="muted">Sin registros este mes.</td></tr>') + '</table></div>' +
-    '<p class="mini muted">Base de ' + (db.config.baseHoras || 6) + ' h por turno; horas extra con tarifa individual. Las propinas digitales (tarjeta) se retribuyen al colaborador que las registró.</p></div>';
+    '<p class="mini muted">Se paga <b>por día trabajado</b> (entrada + cierre = turno completo). Los minutos de más o de menos se ajustan en bloques de ' +
+    BLOQUE_MIN + ' min con la tarifa por hora de cada quien. Las propinas digitales (tarjeta) se retribuyen al colaborador que las registró.</p></div>';
   // propinas del mes con opción de eliminar
   html += '<div class="card"><h3>💳 Propinas digitales del mes</h3>' +
     (propMes.length ? '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th class="num">Monto</th><th>Nota</th><th></th></tr>' +
@@ -1078,14 +1466,48 @@ function dirNomina() {
         '</td><td><button class="btn s mini" onclick="borrarPropina(\'' + x.id + '\')">🗑️</button></td></tr>').join('') + '</table></div>'
       : '<p class="muted mini">Sin propinas digitales este mes.</p>') + '</div>';
   // detalle
-  html += '<div class="card"><h3>Detalle de turnos</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Turno</th><th>Entrada</th><th>Salida</th><th class="num">Horas</th><th class="num">Pago</th></tr>' +
+  html += '<div class="card"><h3>Detalle de turnos</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Turno</th><th>Entrada</th><th>Salida</th><th class="num">En piso</th><th>Ajuste</th><th class="num">Pago</th><th></th></tr>' +
     (turnos.map(t => {
       const c = calcularPago(t);
       return '<tr><td>' + fmtFecha(t.fecha) + '</td><td>' + esc(per(t.personalId)?.nombre || '') + '</td><td>' + esc(suc(t.sucursalId)?.nombre || '') +
         '</td><td>' + (t.tipo === 'matutino' ? '☀️' : '🌙') + '</td><td>' + fmtHora(t.entrada) + '</td><td>' + fmtHora(t.salida) +
-        '</td><td class="num">' + c.horas + '</td><td class="num">' + fmt$(c.pago) + '</td></tr>';
-    }).join('') || '<tr><td colspan="8" class="muted">Sin registros.</td></tr>') + '</table></div></div>';
+        '</td><td class="num">' + c.horas + ' h</td><td class="mini">' + txtAjuste(c.bloques) +
+        (t.motivoAjuste ? '<div class="mini muted">' + esc(t.motivoAjuste) + '</div>' : '') +
+        '</td><td class="num">' + fmt$(c.pago) + '</td>' +
+        '<td><button class="btn s mini" onclick="modalAjuste(\'' + t.id + '\')">✏️</button></td></tr>';
+    }).join('') || '<tr><td colspan="10" class="muted">Sin registros.</td></tr>') + '</table></div></div>';
   return html;
+}
+/* Dirección corrige el ajuste de tiempo capturado en piso */
+let ajusteTmp = 0;
+function modalAjuste(tid) {
+  const t = db.turnos.find(x => x.id === tid); if (!t) return;
+  const p = per(t.personalId);
+  ajusteTmp = Number(t.ajuste || 0);
+  abrirModal('<h3>✏️ Ajuste de ' + esc(p?.nombre || '') + '</h3>' +
+    '<p class="mini muted">' + fmtFecha(t.fecha) + ' · ' + fmtHora(t.entrada) + ' → ' + fmtHora(t.salida) +
+    ' · ' + calcularPago(t).horas + ' h en piso</p>' +
+    '<div class="fila" style="align-items:center;text-align:center">' +
+    '<button class="btn s" onclick="ajusteTmp--;pintarAjusteModal(\'' + tid + '\')">− ' + BLOQUE_MIN + ' min</button>' +
+    '<div id="aj-tx" style="flex:1.4"></div>' +
+    '<button class="btn s" onclick="ajusteTmp++;pintarAjusteModal(\'' + tid + '\')">+ ' + BLOQUE_MIN + ' min</button></div>' +
+    '<label>Motivo</label><input id="aj-motivo" value="' + esc(t.motivoAjuste || '') + '" placeholder="Ej. se quedó a cubrir, salió antes…">' +
+    '<div class="sep"></div><button class="btn p" onclick="guardarAjuste(\'' + tid + '\')">Guardar ajuste</button>' +
+    '<div style="height:8px"></div><button class="btn s" onclick="cerrarModal()">Cancelar</button>');
+  pintarAjusteModal(tid);
+}
+function pintarAjusteModal(tid) {
+  const t = db.turnos.find(x => x.id === tid); const p = per(t.personalId);
+  const pago = Math.max(0, (p?.pagoTurno || 0) + ajusteTmp * tarifaBloque(p || {}));
+  $('aj-tx').innerHTML = '<b class="amar">' + txtAjuste(ajusteTmp) + '</b><div class="mini muted">pago: ' + fmt$(pago) + '</div>';
+}
+function guardarAjuste(tid) {
+  const t = db.turnos.find(x => x.id === tid); if (!t) return;
+  t.ajuste = ajusteTmp;
+  t.motivoAjuste = ($('aj-motivo').value || '').trim();
+  const c = calcularPago(t); t.pago = c.pago; t.horas = c.horas; t.ts = Date.now();
+  guardarDB(); cerrarModal(); renderDireccion();
+  toast('✏️ Ajuste guardado · ' + fmt$(c.pago));
 }
 function cambiarNominaMes(d) {
   let [y, m] = nominaMes.split('-').map(Number);
@@ -1095,11 +1517,12 @@ function cambiarNominaMes(d) {
 }
 function exportarNominaCSV() {
   const turnos = db.turnos.filter(t => t.salida && t.fecha.startsWith(nominaMes));
-  let csv = 'Fecha,Colaborador,Sucursal,Turno,Entrada,Salida,Horas,Pago\n';
+  let csv = 'Fecha,Colaborador,Sucursal,Turno,Entrada,Salida,Horas en piso,Ajuste (min),Motivo,Pago\n';
   turnos.forEach(t => {
     const c = calcularPago(t);
     csv += [t.fecha, per(t.personalId)?.nombre || '', suc(t.sucursalId)?.nombre || '', t.tipo,
-      fmtHora(t.entrada), fmtHora(t.salida), c.horas, c.pago].join(',') + '\n';
+      fmtHora(t.entrada), fmtHora(t.salida), c.horas, c.min,
+      '"' + (t.motivoAjuste || '').replace(/"/g, "'") + '"', c.pago].join(',') + '\n';
   });
   csv += '\nPROPINAS DIGITALES\nFecha,Colaborador,Sucursal,Monto,Nota\n';
   db.propinas.filter(x => x.fecha.startsWith(nominaMes)).forEach(x => {
@@ -1113,7 +1536,7 @@ function exportarNominaCSV() {
 /* --- INVENTARIOS (vista dirección) --- */
 function dirInventarios() {
   let html = '';
-  db.sucursales.filter(s => s.activa).forEach(s => {
+  db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
     const falt = faltantes(s.id);
     const st = stockDe(s.id);
     html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏬 ' + esc(s.nombre) + '</h3>' +
@@ -1133,7 +1556,7 @@ function dirInventarios() {
 /* --- EVIDENCIAS (vista dirección) --- */
 function dirEvidencias() {
   let html = '';
-  db.sucursales.filter(s => s.activa).forEach(s => {
+  db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
     const lista = db.evidencias.filter(e => e.sucursalId === s.id).slice(0, 12);
     html += '<div class="card"><h3>🏬 ' + esc(s.nombre) + '</h3>' +
       (lista.length ? '<div class="galeria">' + lista.map(e => tarjetaEvidencia(e)).join('') + '</div>'
@@ -1149,7 +1572,7 @@ function dirAdmin() {
   /* sucursales */
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏬 Sucursales</h3>' +
     '<button class="btn s mini" onclick="modalSucursal()">+ Agregar</button></div>' +
-    db.sucursales.map(s => '<div class="item-linea"><div class="grow"><b>' + esc(s.nombre) + '</b>' +
+    db.sucursales.filter(s => !s.del).map(s => '<div class="item-linea"><div class="grow"><b>' + esc(s.nombre) + '</b>' +
       '<div class="mini muted">' + esc(s.direccion || '') + '</div></div>' +
       '<span class="badge ' + (s.activa ? 'ok' : 'aviso') + '">' + (s.activa ? 'activa' : 'pausada') + '</span>' +
       '<button class="btn s mini" onclick="modalSucursal(\'' + s.id + '\')">✏️</button></div>').join('') + '</div>';
@@ -1157,7 +1580,7 @@ function dirAdmin() {
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">👥 Personal y sueldos</h3>' +
     '<button class="btn s mini" onclick="modalPersona()">+ Agregar</button></div>' +
     '<div class="tabla-wrap"><table><tr><th>Nombre</th><th>PIN</th><th class="num">$/turno (' + (c.baseHoras || 6) + 'h)</th><th class="num">$/h extra</th><th></th></tr>' +
-    db.personal.map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' + esc(p.nombre) + '</td><td>' + esc(p.pin) +
+    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' + esc(p.nombre) + '</td><td>' + esc(p.pin) +
       '</td><td class="num">' + fmt$(p.pagoTurno) + '</td><td class="num">' + fmt$(p.pagoHora) +
       '</td><td><button class="btn s mini" onclick="modalPersona(\'' + p.id + '\')">✏️</button></td></tr>').join('') + '</table></div></div>';
   /* productos */
@@ -1190,7 +1613,7 @@ function dirAdmin() {
 }
 function listaProdAdmin(q) {
   q = q.toLowerCase();
-  return db.productos.filter(p => p.nombre.toLowerCase().includes(q)).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p =>
+  return db.productos.filter(p => !p.del && p.nombre.toLowerCase().includes(q)).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p =>
     '<div class="item-linea">' + miniProd(p, 38) + '<div class="grow"><b style="font-size:.88rem">' + esc(p.nombre) + '</b>' +
     '<div class="mini muted">' + esc(p.unidad) + ' · mín ' + p.minimo + ' · ' + (CATS[p.cat] || '') + '</div></div>' +
     '<button class="btn s mini" onclick="modalProducto(\'' + p.id + '\')">✏️</button></div>').join('');
@@ -1209,10 +1632,11 @@ function modalSucursal(id) {
 }
 function guardarSucursal(id) {
   const nombre = $('ms-nombre').value.trim(); if (!nombre) return toast('Ponle nombre a la sucursal');
-  if (id) { const s = suc(id); s.nombre = nombre; s.direccion = $('ms-dir').value.trim(); s.activa = $('ms-activa').value === '1'; }
+  if (id) { const s = suc(id); s.nombre = nombre; s.direccion = $('ms-dir').value.trim(); s.activa = $('ms-activa').value === '1'; s.t = Date.now(); }
   else {
-    const nid = 'suc-' + uid();
-    db.sucursales.push({ id: nid, nombre, direccion: $('ms-dir').value.trim(), activa: true });
+    let nid = 'suc-' + slug(nombre);
+    if (db.sucursales.some(s => s.id === nid)) nid = 'suc-' + uid();
+    db.sucursales.push({ id: nid, nombre, direccion: $('ms-dir').value.trim(), activa: true, t: Date.now() });
     db.stock[nid] = {}; db.productos.forEach(p => db.stock[nid][p.id] = { c: 0, t: 0 });
   }
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🏬 Sucursal guardada');
@@ -1220,7 +1644,7 @@ function guardarSucursal(id) {
 function borrarSucursal(id) {
   if (turnosAbiertos(id).length) return toast('⚠️ Hay turnos abiertos en esta sucursal');
   if (!confirm('¿Eliminar la sucursal "' + suc(id).nombre + '"? Su historial se conserva pero dejará de aparecer.')) return;
-  db.sucursales = db.sucursales.filter(s => s.id !== id);
+  const s = suc(id); s.del = true; s.activa = false; s.t = Date.now();
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Sucursal eliminada');
 }
 function modalPersona(id) {
@@ -1238,13 +1662,17 @@ function modalPersona(id) {
 function guardarPersona(id) {
   const nombre = $('mp-nombre').value.trim(), pin = $('mp-pin').value.trim();
   if (!nombre || pin.length !== 4) return toast('Nombre y PIN de 4 dígitos');
-  if (id) { const p = per(id); Object.assign(p, { nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1' }); }
-  else db.personal.push({ id: uid(), nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true });
+  if (id) { const p = per(id); Object.assign(p, { nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1', t: Date.now() }); }
+  else {
+    let nid = 'per-' + slug(nombre);
+    if (db.personal.some(p => p.id === nid)) nid = 'per-' + uid();
+    db.personal.push({ id: nid, nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true, t: Date.now() });
+  }
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('👥 Colaborador guardado');
 }
 function borrarPersona(id) {
   if (!confirm('¿Eliminar a ' + per(id).nombre + '? Su historial de turnos se conserva.')) return;
-  db.personal = db.personal.filter(p => p.id !== id);
+  const p = per(id); p.del = true; p.activo = false; p.t = Date.now();
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Colaborador eliminado');
 }
 let fotoProductoTmp = null; // null = sin cambio; '' = quitar; 'ruta/dataURL' = nueva
@@ -1288,11 +1716,13 @@ function abrirGaleriaFotos() {
 function guardarProducto(id) {
   const nombre = $('mx-nombre').value.trim(); if (!nombre) return toast('Nombre del producto');
   if (id) {
-    const p = prod(id); Object.assign(p, { nombre, unidad: $('mx-unidad').value.trim(), minimo: Number($('mx-min').value) || 0, cat: $('mx-cat').value });
+    const p = prod(id); Object.assign(p, { nombre, unidad: $('mx-unidad').value.trim(), minimo: Number($('mx-min').value) || 0, cat: $('mx-cat').value, t: Date.now() });
     if (fotoProductoTmp !== null) p.foto = fotoProductoTmp;
   }
   else {
-    const np = { id: uid(), nombre, unidad: $('mx-unidad').value.trim() || 'Pieza', minimo: Number($('mx-min').value) || 0, cat: $('mx-cat').value };
+    let nid = 'p-' + slug(nombre);
+    if (db.productos.some(p => p.id === nid)) nid = 'p-' + uid();
+    const np = { id: nid, nombre, unidad: $('mx-unidad').value.trim() || 'Pieza', minimo: Number($('mx-min').value) || 0, cat: $('mx-cat').value, t: Date.now() };
     if (fotoProductoTmp) np.foto = fotoProductoTmp;
     db.productos.push(np);
     db.sucursales.forEach(s => { stockDe(s.id)[np.id] = { c: 0, t: 0 }; });
@@ -1301,26 +1731,39 @@ function guardarProducto(id) {
 }
 function borrarProducto(id) {
   if (!confirm('¿Eliminar "' + prod(id).nombre + '" del catálogo?')) return;
-  db.productos = db.productos.filter(p => p.id !== id);
+  const p = prod(id); p.del = true; p.t = Date.now();
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Producto eliminado');
 }
 function guardarConfig() {
   const c = db.config;
   const pin = $('cfg-pin').value.trim();
-  if (pin.length === 4) c.adminPin = pin; else return toast('El PIN debe tener 4 dígitos');
-  const pinSup = $('cfg-pin-sup').value.trim();
-  if (pinSup.length === 4) c.supervisorPin = pinSup;
-  c.baseHoras = Number($('cfg-base').value) || 6;
-  c.emailTo = $('cfg-email').value.trim();
-  c.whatsapp = $('cfg-wa').value.replace(/\D/g, '');
-  c.scriptUrl = $('cfg-url').value.trim();
+  if (pin.length !== 4) return toast('El PIN debe tener 4 dígitos');
+  const nuevos = {
+    adminPin: pin,
+    supervisorPin: ($('cfg-pin-sup').value.trim().length === 4) ? $('cfg-pin-sup').value.trim() : c.supervisorPin,
+    baseHoras: Number($('cfg-base').value) || 6,
+    emailTo: $('cfg-email').value.trim(),
+    whatsapp: $('cfg-wa').value.replace(/\D/g, ''),
+  };
+  // marca de tiempo POR CAMPO: solo lo que realmente cambió viaja como "nuevo"
+  Object.keys(nuevos).forEach(k => {
+    if (c[k] !== nuevos[k]) { c[k] = nuevos[k]; db.configTs[k] = Date.now(); }
+  });
+  c.scriptUrl = $('cfg-url').value.trim(); // local de cada dispositivo, no se sincroniza
   tocarCatalogos(); guardarDB(); pintarRed(); toast('💾 Configuración guardada');
   if (enLinea()) sync(false);
 }
 function enlaceInstalacion() {
   const url = ($('cfg-url') ? $('cfg-url').value.trim() : '') || db.config.scriptUrl;
   if (!url) return toast('Primero guarda la URL del backend 🔌');
-  const link = location.origin + location.pathname + '#cfg=' + btoa(JSON.stringify({ u: url }));
+  const c = db.config;
+  // el enlace lleva la configuración completa, no solo la URL: así un dispositivo
+  // que perdió su localStorage recupera PINs y datos sin esperar al sync
+  const payload = {
+    u: url, ap: c.adminPin, sp: c.supervisorPin, em: c.emailTo,
+    wa: c.whatsapp, bh: c.baseHoras, ts: Date.now()
+  };
+  const link = location.origin + location.pathname + '#cfg=' + btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
   const msj = '👁️ *El Ojo Maestro — El Anillo del Cíclope*\n' +
     'Abre este enlace en Chrome o Safari (NO en el navegador de WhatsApp: usa "Abrir en el navegador") y el dispositivo queda conectado y sincronizado automáticamente:\n' + link +
     '\n\nDespués: menú del navegador → "Agregar a pantalla de inicio" para tenerla como app.';
@@ -1403,11 +1846,23 @@ setInterval(() => {
   // enlace de instalación: #cfg=<base64> configura el backend automáticamente
   if (location.hash.startsWith('#cfg=')) {
     try {
-      const cfg = JSON.parse(atob(location.hash.slice(5)));
+      const cfg = JSON.parse(decodeURIComponent(escape(atob(location.hash.slice(5)))));
       if (cfg.u && /^https:\/\/script\.google\.com\//.test(cfg.u)) {
-        db.config.scriptUrl = cfg.u;
+        const c = db.config;
+        c.scriptUrl = cfg.u;
+        // restaura también la configuración de Dirección (enlaces v1.3 en adelante)
+        if (cfg.ap) c.adminPin = cfg.ap;
+        if (cfg.sp) c.supervisorPin = cfg.sp;
+        if (cfg.em) c.emailTo = cfg.em;
+        if (cfg.wa) c.whatsapp = cfg.wa;
+        if (cfg.bh) c.baseHoras = cfg.bh;
+        if (cfg.ts) {
+          // el enlace vale como edición de catálogos: no lo pisa el servidor viejo
+          db.catTs = Math.max(db.catTs || 0, cfg.ts);
+          ['adminPin', 'supervisorPin', 'emailTo', 'whatsapp', 'baseHoras'].forEach(k => db.configTs[k] = cfg.ts);
+        }
         guardarDB(false);
-        toast('🔗 Dispositivo conectado a la nube Cíclope');
+        toast('🔗 Dispositivo conectado y configurado');
       }
     } catch (e) { }
     history.replaceState(null, '', location.pathname + location.search);

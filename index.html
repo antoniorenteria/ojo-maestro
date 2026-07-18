@@ -283,6 +283,43 @@ html[data-tema="claro"] .foto-drop{border-color:var(--borde)}
 html[data-tema="claro"] .tabs button{background:#F8F5FE}
 html[data-tema="claro"] .tabs button.on{background:#6B21A8;color:#fff;border-color:#6B21A8}
 html[data-tema="claro"] .topbar .sub{color:var(--muted)}
+
+/* ═══════ REGISTROS CON EVIDENCIA (sección 1 del checklist) ═══════ */
+.reg{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:14px;border:1.5px solid var(--borde);
+  margin-bottom:9px;background:#190C2E;transition:.15s}
+.reg .box{width:30px;height:30px;border-radius:9px;border:2px solid var(--morado);flex-shrink:0;display:flex;
+  align-items:center;justify-content:center;font-size:1rem;font-weight:800;color:#1A1400}
+.reg.hecha{border-color:rgba(255,213,35,.6);background:#231536}
+.reg.hecha .box{background:var(--amarillo);border-color:var(--amarillo)}
+.reg .grow{flex:1;min-width:0}
+.reg .tt{font-weight:600;font-size:.93rem;line-height:1.25}
+.reg .meta{font-size:.7rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reg-dinero{display:flex;gap:8px}
+.reg-dinero input{flex:1;padding:10px 11px;font-size:.88rem;border-radius:10px;min-width:0}
+/* la casilla del cierre baja los montos a su propio renglón */
+.reg.fila-cierre{flex-wrap:wrap}
+.reg.fila-cierre .reg-dinero{flex-basis:100%;margin-top:9px}
+.reg-cam{width:44px;height:44px;flex-shrink:0;border-radius:12px;border:1.5px solid var(--borde);
+  background:var(--fondo-4);color:var(--amarillo);font-size:1.2rem;cursor:pointer}
+.reg-cam.listo{border-color:var(--amarillo)}
+.reg-thumb{width:44px;height:44px;object-fit:cover;border-radius:11px;flex-shrink:0;cursor:pointer;border:1.5px solid var(--borde)}
+.reg-env{flex-shrink:0;padding:11px 15px}
+.aviso-turno{background:var(--fondo-4);border:1.5px solid var(--borde);border-radius:12px;padding:11px 13px;font-size:.87rem;line-height:1.6}
+/* títulos numerados de sección */
+.sec-tit{display:flex;align-items:center;gap:9px;font-family:'SerifGothic','Poppins',serif;font-size:1.02rem;
+  color:var(--amarillo);margin:0 0 12px}
+.sec-tit .n{width:23px;height:23px;border-radius:50%;background:var(--amarillo);color:#1A1400;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;font-family:'Poppins'}
+/* encabezado fijo con menú horizontal deslizable */
+.sub-fijo{position:sticky;top:66px;z-index:42;background:var(--velo);backdrop-filter:blur(14px);
+  margin:0 -16px;padding:10px 16px 2px;border-bottom:1px solid var(--borde-suave)}
+.sub-fijo h2{margin:0 0 9px}
+.sub-fijo .tabs{margin-bottom:0;padding-bottom:7px}
+html[data-tema="claro"] .reg{background:#FDFCFF}
+html[data-tema="claro"] .reg.hecha{background:#FFF9E3}
+html[data-tema="claro"] .reg-cam{background:#F3EDFC;color:#6B21A8}
+html[data-tema="claro"] .sec-tit{color:#6B21A8}
+html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
 </style>
 </head>
 <body>
@@ -308,9 +345,10 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
   <!-- ══════════ HOME SUCURSAL ══════════ -->
   <section class="screen" id="scr-suc">
     <div class="topbar">
-      <img class="logo logo-img" alt="logo">
-      <div><div class="tit amar" id="suc-nombre" style="font-weight:700"></div>
-        <div class="sub">Panel de sucursal</div></div>
+      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+      <div onclick="menuNavegacion()" style="cursor:pointer" title="Cambiar de panel">
+        <div class="tit amar" id="suc-nombre" style="font-weight:700"></div>
+        <div class="sub">Panel de sucursal ▾</div></div>
       <div class="grow"></div>
       <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red"><span class="dot"></span><span id="chip-red-tx">local</span></span>
@@ -323,73 +361,80 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
     </div>
     <div class="card amarilla" id="suc-avance"></div>
     <div class="menu-grid">
-      <div class="menu-item" onclick="irEntrada()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Registrar Entrada</span><div class="d">Inicio de jornada con PIN</div></div>
-      <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del Turno</span><div class="d">Tareas del día con hora límite</div></div>
+      <div class="menu-item" onclick="irAsistencia()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Entrada / Salida</span><div class="d">Asistencia y pago del día</div></div>
+      <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del Turno</span><div class="d">Cierre, evidencias y actividades</div></div>
       <div class="menu-item" onclick="ir('scr-inv')"><span class="em" style="--tint:#A78BFA">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
-      <div class="menu-item" onclick="ir('scr-evid')"><span class="em" style="--tint:#38BDF8">📸</span><span class="t">Evidencias</span><div class="d">Subir fotos de jornada</div></div>
       <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
-      <div class="menu-item" onclick="irCierre()"><span class="em" style="--tint:#818CF8">🌙</span><span class="t">Cierre de Turno</span><div class="d">Ventas, caja y checklist</div></div>
-      <div class="menu-item" onclick="irSalida()"><span class="em" style="--tint:#F87171">🚪</span><span class="t">Registrar Salida</span><div class="d">Fin de jornada</div></div>
+      <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Preparaciones</span><div class="d">Registra lo que se preparó hoy</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
-      <div class="menu-item" onclick="salirASucursales()"><span class="em" style="--tint:#9B87B8">🔄</span><span class="t">Cambiar sucursal</span><div class="d">Volver al inicio</div></div>
     </div>
   </section>
 
-  <!-- ══════════ ENTRADA ══════════ -->
-  <section class="screen" id="scr-entrada">
+  <!-- ══════════ ASISTENCIA · entrada y salida en un solo botón ══════════ -->
+  <section class="screen" id="scr-asis">
     <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>🕐 Registrar entrada</h2>
+    <h2>🕐 Entrada / Salida</h2>
+    <p class="muted mini" style="margin-top:-6px">El mismo botón registra tu entrada o tu cierre según cómo estés ahora.</p>
     <div class="card">
-      <label>¿Quién entra a turno?</label>
-      <select id="entrada-persona"></select>
-      <label>Turno</label>
-      <select id="entrada-turno">
-        <option value="matutino">☀️ Matutino</option>
-        <option value="vespertino">🌙 Vespertino</option>
-      </select>
+      <label>¿Quién eres?</label>
+      <select id="asis-persona" onchange="renderAsistencia()"></select>
+      <div id="asis-estado" style="margin-top:12px"></div>
+      <div id="asis-turno-wrap">
+        <label>Turno</label>
+        <select id="asis-turno">
+          <option value="matutino">☀️ Matutino</option>
+          <option value="vespertino">🌙 Vespertino</option>
+        </select>
+      </div>
+      <div id="asis-ajuste" style="display:none">
+        <label>Ajuste del día · bloques de 20 min</label>
+        <div class="fila" style="align-items:center;text-align:center">
+          <button class="btn s" onclick="ajustarAsis(-1)">− 20 min</button>
+          <div id="asis-ajuste-tx" style="flex:1.4"></div>
+          <button class="btn s" onclick="ajustarAsis(1)">+ 20 min</button>
+        </div>
+        <input id="asis-motivo" placeholder="Motivo del ajuste (opcional)" style="margin-top:10px">
+        <div class="stat" style="margin-top:12px"><div class="v" id="asis-pago-prev">$0.00</div><div class="l">pago del día</div></div>
+      </div>
       <label>PIN personal (4 dígitos)</label>
-      <input id="entrada-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
-      <div style="margin-top:18px"><button class="btn p gigante" onclick="registrarEntrada()"><span class="ico">✅</span> Confirmar entrada</button></div>
+      <input id="asis-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+      <div style="margin-top:18px"><button class="btn p gigante" id="asis-btn" onclick="accionAsistencia()">Continuar</button></div>
     </div>
-  </section>
-
-  <!-- ══════════ SALIDA ══════════ -->
-  <section class="screen" id="scr-salida">
-    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>🚪 Registrar salida</h2>
-    <div class="card">
-      <label>¿Quién termina su turno?</label>
-      <select id="salida-persona"></select>
-      <label>PIN personal</label>
-      <input id="salida-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
-      <div style="margin-top:18px"><button class="btn p gigante" onclick="registrarSalida()"><span class="ico">👋</span> Confirmar salida</button></div>
-    </div>
-    <div id="salida-resumen"></div>
+    <div id="asis-resumen"></div>
   </section>
 
   <!-- ══════════ CHECKLIST DEL TURNO ══════════ -->
   <section class="screen" id="scr-chk">
     <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div>
       <span class="chip" id="chk-progreso-chip"></span></div>
-    <h2>📋 Checklist del turno</h2>
-    <div class="seg" id="chk-seg">
-      <button data-t="1" onclick="chkTurno=1;renderChecklist()">☀️ Turno 1</button>
-      <button data-t="2" onclick="chkTurno=2;renderChecklist()">🌙 Turno 2</button>
-    </div>
-    <div class="card">
-      <div class="fila" style="align-items:center;margin-bottom:10px">
+    <h2>📋 Checklist del día</h2>
+    <!-- cuadro superior principal: solo el dinero y el avance -->
+    <div class="card amarilla">
+      <div class="grid c3" id="chk-dinero"></div>
+      <div class="fila" style="align-items:center;margin-top:14px">
         <div style="flex:1"><div class="barra"><i id="chk-barra" style="width:0%"></i></div></div>
         <b class="amar" id="chk-pct" style="flex:0;white-space:nowrap">0%</b>
       </div>
-      <label>¿Quién está marcando? </label>
-      <select id="chk-persona"></select>
+      <label>¿Quién está marcando?</label>
+      <select id="chk-persona" onchange="renderChecklist()"></select>
     </div>
-    <div id="chk-items"></div>
+    <!-- ── sección 1 · registros con evidencia ── -->
     <div class="card">
-      <label>🗒️ Observaciones del turno</label>
+      <div class="sec-tit"><span class="n">1</span> Con evidencia · foto al finalizar turno</div>
+      <div id="chk-registros"></div>
+      <p class="mini muted" style="margin:8px 0 0">📷 en cada casilla agrega la foto. Ventas y caja además capturan el monto.</p>
+    </div>
+    <!-- ── sección 2 · acciones ── -->
+    <div class="card">
+      <div class="sec-tit"><span class="n">2</span> Sin evidencia · acciones del día</div>
+      <div id="chk-items"></div>
+    </div>
+    <div class="card">
+      <label>🗒️ Observaciones del día</label>
       <textarea id="chk-obs" placeholder="Faltantes, incidencias, pendientes para el siguiente turno…"></textarea>
       <div style="margin-top:12px"><button class="btn s" onclick="enviarObservacion()">📨 Enviar observación a Dirección</button></div>
     </div>
+    <input type="file" id="chk-file" accept="image/*" capture="environment" hidden onchange="archivoRegistro(this)">
     <p class="mini muted centrado">✔ amarillo = realizado por el equipo · ✔ verde = verificado por Supervisión</p>
   </section>
 
@@ -441,60 +486,50 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
     <div class="card" id="prop-lista"></div>
   </section>
 
-  <!-- ══════════ EVIDENCIAS ══════════ -->
-  <section class="screen" id="scr-evid">
+  <!-- ══════════ PREPARACIONES ══════════ -->
+  <section class="screen" id="scr-prep">
     <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>📸 Evidencias</h2>
-    <div class="card">
-      <label>Tipo de evidencia</label>
-      <select id="evid-tipo">
-        <option value="apertura">🌅 Inicio de jornada (apertura)</option>
-        <option value="cierre">🌙 Cierre de jornada</option>
-        <option value="limpieza">🧽 Limpieza</option>
-        <option value="incidencia">⚠️ Incidencia</option>
-        <option value="otra">📎 Otra</option>
-      </select>
-      <label>Responsable</label>
-      <select id="evid-persona"></select>
-      <label>Nota (opcional)</label>
-      <input id="evid-nota" placeholder="Ej. barra lista, cocina limpia…">
-      <label>Foto</label>
-      <div class="foto-drop" id="evid-drop" onclick="document.getElementById('evid-file').click()">📷 Toca para tomar / subir foto</div>
-      <input type="file" id="evid-file" accept="image/*" capture="environment" hidden>
-      <div style="margin-top:16px"><button class="btn p" onclick="guardarEvidencia()"><span class="ico">⬆️</span> Subir evidencia</button></div>
+    <h2>🧪 Preparaciones</h2>
+    <div class="seg" id="prep-seg">
+      <button data-t="reg" onclick="prepTab='reg';renderPreparaciones()">📝 Registrar</button>
+      <button data-t="rec" onclick="prepTab='rec';renderPreparaciones()">📖 Recetario</button>
     </div>
-    <h3>Últimas evidencias de esta sucursal</h3>
-    <div class="galeria" id="evid-galeria"></div>
-  </section>
-
-  <!-- ══════════ CIERRE ══════════ -->
-  <section class="screen" id="scr-cierre">
-    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>🌙 Cierre de turno</h2>
+    <div id="prep-recetario" style="display:none">
+      <div class="tabs" id="prep-rec-tabs"></div>
+      <div id="prep-rec-lista"></div>
+    </div>
+    <div id="prep-registro">
+    <p class="muted mini" style="margin-top:-6px">Registra lo que preparaste para que el siguiente turno y Dirección sepan con qué se cuenta.</p>
     <div class="card">
-      <label>Responsable del cierre</label>
-      <select id="cierre-persona"></select>
+      <label>¿Qué se preparó?</label>
+      <select id="prep-que" onchange="cambioPrepQue()"></select>
+      <input id="prep-otra" placeholder="Escribe la preparación" style="margin-top:8px;display:none">
+      <label>¿Quién la preparó?</label>
+      <select id="prep-persona"></select>
       <div class="fila">
-        <div><label>Ventas NETAS del turno ($)</label>
-        <input id="cierre-ventas" type="number" inputmode="decimal" placeholder="0.00"></div>
-        <div><label>Dinero en caja ($)</label>
-        <input id="cierre-caja" type="number" inputmode="decimal" placeholder="0.00"></div>
+        <div><label>Cantidad</label><input id="prep-cant" inputmode="decimal" placeholder="Ej. 2"></div>
+        <div><label>Unidad</label><input id="prep-unidad" placeholder="L, kg, pzas…"></div>
       </div>
-      <div id="cierre-checklist" style="margin-top:14px"></div>
-      <label>Foto de evidencia de cierre</label>
-      <div class="foto-drop" id="cierre-drop" onclick="document.getElementById('cierre-foto').click()">📷 Toca para tomar / subir foto</div>
-      <input type="file" id="cierre-foto" accept="image/*" capture="environment" hidden>
-      <label>Novedades del día</label>
-      <textarea id="cierre-novedades" placeholder="Incidencias, faltantes, ideas del equipo…"></textarea>
-      <div style="margin-top:18px"><button class="btn p gigante" onclick="guardarCierre()"><span class="ico">🌙</span> Enviar cierre de turno</button></div>
+      <label>Nota (opcional)</label>
+      <input id="prep-nota" placeholder="Ej. rinde para 2 días">
+      <label>Foto (opcional)</label>
+      <div class="foto-drop" id="prep-drop" onclick="document.getElementById('prep-file').click()">📷 Foto del resultado (opcional)</div>
+      <input type="file" id="prep-file" accept="image/*" capture="environment" hidden>
+      <div style="margin-top:16px"><button class="btn p gigante" onclick="registrarPreparacion()"><span class="ico">🧪</span> Registrar preparación</button></div>
+    </div>
+    <h3 style="margin-top:16px">Preparado hoy en esta sucursal</h3>
+    <div class="card" id="prep-lista"></div>
     </div>
   </section>
 
   <!-- ══════════ PROTOCOLOS ══════════ -->
   <section class="screen" id="scr-proto">
     <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>📖 Protocolos Cíclope</h2>
-    <div id="proto-lista"></div>
+    <div class="sub-fijo">
+      <h2>📖 Protocolos Cíclope</h2>
+      <div class="tabs" id="proto-tabs"></div>
+    </div>
+    <div id="proto-lista" style="margin-top:14px"></div>
   </section>
 
   <!-- ══════════ DIRECCIÓN ══════════ -->

@@ -15,7 +15,7 @@
 
 var EMAIL_AVISOS = 'elanillodelciclope@gmail.com';
 var CARPETA_RAIZ = 'El Ojo Maestro';
-var ARCHIVO_DB = 'ojo-maestro-db.json';
+var ARCHIVO_DB = 'ojo-maestro-db-v2.json';
 var NOMBRE_HOJA = 'El Ojo Maestro - Registros';
 
 /* --- WhatsApp automatico (opcional, gratis via CallMeBot) ---
@@ -96,17 +96,38 @@ function mezclar(a, b) {
   var base = nuevoEsB ? b : a, otro = nuevoEsB ? a : b;
   var db = JSON.parse(JSON.stringify(base));
 
-  /* CATALOGOS (config, personal, productos, sucursales): gana quien tenga
-     la EDICION mas reciente (catTs). Un dispositivo recien instalado nace
-     con catTs=0, asi que nunca pisa la configuracion real del negocio.
+  /* CONFIG campo por campo: cada campo lleva su marca de tiempo (configTs).
+     Solo un cambio real y mas reciente puede sustituir un valor; un
+     dispositivo recien instalado (marcas en 0) nunca pisa nada.
      En empate gana el servidor (a). */
-  var cat = ((b.catTs || 0) > (a.catTs || 0)) ? b : a;
-  ['config', 'personal', 'productos', 'sucursales'].forEach(function (k) {
-    if (cat[k]) db[k] = JSON.parse(JSON.stringify(cat[k]));
+  var cfgA = a.config || {}, cfgB = b.config || {};
+  var tsA = a.configTs || {}, tsB = b.configTs || {};
+  var cfg = {}, cfgTs = {};
+  var claves = {};
+  Object.keys(cfgA).forEach(function (k) { claves[k] = 1; });
+  Object.keys(cfgB).forEach(function (k) { claves[k] = 1; });
+  Object.keys(claves).forEach(function (k) {
+    var ta = tsA[k] || 0, tb = tsB[k] || 0;
+    if (tb > ta) { cfg[k] = cfgB[k]; cfgTs[k] = tb; }
+    else { cfg[k] = (cfgA[k] !== undefined) ? cfgA[k] : cfgB[k]; cfgTs[k] = ta; }
+  });
+  db.config = cfg; db.configTs = cfgTs;
+
+  /* PERSONAL, PRODUCTOS y SUCURSALES registro por registro: union por id,
+     y en cada registro gana la version con marca t mas reciente (empate:
+     servidor). Las eliminaciones son marcas (del) y tambien se sincronizan. */
+  ['personal', 'productos', 'sucursales'].forEach(function (k) {
+    var mapa = {};
+    (a[k] || []).forEach(function (x) { mapa[x.id] = x; });
+    (b[k] || []).forEach(function (x) {
+      var o = mapa[x.id];
+      if (!o || (x.t || 0) > (o.t || 0)) mapa[x.id] = x;
+    });
+    db[k] = Object.keys(mapa).map(function (id) { return mapa[id]; });
   });
   db.catTs = Math.max(a.catTs || 0, b.catTs || 0);
 
-  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones'].forEach(function (k) {
+  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
     var baseLista = (base[k] || []).map(function (x) {
@@ -168,7 +189,8 @@ function idsExistentes(sheet, col) {
   var m = {}; vals.forEach(function (v) { m[v[0]] = 1; }); return m;
 }
 var ENC = {
-  Turnos: ['Fecha', 'Sucursal', 'Colaborador', 'Turno', 'Entrada', 'Salida', 'Horas', 'Pago', 'id'],
+  Turnos: ['Fecha', 'Sucursal', 'Colaborador', 'Turno', 'Entrada', 'Salida', 'HorasEnPiso', 'AjusteMin', 'MotivoAjuste', 'Pago', 'id'],
+  Preparaciones: ['Fecha', 'Hora', 'Sucursal', 'Colaborador', 'Preparacion', 'Cantidad', 'Unidad', 'Nota', 'Foto', 'id'],
   Cierres: ['Fecha', 'Sucursal', 'Responsable', 'VentasNetas', 'DineroCaja', 'PropinasDigitalesDia', 'Checklist', 'Novedades', 'Foto', 'id'],
   Propinas: ['Fecha', 'Hora', 'Sucursal', 'Colaborador', 'Monto', 'Nota', 'id'],
   Tareas: ['Fecha', 'Sucursal', 'Turno', 'Tarea', 'RealizadaPor', 'Hora', 'Verificada', 'id'],
@@ -189,9 +211,16 @@ function registrarNuevosEnHoja(dbAntes, dbAhora) {
     }
     (dbAhora.turnos || []).forEach(function (t) {
       if (!t.salida || !t.fecha) return;
-      var d = destino('Turnos', t.fecha, 9);
+      var d = destino('Turnos', t.fecha, 11);
       if (!d.ids[t.id]) d.sh.appendRow([t.fecha, nombreSuc[t.sucursalId] || '', nombrePer[t.personalId] || '',
-        t.tipo, new Date(t.entrada), new Date(t.salida), t.horas || '', t.pago || '', t.id]);
+        t.tipo, new Date(t.entrada), new Date(t.salida), t.horas || '',
+        (t.ajuste || 0) * 20, t.motivoAjuste || '', t.pago || '', t.id]);
+    });
+    (dbAhora.preparaciones || []).forEach(function (x) {
+      if (!x.fecha) return;
+      var d = destino('Preparaciones', x.fecha, 10);
+      if (!d.ids[x.id]) d.sh.appendRow([x.fecha, new Date(x.ts), nombreSuc[x.sucursalId] || '', nombrePer[x.personalId] || '',
+        x.que || '', x.cantidad || '', x.unidad || '', x.nota || '', x.foto || '', x.id]);
     });
     (dbAhora.cierres || []).forEach(function (c) {
       if (!c.fecha) return;
