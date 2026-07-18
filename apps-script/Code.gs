@@ -1,43 +1,44 @@
-/*═══════════════════════════════════════════════════════════════
-  EL OJO MAESTRO · Backend (Google Apps Script)
-  El Anillo del Cíclope — Pachuca, Hgo.
+/* ================================================================
+   EL OJO MAESTRO - Backend (Google Apps Script)
+   El Anillo del Ciclope - Pachuca, Hgo.
 
-  Qué hace:
-   · Sincroniza los datos entre tablets y teléfonos (Drive como base de datos)
-   · Registra Turnos, Cierres y Eventos en una hoja de cálculo legible
-   · Envía correos automáticos a EMAIL_AVISOS en cada evento importante
-   · Guarda las fotos de evidencia en una carpeta de Drive
-   · Hace un respaldo automático cada noche
+   Que hace:
+   - Sincroniza los datos entre tablets y telefonos (Drive como base de datos)
+   - Registra Turnos, Cierres, Propinas, Tareas y Revisiones en una hoja
+     de calculo con pestanas automaticas por mes
+   - Envia correos automaticos a EMAIL_AVISOS en cada evento importante
+   - Guarda las fotos de evidencia en una carpeta de Drive
+   - Hace un respaldo automatico cada noche
 
-  Instalación: ver GUIA-INSTALACION.md (5 minutos).
-═══════════════════════════════════════════════════════════════*/
+   Instalacion: ver GUIA-INSTALACION.md (5 minutos).
+   ================================================================ */
 
 var EMAIL_AVISOS = 'elanillodelciclope@gmail.com';
-var CARPETA_RAIZ = 'El Ojo Maestro';           // carpeta en Drive
-var ARCHIVO_DB   = 'ojo-maestro-db.json';       // base de datos JSON
-var NOMBRE_HOJA  = 'El Ojo Maestro — Registros';// hoja de cálculo de bitácora
+var CARPETA_RAIZ = 'El Ojo Maestro';
+var ARCHIVO_DB = 'ojo-maestro-db.json';
+var NOMBRE_HOJA = 'El Ojo Maestro - Registros';
 
-/* ─── WhatsApp automático (opcional, gratis via CallMeBot) ───
-   1. Guarda el contacto +34 644 71 81 99 en el teléfono 771 123 2884
-   2. Envíale por WhatsApp: "I allow callmebot to send me messages"
-   3. Te responde con tu apikey — pégala abajo y vuelve a Implementar.   */
+/* --- WhatsApp automatico (opcional, gratis via CallMeBot) ---
+   1. Guarda el contacto +34 644 71 81 99 en el telefono 771 123 2884
+   2. Enviale por WhatsApp: "I allow callmebot to send me messages"
+   3. Te responde con tu apikey; pegala abajo y crea una Nueva version. */
 var WHATSAPP_NUMERO = '5217711232884';
-var CALLMEBOT_APIKEY = '';   // ← pega aquí tu apikey; vacío = desactivado
+var CALLMEBOT_APIKEY = '';   /* pega aqui tu apikey; vacio = desactivado */
 
-/*---------------------------------------------------------------
-  Entradas HTTP
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Entradas HTTP
+---------------------------------------------------------------- */
 function doGet(e) { return respuesta({ ok: true, servicio: 'El Ojo Maestro', hora: new Date().toISOString() }); }
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(20000); // evita choques cuando dos tablets sincronizan a la vez
+  lock.waitLock(20000);
   try {
     var req = JSON.parse(e.postData.contents);
     var accion = req.action || '';
-    if (accion === 'ping')   return respuesta({ ok: true, pong: true });
-    if (accion === 'sync')   return respuesta(accionSync(req.db));
-    if (accion === 'foto')   return respuesta(accionFoto(req.b64, req.meta || {}));
+    if (accion === 'ping') return respuesta({ ok: true, pong: true });
+    if (accion === 'sync') return respuesta(accionSync(req.db));
+    if (accion === 'foto') return respuesta(accionFoto(req.b64, req.meta || {}));
     if (accion === 'notify') return respuesta(accionNotificar(req.asunto, req.cuerpo));
     if (accion === 'backup') return respuesta(accionRespaldo(req.db));
     return respuesta({ ok: false, error: 'accion desconocida' });
@@ -52,9 +53,9 @@ function respuesta(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
-/*---------------------------------------------------------------
-  Carpeta y base de datos en Drive
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Carpeta y base de datos en Drive
+---------------------------------------------------------------- */
 function carpeta() {
   var it = DriveApp.getFoldersByName(CARPETA_RAIZ);
   return it.hasNext() ? it.next() : DriveApp.createFolder(CARPETA_RAIZ);
@@ -76,19 +77,15 @@ function escribirDB(db) {
   else carpeta().createFile(ARCHIVO_DB, contenido, 'application/json');
 }
 
-/*---------------------------------------------------------------
-  SYNC: mezcla lo que manda la tablet con lo guardado en Drive
-   · listas con id (turnos, cierres, checklists, evidencias, eventos):
-     unión por id; si un turno existe en ambos, gana el que tenga salida
-   · stock: gana el conteo con marca de tiempo más reciente (por producto)
-   · catálogos y config: gana el db con marca de tiempo global más nueva
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   SYNC: mezcla lo que manda cada dispositivo con lo guardado en Drive
+---------------------------------------------------------------- */
 function accionSync(dbCliente) {
   if (!dbCliente) return { ok: false, error: 'sin datos' };
   var dbServidor = leerDB();
   var db = dbServidor ? mezclar(dbServidor, dbCliente) : dbCliente;
   db.config = db.config || {};
-  db.config.scriptUrl = ''; // la URL vive solo en cada dispositivo
+  db.config.scriptUrl = '';
   escribirDB(db);
   registrarNuevosEnHoja(dbServidor, db);
   return { ok: true, db: db };
@@ -106,23 +103,18 @@ function mezclar(a, b) {
       var o = mapa[x.id];
       if (!o) return x;
       delete mapa[x.id];
-      // duplicado: en turnos gana el que tiene salida; en lo demás la versión más reciente
+      /* duplicado: en turnos gana el que tiene salida; en lo demas la version mas reciente */
       if (k === 'turnos') return (!x.salida && o.salida) ? o : x;
       return ((o.ts || 0) > (x.ts || 0)) ? o : x;
     });
     db[k] = baseLista.concat(Object.keys(mapa).map(function (id) { return mapa[id]; }));
     db[k].sort(function (p, q) { return (q.ts || q.entrada || 0) - (p.ts || p.entrada || 0); });
-    // corrige duplicado turno-sin-salida vs con-salida en base
-    if (k === 'turnos') {
-      var vistos = {};
-      db[k] = db[k].filter(function (t) {
-        if (vistos[t.id]) return false; vistos[t.id] = 1; return true;
-      });
-    }
+    var vistos = {};
+    db[k] = db[k].filter(function (t) { if (vistos[t.id]) return false; vistos[t.id] = 1; return true; });
     if (k === 'eventos') db[k] = db[k].slice(0, 500);
   });
 
-  // stock: por producto gana la marca de tiempo más reciente
+  /* stock: por producto gana la marca de tiempo mas reciente */
   db.stock = db.stock || {};
   var stocks = [a.stock || {}, b.stock || {}];
   stocks.forEach(function (st) {
@@ -139,9 +131,9 @@ function mezclar(a, b) {
   return db;
 }
 
-/*---------------------------------------------------------------
-  Bitácora legible en Google Sheets (Turnos / Cierres / Eventos)
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Bitacora legible en Google Sheets (pestanas por mes)
+---------------------------------------------------------------- */
 function hoja() {
   var it = carpeta().getFilesByName(NOMBRE_HOJA);
   var ss;
@@ -152,7 +144,6 @@ function hoja() {
   }
   return ss;
 }
-/* pestaña mensual: "Turnos 2026-07", "Cierres 2026-07", "Propinas 2026-07"… */
 function hojaMes(ss, tipo, fecha, encabezados) {
   var nombre = tipo + ' ' + String(fecha || '').slice(0, 7);
   var sh = ss.getSheetByName(nombre);
@@ -180,7 +171,7 @@ function registrarNuevosEnHoja(dbAntes, dbAhora) {
     var nombreSuc = {}, nombrePer = {};
     (dbAhora.sucursales || []).forEach(function (s) { nombreSuc[s.id] = s.nombre; });
     (dbAhora.personal || []).forEach(function (p) { nombrePer[p.id] = p.nombre; });
-    var cache = {}; // hoja+ids por pestaña mensual
+    var cache = {};
     function destino(tipo, fecha, idCol) {
       var k = tipo + (fecha || '').slice(0, 7);
       if (!cache[k]) { var sh = hojaMes(ss, tipo, fecha, ENC[tipo]); cache[k] = { sh: sh, ids: idsExistentes(sh, idCol) }; }
@@ -197,7 +188,7 @@ function registrarNuevosEnHoja(dbAntes, dbAhora) {
       var d = destino('Cierres', c.fecha, 10);
       if (!d.ids[c.id]) {
         var propDia = (dbAhora.propinas || []).filter(function (x) { return x.fecha === c.fecha && x.sucursalId === c.sucursalId; })
-          .reduce(function (a, x) { return a + (x.monto || 0); }, 0);
+          .reduce(function (acc, x) { return acc + (x.monto || 0); }, 0);
         d.sh.appendRow([c.fecha, nombreSuc[c.sucursalId] || '', nombrePer[c.personalId] || '',
           c.ventas, c.caja, propDia, (c.hechos || 0), c.novedades || '', (c.foto && c.foto.indexOf('http') === 0) ? c.foto : '', c.id]);
       }
@@ -223,12 +214,13 @@ function registrarNuevosEnHoja(dbAntes, dbAhora) {
       var d = destino('Eventos', new Date(ev.ts).toISOString(), 4);
       if (!d.ids[ev.id]) d.sh.appendRow([new Date(ev.ts), ev.asunto, ev.cuerpo, ev.id]);
     });
-  } catch (e) { /* la bitácora nunca debe tumbar el sync */ }
+  } catch (e) { /* la bitacora nunca debe tumbar el sync */ }
 }
 
-/*---------------------------------------------------------------
-  Fotos de evidencia → Drive
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Fotos de evidencia hacia Drive
+   (formato de enlace que SI se muestra como imagen en la app)
+---------------------------------------------------------------- */
 function accionFoto(b64, meta) {
   if (!b64) return { ok: false, error: 'sin imagen' };
   var fecha = meta.fecha || Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
@@ -240,26 +232,26 @@ function accionFoto(b64, meta) {
   var blob = Utilities.newBlob(Utilities.base64Decode(b64), 'image/jpeg', nombre);
   var archivo = mes.createFile(blob);
   archivo.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  return { ok: true, url: 'https://drive.google.com/uc?export=view&id=' + archivo.getId() };
+  return { ok: true, url: 'https://drive.google.com/thumbnail?id=' + archivo.getId() + '&sz=w1000' };
 }
 
-/*---------------------------------------------------------------
-  Correos de aviso
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Correos y WhatsApp de aviso
+---------------------------------------------------------------- */
 function accionNotificar(asunto, cuerpo) {
   var okMail = false, okWa = false;
   try {
     MailApp.sendEmail({
       to: EMAIL_AVISOS,
       subject: '[Ojo Maestro] ' + (asunto || 'Aviso'),
-      body: (cuerpo || '') + '\n\n—\nEl Ojo Maestro · El Anillo del Cíclope\n"Donde el sabor es un misterio, y la comida una aventura."'
+      body: (cuerpo || '') + '\n\n--\nEl Ojo Maestro - El Anillo del Ciclope\n"Donde el sabor es un misterio, y la comida una aventura."'
     });
     okMail = true;
   } catch (e) { }
   if (CALLMEBOT_APIKEY) {
     try {
       UrlFetchApp.fetch('https://api.callmebot.com/whatsapp.php?phone=' + WHATSAPP_NUMERO +
-        '&apikey=' + CALLMEBOT_APIKEY + '&text=' + encodeURIComponent('👁️ ' + (asunto || '') + '\n' + (cuerpo || '')),
+        '&apikey=' + CALLMEBOT_APIKEY + '&text=' + encodeURIComponent((asunto || '') + '\n' + (cuerpo || '')),
         { muteHttpExceptions: true });
       okWa = true;
     } catch (e) { }
@@ -267,26 +259,25 @@ function accionNotificar(asunto, cuerpo) {
   return { ok: okMail || okWa, correo: okMail, whatsapp: okWa };
 }
 
-/*---------------------------------------------------------------
-  Respaldos (manual y automático nocturno)
----------------------------------------------------------------*/
+/* ----------------------------------------------------------------
+   Respaldos (manual y automatico nocturno)
+---------------------------------------------------------------- */
 function accionRespaldo(db) {
   var datos = db || leerDB();
   if (!datos) return { ok: false, error: 'nada que respaldar' };
   var f = subcarpeta('Respaldos');
   var nombre = 'respaldo_' + Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd_HHmm') + '.json';
   f.createFile(nombre, JSON.stringify(datos), 'application/json');
-  // conserva solo los últimos 45 respaldos
   var archivos = [];
   var it = f.getFiles(); while (it.hasNext()) archivos.push(it.next());
-  archivos.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
-  archivos.slice(45).forEach(function (a) { a.setTrashed(true); });
+  archivos.sort(function (x, y) { return y.getDateCreated() - x.getDateCreated(); });
+  archivos.slice(45).forEach(function (x) { x.setTrashed(true); });
   return { ok: true, archivo: nombre };
 }
 function respaldoNocturno() { accionRespaldo(null); }
 
-/* Ejecuta esta función UNA VEZ desde el editor para activar
-   el respaldo automático diario (23:30 aprox.) */
+/* Ejecuta esta funcion UNA VEZ desde el editor para activar
+   el respaldo automatico diario (23:00 aprox.) */
 function activarRespaldoAutomatico() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
     if (t.getHandlerFunction() === 'respaldoNocturno') ScriptApp.deleteTrigger(t);

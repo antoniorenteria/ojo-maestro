@@ -698,17 +698,24 @@ function renderEvidencias() {
   $('evid-galeria').innerHTML = lista.map(e => tarjetaEvidencia(e)).join('') ||
     '<p class="muted">Aún no hay evidencias aquí.</p>';
 }
+/* Google ya no muestra los enlaces uc?export=view como imagen;
+   se convierten al formato thumbnail que si funciona */
+function fotoURL(f) {
+  if (!f) return f;
+  const m = f.match(/drive\.google\.com\/uc\?[^"']*id=([\w-]+)/);
+  return m ? 'https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1000' : f;
+}
 function tarjetaEvidencia(e) {
   const p = per(e.personalId);
   const img = e.foto ? (e.foto.startsWith('data:') || e.foto.startsWith('http')
-    ? '<img src="' + e.foto + '" onclick="verFoto(\'' + e.id + '\')">' : '') : '<div style="height:100px;display:flex;align-items:center;justify-content:center" class="muted">📁 en Drive</div>';
+    ? '<img src="' + fotoURL(e.foto) + '" loading="lazy" onclick="verFoto(\'' + e.id + '\')">' : '') : '<div style="height:100px;display:flex;align-items:center;justify-content:center" class="muted">📁 en Drive</div>';
   return '<div class="ev">' + img + '<div class="m"><b>' + esc(iconoTipo(e.tipo) + ' ' + e.tipo) + '</b><br>' +
     fmtFecha(e.fecha) + ' ' + fmtHora(e.ts) + (p ? '<br>' + esc(p.nombre) : '') + (e.nota ? '<br>' + esc(e.nota) : '') + '</div></div>';
 }
 function iconoTipo(t) { return { apertura: '🌅', cierre: '🌙', limpieza: '🧽', incidencia: '⚠️', otra: '📎' }[t] || '📎'; }
 function verFoto(id) {
   const e = db.evidencias.find(x => x.id === id); if (!e || !e.foto) return;
-  abrirModal('<img src="' + e.foto + '" style="width:100%;border-radius:12px">' +
+  abrirModal('<img src="' + fotoURL(e.foto) + '" style="width:100%;border-radius:12px">' +
     '<p class="mini muted">' + esc(e.tipo) + ' · ' + fmtFecha(e.fecha) + ' ' + fmtHora(e.ts) + (e.nota ? ' · ' + esc(e.nota) : '') + '</p>' +
     '<button class="btn s" onclick="cerrarModal()">Cerrar</button>');
 }
@@ -1161,7 +1168,8 @@ function dirAdmin() {
     '<label>WhatsApp de avisos (con lada país, ej. 52771…)</label><input id="cfg-wa" value="' + esc(c.whatsapp) + '">' +
     '<label>URL del backend (Google Apps Script)</label><input id="cfg-url" value="' + esc(c.scriptUrl) + '" placeholder="https://script.google.com/macros/s/…/exec">' +
     '<div class="fila" style="margin-top:14px"><button class="btn p" onclick="guardarConfig()">💾 Guardar</button>' +
-    '<button class="btn s" onclick="probarConexion()">🔌 Probar conexión</button></div>' +
+    '<button class="btn s" onclick="probarConexion()">🔌 Probar conexión</button>' +
+    '<button class="btn s" onclick="enlaceInstalacion()">🔗 Enlace de instalación</button></div>' +
     '<p class="mini muted" style="margin-top:10px">Sin backend el sistema funciona en modo local (solo esta tablet). ' +
     'Con el backend conectado: sincronización entre dispositivos, correos automáticos a ' + esc(c.emailTo) + ', fotos y respaldos en el Drive del negocio. Ver GUIA-INSTALACION.md.</p></div>';
   /* respaldos */
@@ -1303,6 +1311,22 @@ function guardarConfig() {
   guardarDB(); pintarRed(); toast('💾 Configuración guardada');
   if (enLinea()) sync(false);
 }
+function enlaceInstalacion() {
+  const url = ($('cfg-url') ? $('cfg-url').value.trim() : '') || db.config.scriptUrl;
+  if (!url) return toast('Primero guarda la URL del backend 🔌');
+  const link = location.origin + location.pathname + '#cfg=' + btoa(JSON.stringify({ u: url }));
+  const msj = '👁️ *El Ojo Maestro — El Anillo del Cíclope*\n' +
+    'Abre este enlace en Chrome o Safari (NO en el navegador de WhatsApp: usa "Abrir en el navegador") y el dispositivo queda conectado y sincronizado automáticamente:\n' + link +
+    '\n\nDespués: menú del navegador → "Agregar a pantalla de inicio" para tenerla como app.';
+  abrirModal('<h3>🔗 Enlace de instalación</h3>' +
+    '<p class="mini muted">Ábrelo una vez en cada tablet o teléfono: configura el backend solo y sincroniza todo desde la nube. Si un dispositivo pierde su configuración, basta volver a abrir este mismo enlace.</p>' +
+    '<textarea id="enlace-inst" readonly style="min-height:110px;font-size:.75rem">' + esc(link) + '</textarea>' +
+    '<div class="fila" style="margin-top:12px">' +
+    '<button class="btn p" onclick="navigator.clipboard.writeText($(\'enlace-inst\').value).then(()=>toast(\'📋 Enlace copiado\'))">📋 Copiar</button>' +
+    '<a class="btn s" target="_blank" href="https://wa.me/?text=' + encodeURIComponent(msj) + '">📲 Compartir por WhatsApp</a></div>' +
+    '<p class="mini muted" style="margin-top:10px">⚠️ En el teléfono: si el enlace se abre dentro de WhatsApp, toca ⋮ → <b>"Abrir en el navegador"</b> y agrégala a pantalla de inicio — así la configuración no se borra al cerrar.</p>' +
+    '<button class="btn s" onclick="cerrarModal()">Cerrar</button>');
+}
 async function probarConexion() {
   const url = $('cfg-url').value.trim();
   if (!url) return toast('Pega primero la URL del script');
@@ -1370,6 +1394,18 @@ setInterval(() => {
   }
   initTema();
   cargarDB();
+  // enlace de instalación: #cfg=<base64> configura el backend automáticamente
+  if (location.hash.startsWith('#cfg=')) {
+    try {
+      const cfg = JSON.parse(atob(location.hash.slice(5)));
+      if (cfg.u && /^https:\/\/script\.google\.com\//.test(cfg.u)) {
+        db.config.scriptUrl = cfg.u;
+        guardarDB(false);
+        toast('🔗 Dispositivo conectado a la nube Cíclope');
+      }
+    } catch (e) { }
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   ir('scr-portada');
   pintarRed();
   if (enLinea()) sync();
