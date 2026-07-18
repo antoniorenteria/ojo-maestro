@@ -114,9 +114,8 @@ function evidenciaDeRegistro(rid, fecha, sid) {
 }
 const cierreDelDia = (fecha, sid) => db.cierres.find(c => c.fecha === (fecha || hoyISO()) && c.sucursalId === (sid || sucursalActual));
 
-/* Preparaciones sugeridas (el equipo puede escribir otra) */
-const PREPARACIONES = ['Salsa Abismo', 'Salsa Aliento D', 'Masa Crepiburger', 'Mamilas de salsas', 'Queso rallado',
-  'Alitas precongeladas', 'Lechuga desinfectada', 'Papel cortado', 'Empaque con stickers', 'Otra'];
+/* Las preparaciones se marcan como acciones del checklist; aquí solo se consulta
+   el recetario (ver RECETAS más abajo). */
 const tareaKey = (fecha, sid, tid) => ['tk', fecha, sid, tid].join('|');
 function regTarea(tid, fecha, sid) { return db.tareas.find(x => x.id === tareaKey(fecha || hoyISO(), sid || sucursalActual, tid)); }
 function tareaHecha(t, fecha, sid) {
@@ -312,11 +311,11 @@ function seedDB() {
       { id: s2, nombre: 'Tulipanes', direccion: 'Av. de los Árboles 147, Los Pinos, Pachuca', activa: true, t: 0 },
     ],
     personal: [
-      { id: 'per-anex', nombre: 'Añex', pin: '1111', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
-      { id: 'per-ambre', nombre: 'Ambré', pin: '2222', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
-      { id: 'per-alex', nombre: 'Alex', pin: '3333', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
-      { id: 'per-mori', nombre: 'Mori', pin: '4444', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
-      { id: 'per-jaz', nombre: 'Jaz', pin: '5555', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-anex', nombre: 'Añex', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-ambre', nombre: 'Ambré', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-alex', nombre: 'Alex', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-mori', nombre: 'Mori', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
+      { id: 'per-jaz', nombre: 'Jaz', pagoTurno: 300, pagoHora: 50, activo: true, t: 0 },
     ],
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
@@ -328,6 +327,10 @@ function migrarDB() {
   if (!db.tareas) db.tareas = [];
   if (!db.revisiones) db.revisiones = [];
   if (!db.preparaciones) db.preparaciones = [];
+  // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
+  // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
+  let limpio = false;
+  db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   if (!db.config.supervisorPin) db.config.supervisorPin = '4040';
   if (!db.configTs) db.configTs = {};
   if (db.catTs === undefined) db.catTs = 0;
@@ -339,9 +342,13 @@ function migrarDB() {
       db.sucursales.forEach(s => { if (!db.stock[s.id]) db.stock[s.id] = {}; db.stock[s.id][np.id] = { c: 0, t: 0 }; });
     }
   });
+  return limpio;   // hubo que borrar PINs: conviene persistir la limpieza
 }
 function cargarDB() {
-  try { const raw = localStorage.getItem(DB_KEY); if (raw) { db = JSON.parse(raw); migrarDB(); return; } } catch (e) { }
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    if (raw) { db = JSON.parse(raw); if (migrarDB()) guardarDB(false); return; }
+  } catch (e) { }
   db = seedDB(); guardarDB(false);
 }
 function tocarCatalogos() { db.catTs = Date.now(); }
@@ -405,10 +412,19 @@ async function llamarBackend(payload) {
     return await r.json();
   } catch (e) { return null; }
 }
-function notificar(asunto, cuerpo) {
-  // correo vía backend (si está conectado); siempre queda en la bitácora
+/* Qué se avisa por CORREO. Solo los 4 hitos del día: las fotos y evidencias
+   ya no mandan correo — quedan en la bitácora y se revisan en Supervisión y
+   Dirección. Para volver a activar alguno, pon su valor en true. */
+const NOTIFICAR_CORREO = {
+  entrada: true, salida: true, cierre: true, inventario: true,
+  evidencia: false, observacion: false, revision: false
+};
+function notificar(asunto, cuerpo, tipo) {
+  // todo queda SIEMPRE en la bitácora local y en la hoja de registros
   db.eventos.unshift({ id: uid(), ts: Date.now(), asunto, cuerpo });
   db.eventos = db.eventos.slice(0, 400);
+  // el correo solo sale para los eventos habilitados arriba
+  if (tipo && !NOTIFICAR_CORREO[tipo]) return;
   llamarBackend({ action: 'notify', asunto, cuerpo });
 }
 function linkWhatsApp(texto) {
@@ -610,7 +626,6 @@ function renderAvance() {
   const hoy = hoyISO();
   const a = avanceDia(hoy, sucursalActual);
   const cierreHoy = cierreDelDia(hoy, sucursalActual);
-  const prepsHoy = db.preparaciones.filter(x => x.fecha === hoy && x.sucursalId === sucursalActual).length;
   const rev = db.revisiones.find(r => r.sucursalId === sucursalActual);
   const pendTxt = a.pendientes.slice(0, 3).map(t => t.n.split('(')[0].trim()).join(' · ');
   const fila = (icono, nombre, valor, ok) =>
@@ -620,7 +635,6 @@ function renderAvance() {
     '<h3 style="margin-bottom:4px">🚀 Avance de hoy — ¿qué falta?</h3>' +
     fila('📸', 'Registros con evidencia', a.regHechos + '/' + a.regTotal, a.regHechos === a.regTotal) +
     fila('✅', 'Acciones del día', a.hechas + '/' + a.total, a.hechas === a.total) +
-    fila('🧪', 'Preparaciones registradas', prepsHoy || '0', prepsHoy > 0 ? true : null) +
     fila('🌙', 'Cierre del día', cierreHoy ? '✅ ' + fmt$(cierreHoy.ventas) : 'pendiente', !!cierreHoy || null) +
     (rev ? fila('🔍', 'Última revisión (' + fmtFecha(rev.fecha) + ')',
       rev.veredicto === 'cumplido' ? '✅ ' + rev.pct + '%' : rev.veredicto === 'ajustes' ? '⚠️ ' + rev.pct + '%' : '⛔ ' + rev.pct + '%',
@@ -635,7 +649,7 @@ function irAsistencia() {
   opcionesPersonal($('asis-persona'), false);
   const abierto = turnosAbiertos(sucursalActual)[0];
   if (abierto) $('asis-persona').value = abierto.personalId;
-  $('asis-pin').value = ''; $('asis-resumen').innerHTML = '';
+  $('asis-resumen').innerHTML = '';
   ir('scr-asis');
 }
 const turnoAbiertoDe = pid => db.turnos.find(t => !t.salida && t.personalId === pid && t.sucursalId === sucursalActual);
@@ -679,10 +693,9 @@ function pintarAjuste() {
   $('asis-pago-prev').textContent = fmt$(Math.max(0, (p.pagoTurno || 0) + extra));
 }
 function accionAsistencia() {
-  const pid = $('asis-persona').value, pin = $('asis-pin').value;
+  const pid = $('asis-persona').value;
   const p = per(pid);
   if (!p) return toast('Selecciona a la persona');
-  if (pin !== p.pin) return toast('⛔ PIN incorrecto');
   const s = suc(sucursalActual);
   const abierto = turnoAbiertoDe(pid);
   if (!abierto) {
@@ -694,7 +707,7 @@ function accionAsistencia() {
     };
     db.turnos.unshift(t); guardarDB();
     notificar('🕐 Entrada — ' + p.nombre + ' (' + s.nombre + ')',
-      p.nombre + ' registró ENTRADA en sucursal ' + s.nombre + '\nTurno: ' + t.tipo + '\nHora: ' + fmtHora(t.entrada) + ' · ' + fmtFecha(t.fecha));
+      p.nombre + ' registró ENTRADA en sucursal ' + s.nombre + '\nTurno: ' + t.tipo + '\nHora: ' + fmtHora(t.entrada) + ' · ' + fmtFecha(t.fecha), 'entrada');
     toast('✅ ¡Bienvenid@ ' + p.nombre + '! Entrada a las ' + fmtHora(t.entrada));
     return ir('scr-suc');
   }
@@ -707,14 +720,13 @@ function accionAsistencia() {
   notificar('🚪 Salida — ' + p.nombre + ' (' + s.nombre + ')',
     p.nombre + ' registró SALIDA en ' + s.nombre + '\nEntrada: ' + fmtHora(abierto.entrada) + ' · Salida: ' + fmtHora(abierto.salida) +
     '\nEn piso: ' + c.horas + ' h\nAjuste: ' + txtAjuste(c.bloques) + (abierto.motivoAjuste ? ' (' + abierto.motivoAjuste + ')' : '') +
-    '\nPago del día: ' + fmt$(c.pago));
+    '\nPago del día: ' + fmt$(c.pago), 'salida');
   $('asis-resumen').innerHTML =
     '<div class="card amarilla centrado"><h3>Resumen del día de ' + esc(p.nombre) + '</h3>' +
     '<div class="grid c3"><div class="stat"><div class="v">' + c.horas + ' h</div><div class="l">en piso</div></div>' +
     '<div class="stat"><div class="v">' + txtAjuste(c.bloques) + '</div><div class="l">ajuste</div></div>' +
     '<div class="stat verde"><div class="v">' + fmt$(c.pago) + '</div><div class="l">pago del día</div></div></div>' +
     '<p class="mini muted">Se paga el turno completo; los ajustes de ' + BLOQUE_MIN + ' min suman o restan sobre esa base. ¡Gracias por tu aventura de hoy! 🌌</p></div>';
-  $('asis-pin').value = '';
   renderAsistencia();
   toast('👋 ¡Hasta pronto, ' + p.nombre + '! Pago del día: ' + fmt$(c.pago));
 }
@@ -836,7 +848,7 @@ function archivoRegistro(input) {
     podarFotos(false); guardarDB();
     notificar('📸 ' + r.n + ' — ' + s.nombre,
       (p?.nombre || 'Equipo') + ' subió evidencia de "' + r.n + '" en ' + s.nombre + ' · ' + fmtFecha(hoyISO()) +
-      (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''));
+      (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''), 'evidencia');
     renderRegistros();
     toast('✅ Evidencia de ' + r.n.toLowerCase() + ' guardada');
   });
@@ -885,9 +897,9 @@ function enviarObservacion() {
     personalId: p?.id || '', tipo: 'observacion', novedades: texto
   });
   guardarDB();
-  notificar('🗒️ Observación — ' + s.nombre, (p?.nombre || 'Equipo') + ':\n' + texto);
+  notificar('🗒️ Observación — ' + s.nombre, (p?.nombre || 'Equipo') + ':\n' + texto, 'observacion');
   $('chk-obs').value = '';
-  toast('📨 Observación enviada a Dirección');
+  toast('🗒️ Observación registrada · Dirección la verá en su panel');
 }
 
 /* ═══════════ INVENTARIO ═══════════ */
@@ -933,7 +945,7 @@ function confirmarInventario() {
   notificar('📦 Inventario realizado — ' + s.nombre,
     'Inventario confirmado en ' + s.nombre + ' (' + fmtFecha(hoyISO()) + ').\n' +
     (falt.length ? '🛒 POR COMPRAR (' + falt.length + '):\n' + falt.map(p => '· ' + p.nombre + ' — quedan ' + (stockDe(sucursalActual)[p.id]?.c || 0) + ' (mín ' + p.minimo + ')').join('\n')
-      : '✅ Todo el stock por encima del mínimo.'));
+      : '✅ Todo el stock por encima del mínimo.'), 'inventario');
   guardarDB();
   toast(falt.length ? '📨 Inventario enviado · ' + falt.length + ' producto(s) por comprar' : '📨 Inventario enviado · todo en orden ✅');
   ir('scr-suc');
@@ -1063,7 +1075,7 @@ async function guardarCierre() {
     '\nAcciones del día: ' + hechos + '/' + reg.total +
     (reg.novedades ? '\nNovedades: ' + reg.novedades : '') +
     (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : '');
-  notificar('🌙 Cierre ' + s.nombre + ' — ventas ' + fmt$(ventas), resumen);
+  notificar('🌙 Cierre ' + s.nombre + ' — ventas ' + fmt$(ventas), resumen, 'cierre');
   cierreBorrador = { ventas: '', caja: '' }; cierreFotos = { 'r-ventas': '', 'r-caja': '' };
   renderChecklist();
   abrirModal('<h3>🌙 Cierre enviado</h3>' +
@@ -1091,13 +1103,12 @@ function renderProtocolos() {
   if (act) act.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 }
 
-/* ═══════════ PREPARACIONES ═══════════ */
-let prepFoto = { foto: '' };
-let prepTab = 'reg';   // reg = registrar lo preparado · rec = consultar recetario
+/* ═══════════ RECETARIO ═══════════ (solo consulta) */
 let recCat = 0;
-function renderRecetario() {
+function irPreparaciones() { recCat = 0; ir('scr-prep'); }
+function renderPreparaciones() {
   $('prep-rec-tabs').innerHTML = RECETAS.map(([cat], i) =>
-    '<button class="' + (recCat === i ? 'on' : '') + '" onclick="recCat=' + i + ';renderRecetario()">' + esc(cat) + '</button>').join('');
+    '<button class="' + (recCat === i ? 'on' : '') + '" onclick="recCat=' + i + ';renderPreparaciones()">' + esc(cat) + '</button>').join('');
   const [cat, items] = RECETAS[recCat];
   $('prep-rec-lista').innerHTML = '<div class="card"><h3>' + esc(cat) + '</h3>' + items.map(([n, d]) =>
     '<div class="item-linea"><div class="grow"><b style="font-size:.9rem">' + esc(n) + '</b>' +
@@ -1105,69 +1116,6 @@ function renderRecetario() {
     '<p class="mini muted centrado">Gramajes y montaje según el recetario de Dirección. Ante cualquier duda, consulta a tu encargado.</p>';
   const act = $('prep-rec-tabs').children[recCat];
   if (act) act.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-}
-function irPreparaciones() {
-  prepTab = 'reg';
-  prepFoto = { foto: '' };
-  $('prep-que').innerHTML = PREPARACIONES.map(x => '<option>' + esc(x) + '</option>').join('');
-  $('prep-otra').value = ''; $('prep-cant').value = ''; $('prep-unidad').value = ''; $('prep-nota').value = '';
-  ir('scr-prep');
-}
-function renderPreparaciones() {
-  document.querySelectorAll('#prep-seg button').forEach(b => b.classList.toggle('on', b.dataset.t === prepTab));
-  $('prep-recetario').style.display = prepTab === 'rec' ? '' : 'none';
-  $('prep-registro').style.display = prepTab === 'rec' ? 'none' : '';
-  if (prepTab === 'rec') return renderRecetario();
-  opcionesPersonal($('prep-persona'), true);
-  if (!$('prep-persona').value) opcionesPersonal($('prep-persona'), false);
-  if (!$('prep-que').options.length) $('prep-que').innerHTML = PREPARACIONES.map(x => '<option>' + esc(x) + '</option>').join('');
-  cambioPrepQue();
-  $('prep-drop').innerHTML = prepFoto.foto ? '<img src="' + prepFoto.foto + '">' : '📷 Foto del resultado (opcional)';
-  prepararDrop('prep-drop', 'prep-file', prepFoto);
-  const hoy = db.preparaciones.filter(x => x.fecha === hoyISO() && x.sucursalId === sucursalActual);
-  $('prep-lista').innerHTML = hoy.length ? hoy.map(x =>
-    '<div class="item-linea">' + (x.foto ? '<img src="' + fotoURL(x.foto) + '" style="width:42px;height:42px;object-fit:cover;border-radius:10px">' : '<div class="avatar">🧪</div>') +
-    '<div class="grow"><b>' + esc(x.que) + '</b><div class="mini muted">' +
-    esc(x.cantidad || '') + ' ' + esc(x.unidad || '') + ' · ' + esc(per(x.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(x.ts) +
-    (x.nota ? ' · ' + esc(x.nota) : '') + '</div></div>' +
-    '<button class="btn s mini" onclick="borrarPreparacion(\'' + x.id + '\')">🗑️</button></div>').join('')
-    : '<p class="muted mini">Aún no se registran preparaciones hoy.</p>';
-}
-function cambioPrepQue() {
-  $('prep-otra').style.display = $('prep-que').value === 'Otra' ? '' : 'none';
-}
-async function registrarPreparacion() {
-  const p = per($('prep-persona').value);
-  if (!p) return toast('Selecciona quién preparó');
-  let que = $('prep-que').value;
-  if (que === 'Otra') {
-    que = $('prep-otra').value.trim();
-    if (!que) return toast('Escribe qué se preparó 🧪');
-  }
-  const cantidad = $('prep-cant').value.trim();
-  const s = suc(sucursalActual);
-  const fotoFinal = prepFoto.foto ? await subirFotoDrive(prepFoto.foto, { tipo: 'preparacion', sucursal: s.nombre, fecha: hoyISO() }) : '';
-  db.preparaciones.unshift({
-    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p.id,
-    turno: new Date().getHours() < 15 ? 1 : 2, que, cantidad, unidad: $('prep-unidad').value.trim(),
-    nota: $('prep-nota').value.trim(), foto: fotoFinal
-  });
-  db.preparaciones = db.preparaciones.slice(0, 400);
-  podarFotos(false); guardarDB();
-  notificar('🧪 Preparación — ' + s.nombre,
-    p.nombre + ' preparó ' + que + (cantidad ? ' · ' + cantidad + ' ' + $('prep-unidad').value : '') +
-    ' en ' + s.nombre + ' · ' + fmtFecha(hoyISO()) + ' ' + fmtHora(Date.now()) +
-    (fotoFinal && fotoFinal.startsWith('http') ? '\nFoto: ' + fotoFinal : ''));
-  prepFoto = { foto: '' };
-  $('prep-cant').value = ''; $('prep-nota').value = ''; $('prep-otra').value = '';
-  renderPreparaciones();
-  toast('🧪 ' + que + ' registrada');
-}
-function borrarPreparacion(id) {
-  const x = db.preparaciones.find(y => y.id === id); if (!x) return;
-  if (!confirm('¿Borrar el registro de "' + x.que + '"?')) return;
-  db.preparaciones = db.preparaciones.filter(y => y.id !== id);
-  guardarDB(); renderPreparaciones(); toast('🗑️ Registro borrado');
 }
 
 /* ═══════════ SUPERVISIÓN ═══════════ */
@@ -1224,14 +1172,6 @@ function renderRevision() {
   const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid && !e.regId);
   if (evs.length) html += '<div class="card"><h3>📎 Otras evidencias (' + evs.length + ')</h3>' +
     '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div></div>';
-  // preparaciones del día
-  const preps = db.preparaciones.filter(x => x.fecha === fecha && x.sucursalId === sid);
-  html += '<div class="card"><h3>🧪 Preparaciones del día (' + preps.length + ')</h3>' + (preps.length
-    ? preps.map(x => '<div class="item-linea">' +
-      (x.foto ? '<img src="' + fotoURL(x.foto) + '" style="width:42px;height:42px;object-fit:cover;border-radius:10px">' : '<div class="avatar">🧪</div>') +
-      '<div class="grow"><b>' + esc(x.que) + '</b><div class="mini muted">' + esc(x.cantidad || '') + ' ' + esc(x.unidad || '') +
-      ' · ' + esc(per(x.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(x.ts) + '</div></div></div>').join('')
-    : '<p class="muted mini">Sin preparaciones registradas este día.</p>') + '</div>';
   // cierre del día
   const cie = db.cierres.find(c => c.fecha === fecha && c.sucursalId === sid);
   html += '<div class="card"><h3>🌙 Cierre del día</h3>' + (cie
@@ -1286,7 +1226,7 @@ function guardarRevision(fecha, sid, pct) {
   const emoji = revVeredicto === 'cumplido' ? '✅' : revVeredicto === 'ajustes' ? '⚠️' : '⛔';
   notificar('🔍 Revisión ' + emoji + ' — ' + (s?.nombre || '') + ' (' + fmtFecha(fecha) + ')',
     'Veredicto: ' + revVeredicto.toUpperCase() + '\nCumplimiento: ' + pct + '%' +
-    (comentario ? '\nRetroalimentación: ' + comentario : ''));
+    (comentario ? '\nRetroalimentación: ' + comentario : ''), 'revision');
   toast('🔍 Revisión enviada — el equipo la verá en su panel');
   $('rev-comentario').value = '';
   renderRevision();
@@ -1346,13 +1286,11 @@ function dirHoy() {
       return '<div class="item-linea"><div class="avatar">' + esc((p?.nombre || '?')[0]) + '</div><div class="grow"><b>' + esc(p?.nombre || '') +
         '</b><div class="mini muted">' + (t.tipo === 'matutino' ? '☀️' : '🌙') + ' entró ' + fmtHora(t.entrada) + '</div></div><span class="badge mor">en turno</span></div>';
     }).join('') : '<p class="muted mini">Nadie en turno.</p>';
-    const prepsHoy = db.preparaciones.filter(x => x.fecha === hoy && x.sucursalId === s.id).length;
     const evHoyS = db.evidencias.filter(e => e.fecha === hoy && e.sucursalId === s.id).length;
     html += '<div class="sep"></div><div class="fila mini muted">' +
       '<span>✅ Acciones: <b class="amar">' + a.hechas + '/' + a.total + '</b></span>' +
       '<span>📸 Registros: <b class="amar">' + a.regHechos + '/' + a.regTotal + '</b></span>' +
       '<span>📎 Evidencias: <b class="amar">' + evHoyS + '</b></span>' +
-      '<span>🧪 Preparaciones: <b class="amar">' + prepsHoy + '</b></span>' +
       '<span>Cierres: <b class="amar">' + cierresHoy.length + '</b>' +
       (cierresHoy.length ? ' · ' + fmt$(cierresHoy.reduce((a, x) => a + x.ventas, 0)) : '') + '</span>' +
       (revS ? '<span>🔍 Últ. revisión: <b class="amar">' + (revS.veredicto === 'cumplido' ? '✅' : revS.veredicto === 'ajustes' ? '⚠️' : '⛔') +
@@ -1579,9 +1517,10 @@ function dirAdmin() {
   /* personal */
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">👥 Personal y sueldos</h3>' +
     '<button class="btn s mini" onclick="modalPersona()">+ Agregar</button></div>' +
-    '<div class="tabla-wrap"><table><tr><th>Nombre</th><th>PIN</th><th class="num">$/turno (' + (c.baseHoras || 6) + 'h)</th><th class="num">$/h extra</th><th></th></tr>' +
-    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' + esc(p.nombre) + '</td><td>' + esc(p.pin) +
+    '<div class="tabla-wrap"><table><tr><th>Nombre</th><th class="num">$/turno (' + (c.baseHoras || 6) + 'h)</th><th class="num">$/h extra</th><th>Estado</th><th></th></tr>' +
+    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' + esc(p.nombre) +
       '</td><td class="num">' + fmt$(p.pagoTurno) + '</td><td class="num">' + fmt$(p.pagoHora) +
+      '</td><td class="mini">' + (p.activo ? 'activo' : 'inactivo') +
       '</td><td><button class="btn s mini" onclick="modalPersona(\'' + p.id + '\')">✏️</button></td></tr>').join('') + '</table></div></div>';
   /* productos */
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📦 Catálogo de productos (' + db.productos.length + ')</h3>' +
@@ -1651,7 +1590,6 @@ function modalPersona(id) {
   const p = id ? per(id) : null;
   abrirModal('<h3>' + (p ? 'Editar colaborador' : 'Nuevo colaborador') + '</h3>' +
     '<label>Nombre</label><input id="mp-nombre" value="' + esc(p?.nombre || '') + '">' +
-    '<label>PIN (4 dígitos)</label><input id="mp-pin" value="' + esc(p?.pin || '') + '" maxlength="4" inputmode="numeric">' +
     '<div class="fila"><div><label>Pago por turno base ($)</label><input id="mp-turno" type="number" value="' + (p?.pagoTurno ?? 300) + '"></div>' +
     '<div><label>Pago por hora extra ($)</label><input id="mp-hora" type="number" value="' + (p?.pagoHora ?? 50) + '"></div></div>' +
     (p ? '<label>Estado</label><select id="mp-activo"><option value="1"' + (p.activo ? ' selected' : '') + '>Activo</option><option value="0"' + (!p.activo ? ' selected' : '') + '>Inactivo</option></select>' : '') +
@@ -1660,13 +1598,13 @@ function modalPersona(id) {
     '<div style="height:8px"></div><button class="btn s" onclick="cerrarModal()">Cancelar</button>');
 }
 function guardarPersona(id) {
-  const nombre = $('mp-nombre').value.trim(), pin = $('mp-pin').value.trim();
-  if (!nombre || pin.length !== 4) return toast('Nombre y PIN de 4 dígitos');
-  if (id) { const p = per(id); Object.assign(p, { nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1', t: Date.now() }); }
+  const nombre = $('mp-nombre').value.trim();
+  if (!nombre) return toast('Ponle nombre al colaborador');
+  if (id) { const p = per(id); Object.assign(p, { nombre, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1', t: Date.now() }); }
   else {
     let nid = 'per-' + slug(nombre);
     if (db.personal.some(p => p.id === nid)) nid = 'per-' + uid();
-    db.personal.push({ id: nid, nombre, pin, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true, t: Date.now() });
+    db.personal.push({ id: nid, nombre, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true, t: Date.now() });
   }
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('👥 Colaborador guardado');
 }

@@ -362,10 +362,10 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     <div class="card amarilla" id="suc-avance"></div>
     <div class="menu-grid">
       <div class="menu-item" onclick="irAsistencia()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Entrada / Salida</span><div class="d">Asistencia y pago del día</div></div>
-      <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del Turno</span><div class="d">Cierre, evidencias y actividades</div></div>
+      <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del día</span><div class="d">Cierre, evidencias y acciones</div></div>
       <div class="menu-item" onclick="ir('scr-inv')"><span class="em" style="--tint:#A78BFA">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
       <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
-      <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Preparaciones</span><div class="d">Registra lo que se preparó hoy</div></div>
+      <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Recetario</span><div class="d">Gramajes y montaje de cada producto</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
     </div>
   </section>
@@ -396,8 +396,6 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
         <input id="asis-motivo" placeholder="Motivo del ajuste (opcional)" style="margin-top:10px">
         <div class="stat" style="margin-top:12px"><div class="v" id="asis-pago-prev">$0.00</div><div class="l">pago del día</div></div>
       </div>
-      <label>PIN personal (4 dígitos)</label>
-      <input id="asis-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
       <div style="margin-top:18px"><button class="btn p gigante" id="asis-btn" onclick="accionAsistencia()">Continuar</button></div>
     </div>
     <div id="asis-resumen"></div>
@@ -486,40 +484,14 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     <div class="card" id="prop-lista"></div>
   </section>
 
-  <!-- ══════════ PREPARACIONES ══════════ -->
+  <!-- ══════════ RECETARIO ══════════ -->
   <section class="screen" id="scr-prep">
     <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button><div class="grow"></div></div>
-    <h2>🧪 Preparaciones</h2>
-    <div class="seg" id="prep-seg">
-      <button data-t="reg" onclick="prepTab='reg';renderPreparaciones()">📝 Registrar</button>
-      <button data-t="rec" onclick="prepTab='rec';renderPreparaciones()">📖 Recetario</button>
-    </div>
-    <div id="prep-recetario" style="display:none">
+    <div class="sub-fijo">
+      <h2>🧪 Recetario</h2>
       <div class="tabs" id="prep-rec-tabs"></div>
-      <div id="prep-rec-lista"></div>
     </div>
-    <div id="prep-registro">
-    <p class="muted mini" style="margin-top:-6px">Registra lo que preparaste para que el siguiente turno y Dirección sepan con qué se cuenta.</p>
-    <div class="card">
-      <label>¿Qué se preparó?</label>
-      <select id="prep-que" onchange="cambioPrepQue()"></select>
-      <input id="prep-otra" placeholder="Escribe la preparación" style="margin-top:8px;display:none">
-      <label>¿Quién la preparó?</label>
-      <select id="prep-persona"></select>
-      <div class="fila">
-        <div><label>Cantidad</label><input id="prep-cant" inputmode="decimal" placeholder="Ej. 2"></div>
-        <div><label>Unidad</label><input id="prep-unidad" placeholder="L, kg, pzas…"></div>
-      </div>
-      <label>Nota (opcional)</label>
-      <input id="prep-nota" placeholder="Ej. rinde para 2 días">
-      <label>Foto (opcional)</label>
-      <div class="foto-drop" id="prep-drop" onclick="document.getElementById('prep-file').click()">📷 Foto del resultado (opcional)</div>
-      <input type="file" id="prep-file" accept="image/*" capture="environment" hidden>
-      <div style="margin-top:16px"><button class="btn p gigante" onclick="registrarPreparacion()"><span class="ico">🧪</span> Registrar preparación</button></div>
-    </div>
-    <h3 style="margin-top:16px">Preparado hoy en esta sucursal</h3>
-    <div class="card" id="prep-lista"></div>
-    </div>
+    <div id="prep-rec-lista" style="margin-top:14px"></div>
   </section>
 
   <!-- ══════════ PROTOCOLOS ══════════ -->

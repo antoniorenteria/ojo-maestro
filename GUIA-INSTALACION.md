@@ -68,13 +68,18 @@ Opción B: copiar la carpeta `ojo-maestro` a la tablet y abrir `index.html` (fun
 
 ## 5. Uso diario del equipo operativo 🕐
 
-1. **Entrada** → elegir nombre + PIN personal → queda la hora exacta (llega correo a Dirección) y **se marca sola** la tarea "Responsable de turno".
-2. **Checklist del turno** → tareas del día según turno y día de la semana (limpieza de freidoras Lun/Mié/Vie, refrigerador Mar/Jue/Sáb, regar plantas los martes…), cada una con **hora límite** (se marca ⏰ vencida si pasa). Al marcar queda registrado **quién y a qué hora**. Barra de progreso y en el home el panel **"Avance de hoy"** muestra qué falta — quien entra al siguiente turno ve el pendiente de inmediato. También hay campo de **observaciones** directo a Dirección.
+1. **Entrada / Salida** → un solo botón: elige tu nombre y el sistema detecta si te toca entrar o cerrar. Sin PIN. Al cerrar puedes ajustar el día en bloques de **20 min** (más o menos) con su motivo; el pago se calcula por **día trabajado**, no por minutos sueltos.
+2. **Checklist del día** → dos secciones:
+   - **1 · Con evidencia** (foto al finalizar turno): Ventas cierre, Caja de dinero, Trastes, Mesas, Baño y Cocina. Ventas y Caja capturan además el monto; esos montos son lo único que se muestra en el cuadro de arriba. El botón **Enviar cierre del día** cierra la jornada.
+   - **2 · Sin evidencia** (acciones a lo largo del día): salsas, mamilas, queso, alitas, lechuga, empaques, WhatsApp, plataformas, limpiezas… Las de refrigerador, freidoras y congelador solo aparecen los días que tocan. Al marcar queda **quién y a qué hora**.
+   También hay campo de **observaciones** que Dirección ve en su panel.
 3. **Inventario** → cada producto aparece con su **foto real** para identificarlo sin dudas → contar con los botones +/− → el sistema marca solo **COMPRAR / DISPONIBLE / AGOTADO** según el mínimo → **Confirmar** (manda a Dirección la lista de compras).
-4. **Evidencias** → fotos de inicio de jornada, limpieza, incidencias, cierre.
-5. **💳 Propinas digitales** → cuando llegue una propina por tarjeta/terminal, registrarla con nombre y monto. El equipo ve su acumulado del día; Dirección la suma automáticamente a la nómina para retribuirla. (Las propinas en efectivo se reparten como siempre, sin registro.)
-6. **Cierre de turno** → ventas NETAS + dinero en caja + checklist de cierre + foto + novedades → incluye el total de propinas digitales del día → botón para avisar también por **WhatsApp (771 123 2884)**.
-7. **Salida** → nombre + PIN → el sistema calcula horas y **pago del turno** (base 6 h + horas extra).
+4. **🧪 Recetario** → consulta de gramajes, aderezos y montaje de cada producto (papas, boneless, paquetes, promos por día, pociones y brebajes). Solo consulta.
+5. **📖 Protocolos** → las 12 secciones del Manual de Procedimientos, con menú horizontal.
+6. **💳 Propinas digitales** → cuando llegue una propina por tarjeta/terminal, registrarla con nombre y monto. El equipo ve su acumulado del día; Dirección la suma automáticamente a la nómina para retribuirla. (Las propinas en efectivo se reparten como siempre, sin registro.)
+
+### Correos a Dirección
+Solo salen **4 al día**: entrada, salida, cierre e inventario. Las fotos y evidencias **no** mandan correo — quedan en la bitácora y se revisan en Supervisión y Dirección.
 
 ## 6. Panel de Dirección (Toño & Steph) 👁️
 
@@ -104,7 +109,7 @@ Botón **🌓** en cualquier pantalla. El modo oscuro es la noche cósmica de Cy
 
 ## 7. Seguridad 🔒
 
-- Cambia el **PIN de Dirección (2626)** y los **PIN del personal** (los de fábrica son 1111–5555) el primer día.
+- Cambia el **PIN de Dirección (2626)** y el de **Supervisión (4040)** el primer día. El personal ya no usa PIN: para checar solo eligen su nombre.
 - ⚠️ **Importante**: la hoja de cálculo que me compartiste contiene la pestaña **CONTRASEÑAS** visible para cualquiera con el enlace. Recomiendo moverlas a un administrador de contraseñas (o al menos a otro documento privado) y restringir el acceso de esa hoja.
 - Los avisos por WhatsApp se envían con un toque (mensaje prellenado). El envío 100 % automático por WhatsApp requiere la API de WhatsApp Business (de pago); el correo sí es automático.
 
