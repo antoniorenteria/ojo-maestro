@@ -369,7 +369,30 @@ function podarFotos(agresivo) {
 }
 
 /* ---------- sincronización con Google Apps Script ---------- */
-let syncTimer = null, syncEnCurso = false;
+let syncTimer = null, syncEnCurso = false, syncPendiente = false;
+/* Payload ligero: las fotos locales (data:) NO viajan en el sync — pesan
+   cientos de KB y hacían lenta la app. Las fotos en línea ya viven en Drive
+   como URL; las locales se conservan en este dispositivo y se re-adjuntan
+   al recibir la respuesta. */
+function dbParaSync() {
+  const copia = JSON.parse(JSON.stringify(db));
+  ['evidencias', 'checklists', 'cierres'].forEach(k =>
+    (copia[k] || []).forEach(x => { if (x.foto && x.foto.startsWith('data:')) x.foto = ''; }));
+  (copia.productos || []).forEach(p => { if (p.foto && p.foto.startsWith('data:')) p.foto = ''; });
+  copia.eventos = (copia.eventos || []).slice(0, 120);
+  return copia;
+}
+function reAdjuntarFotosLocales(anterior) {
+  ['evidencias', 'checklists', 'cierres'].forEach(k => {
+    const mapa = {};
+    (anterior[k] || []).forEach(x => { if (x.foto && x.foto.startsWith('data:')) mapa[x.id] = x.foto; });
+    (db[k] || []).forEach(x => { if (!x.foto && mapa[x.id]) x.foto = mapa[x.id]; });
+  });
+  const mapaP = {};
+  (anterior.productos || []).forEach(p => { if (p.foto && p.foto.startsWith('data:')) mapaP[p.id] = p.foto; });
+  (db.productos || []).forEach(p => { if (!p.foto && mapaP[p.id]) p.foto = mapaP[p.id]; });
+}
+const escribiendo = () => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
 const enLinea = () => !!(db && db.config.scriptUrl);
 function pintarRed() {
   const on = enLinea();
@@ -382,21 +405,24 @@ function pintarRed() {
   if (pe) pe.innerHTML = on ? '🟢 Conectado a la nube Cíclope — datos sincronizados entre dispositivos'
     : '🟡 Modo local (solo esta tablet). Conecta el backend en Dirección → Administrar para sincronizar, notificar por correo y respaldar en Drive.';
 }
-function syncPronto() { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 1500); }
+function syncPronto() { syncPendiente = true; clearTimeout(syncTimer); syncTimer = setTimeout(sync, 1500); }
 async function sync(silencioso = true) {
   if (!enLinea() || syncEnCurso) return;
-  syncEnCurso = true;
+  syncEnCurso = true; syncPendiente = false;
   try {
     const r = await fetch(db.config.scriptUrl, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'sync', db })
+      body: JSON.stringify({ action: 'sync', db: dbParaSync() })
     });
     const j = await r.json();
     if (j && j.ok && j.db) {
+      const anterior = db;
       const local = db.config.scriptUrl;           // nunca perder la URL local
       db = j.db; db.config.scriptUrl = local;
+      reAdjuntarFotosLocales(anterior);
       localStorage.setItem(DB_KEY, JSON.stringify(db));
-      renderTodo();
+      // no repintar mientras alguien está capturando: se aplicará al navegar
+      if (!escribiendo()) renderTodo();
       if (!silencioso) toast('🔄 Sincronizado con la nube Cíclope');
     }
   } catch (e) { if (!silencioso) toast('⚠️ Sin conexión — los datos quedan guardados en esta tablet'); }
@@ -416,8 +442,8 @@ async function llamarBackend(payload) {
    ya no mandan correo — quedan en la bitácora y se revisan en Supervisión y
    Dirección. Para volver a activar alguno, pon su valor en true. */
 const NOTIFICAR_CORREO = {
-  entrada: true, salida: true, cierre: true, inventario: true,
-  evidencia: false, observacion: false, revision: false
+  entrada: true, salida: true, cierre: true, inventario: true, revision: true,
+  evidencia: false, observacion: false
 };
 function notificar(asunto, cuerpo, tipo) {
   // todo queda SIEMPRE en la bitácora local y en la hoja de registros
@@ -1135,43 +1161,38 @@ function renderRevision() {
   const sid = $('rev-suc').value || db.sucursales[0].id;
   const fecha = $('rev-fecha').value || hoyISO();
   let html = '';
-  // acciones del día con botón de verificación
-  const lista = tareasDelDia(fecha);
-  const hechas = lista.filter(t => tareaHecha(t, fecha, sid)).length;
-  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">✅ Acciones del día</h3>' +
-    '<span class="badge ' + (hechas === lista.length ? 'ok' : 'aviso') + '">' + hechas + '/' + lista.length + '</span></div>' +
-    lista.map(t => {
-      const h = tareaHecha(t, fecha, sid);
-      return '<div class="tarea ' + (h ? (h.ver ? 'verificada' : 'hecha') : '') + '" style="cursor:default">' +
-        '<div class="box">' + (h ? '✔' : '') + '</div>' +
-        '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' +
-        (h ? '✔ ' + esc(h.por || '') + ' · ' + fmtHora(h.ts) : 'No realizada · ' + esc(notaTarea(t))) + '</div></div>' +
-        (h ? '<button class="btn ' + (h.ver ? 'p' : 's') + ' mini" style="margin-left:auto" onclick="verificarTarea(\'' + t.id + '\',\'' + fecha + '\',\'' + sid + '\')">' +
-          (h.ver ? '✔✔ Verificada' : 'Verificar ✔✔') + '</button>'
-          : '<span class="vv no" style="margin-left:auto">PENDIENTE</span>') + '</div>';
-    }).join('') + '</div>';
-  // registros con evidencia (sección 1 del checklist del equipo)
+  /* Supervisión revisa SOLO lo verificable con foto: el checklist de
+     registros con evidencia. Las acciones sin evidencia no se muestran
+     aquí (viven en el checklist del equipo y en el % de cumplimiento). */
   const cieDia = cierreDelDia(fecha, sid);
   const conEv = REGISTROS.filter(r => registroListo(r, fecha, sid)).length;
-  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📸 Registros del día</h3>' +
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📸 Checklist con evidencia</h3>' +
     '<span class="badge ' + (conEv === REGISTROS.length ? 'ok' : 'aviso') + '">' + conEv + '/' + REGISTROS.length + '</span></div>' +
     REGISTROS.map(r => {
       const ev = evidenciaDeRegistro(r.id, fecha, sid);
       const ok = registroListo(r, fecha, sid);
+      const verificado = r.dinero ? !!(cieDia && cieDia.ver) : !!(ev && ev.ver);
       const detalle = r.dinero
         ? (cieDia ? fmt$(r.dinero === 'ventas' ? cieDia.ventas : cieDia.caja) + ' · ' + esc(per(cieDia.personalId)?.nombre || 'Equipo')
           : 'Sin cierre registrado')
         : (ev ? esc(per(ev.personalId)?.nombre || 'Equipo') + ' · ' + fmtHora(ev.ts) : 'Sin evidencia');
-      return '<div class="reg' + (ok ? ' hecha' : '') + '" style="cursor:default">' +
+      return '<div class="reg' + (ok ? (verificado ? ' hecha verificada' : ' hecha') : '') + '" style="cursor:default">' +
         '<div class="box">' + (ok ? '✔' : '') + '</div>' +
-        '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div><div class="meta">' + detalle + '</div></div>' +
+        '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div><div class="meta">' + detalle +
+        (verificado ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '') + '</div></div>' +
         (ev && ev.foto ? '<img class="reg-thumb" src="' + fotoURL(ev.foto) + '" onclick="verFoto(\'' + ev.id + '\')" loading="lazy">' : '') +
+        (ok ? '<button class="btn ' + (verificado ? 'p' : 's') + ' mini" style="flex-shrink:0" ' +
+          'onclick="verificarRegistro(\'' + r.id + '\',\'' + fecha + '\',\'' + sid + '\')">' +
+          (verificado ? '✔✔' : 'Verificar') + '</button>'
+          : '<span class="vv no" style="flex-shrink:0">PENDIENTE</span>') +
         '</div>';
     }).join('') + '</div>';
   // otras evidencias sueltas del día
   const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid && !e.regId);
   if (evs.length) html += '<div class="card"><h3>📎 Otras evidencias (' + evs.length + ')</h3>' +
     '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div></div>';
+  // notas y observaciones del equipo
+  html += cardObservaciones(fecha, sid);
   // cierre del día
   const cie = db.cierres.find(c => c.fecha === fecha && c.sucursalId === sid);
   html += '<div class="card"><h3>🌙 Cierre del día</h3>' + (cie
@@ -1204,6 +1225,40 @@ function marcarVeredicto() {
   ['cumplido', 'ajustes', 'nocumplido'].forEach(v => {
     const b = $('rev-v-' + v); if (b) b.classList.toggle('on', revVeredicto === v);
   });
+}
+/* ✔✔ de Supervisión sobre los registros con evidencia */
+function verificarRegistro(rid, fecha, sid) {
+  const r = REGISTROS.find(x => x.id === rid);
+  if (r.dinero) {
+    const cie = cierreDelDia(fecha, sid);
+    if (!cie) return toast('Sin cierre que verificar');
+    cie.ver = !cie.ver; cie.ts = Date.now();
+    toast(cie.ver ? '✔✔ Cierre verificado' : '↩️ Verificación retirada');
+  } else {
+    const ev = evidenciaDeRegistro(rid, fecha, sid);
+    if (!ev) return toast('Sin evidencia que verificar');
+    ev.ver = !ev.ver; ev.ts = Date.now();
+    toast(ev.ver ? '✔✔ Evidencia verificada' : '↩️ Verificación retirada');
+  }
+  guardarDB(); renderRevision();
+}
+/* notas y observaciones de los colaboradores (se muestra en Supervisión y Dirección) */
+function cardObservaciones(fecha, sid) {
+  const todas = db.checklists.filter(x => x.tipo === 'observacion' && (!sid || x.sucursalId === sid))
+    .concat(db.cierres.filter(c => c.novedades && (!sid || c.sucursalId === sid))
+      .map(c => ({ id: 'cie-' + c.id, fecha: c.fecha, ts: c.ts, sucursalId: c.sucursalId, personalId: c.personalId, novedades: '🌙 (cierre) ' + c.novedades })))
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  const delDia = fecha ? todas.filter(x => x.fecha === fecha) : [];
+  const anteriores = (fecha ? todas.filter(x => x.fecha !== fecha) : todas).slice(0, 6);
+  const fila = o => '<div class="item-linea"><div class="avatar">🗒️</div><div class="grow"><div class="mini">' + esc(o.novedades) + '</div>' +
+    '<div class="mini muted">' + esc(per(o.personalId)?.nombre || 'Equipo') + ' · ' + esc(suc(o.sucursalId)?.nombre || '') +
+    ' · ' + fmtFecha(o.fecha) + ' ' + fmtHora(o.ts) + '</div></div></div>';
+  if (!todas.length) return '<div class="card"><h3>🗒️ Notas y observaciones del equipo</h3><p class="muted mini">Aún no hay observaciones registradas.</p></div>';
+  return '<div class="card"><h3>🗒️ Notas y observaciones del equipo</h3>' +
+    (fecha ? ('<div class="mini muted" style="margin-bottom:4px">Del día seleccionado (' + fmtFecha(fecha) + '):</div>' +
+      (delDia.length ? delDia.map(fila).join('') : '<p class="muted mini">Sin observaciones este día.</p>')) : '') +
+    (anteriores.length ? '<div class="sep"></div><div class="mini muted" style="margin-bottom:4px">Anteriores:</div>' + anteriores.map(fila).join('') : '') +
+    '</div>';
 }
 function verificarTarea(tid, fecha, sid) {
   const t = ACCIONES.find(x => x.id === tid);
@@ -1255,6 +1310,7 @@ function renderDireccion() {
   const c = $('dir-contenido');
   if (tabDir === 'hoy') c.innerHTML = dirHoy();
   if (tabDir === 'mes') c.innerHTML = dirMes();
+  if (tabDir === 'semana') c.innerHTML = dirSemana();
   if (tabDir === 'nomina') c.innerHTML = dirNomina();
   if (tabDir === 'inv') c.innerHTML = dirInventarios();
   if (tabDir === 'evid') c.innerHTML = dirEvidencias();
@@ -1299,11 +1355,8 @@ function dirHoy() {
       falt.slice(0, 8).map(p => esc(p.nombre)).join(', ') + (falt.length > 8 ? ' +' + (falt.length - 8) + ' más' : '') + '</div>';
     html += '</div>';
   });
-  // novedades recientes
-  const novedades = db.cierres.concat(db.checklists).filter(x => x.novedades).slice(0, 6);
-  if (novedades.length) html += '<div class="card"><h3>🗞️ Novedades recientes del equipo</h3>' +
-    novedades.map(n => '<div class="item-linea"><div class="grow"><div class="mini">' + esc(n.novedades) + '</div>' +
-      '<div class="mini muted">' + esc(suc(n.sucursalId)?.nombre || '') + ' · ' + fmtFecha(n.fecha) + '</div></div></div>').join('') + '</div>';
+  // notas y observaciones del equipo (mismo bloque que ve Supervisión, de todas las sucursales)
+  html += cardObservaciones(hoy, null);
   // bitácora
   html += '<div class="card"><h3>📜 Bitácora de eventos</h3>' + (db.eventos.slice(0, 10).map(e =>
     '<div class="item-linea"><div class="grow"><b style="font-size:.85rem">' + esc(e.asunto) + '</b>' +
@@ -1360,6 +1413,99 @@ function exportarMesCSV() {
     c.ventas, c.caja, (c.hechos ?? '') + '/' + totalCierre(c), '"' + (c.novedades || '').replace(/"/g, "'") + '"'].join(',') + '\n');
   descargar('cierres-' + mesVista + '.csv', csv);
   toast('⬇️ CSV del mes descargado');
+}
+
+/* --- SEMANA: cuánto se le paga a cada quien el domingo ---
+   Contador simple para Toño: nombre, días trabajados, horas extra y propinas
+   digitales de la semana en curso (lunes → domingo, día de paga completa). */
+let semanaRef = hoyISO();               // cualquier día dentro de la semana mostrada
+const isoLocal = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function rangoSemana(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const f = new Date(y, m - 1, d);
+  const dow = (f.getDay() + 6) % 7;     // 0 = lunes … 6 = domingo
+  const lun = new Date(y, m - 1, d - dow);
+  const dom = new Date(y, m - 1, d - dow + 6);
+  return { ini: isoLocal(lun), fin: isoLocal(dom) };
+}
+function fmtMin(min) {
+  const t = Math.round(Number(min) || 0);
+  if (!t) return '—';
+  const h = Math.floor(Math.abs(t) / 60), m = Math.abs(t) % 60;
+  return (t < 0 ? '− ' : '') + ((h ? h + ' h ' : '') + (m ? m + ' min' : '')).trim();
+}
+function cambiarSemana(d) {
+  const [y, m, x] = semanaRef.split('-').map(Number);
+  semanaRef = isoLocal(new Date(y, m - 1, x + d * 7));
+  renderDireccion();
+}
+function dirSemana() {
+  const { ini, fin } = rangoSemana(semanaRef);
+  const enRango = f => f >= ini && f <= fin;
+  const turnos = db.turnos.filter(t => t.salida && enRango(t.fecha));
+  const props = db.propinas.filter(x => enRango(x.fecha));
+  const porPersona = {};
+  const reg = pid => (porPersona[pid] = porPersona[pid] || { dias: {}, extraMin: 0, sueldo: 0, propinas: 0 });
+  turnos.forEach(t => {
+    const c = calcularPago(t), x = reg(t.personalId);
+    x.dias[t.fecha] = true;                       // un día trabajado = un día de paga
+    x.extraMin += Math.max(0, c.min);             // solo el tiempo DE MÁS cuenta como extra
+    x.sueldo += c.pago;
+  });
+  props.forEach(p => { reg(p.personalId).propinas += p.monto; });
+  const filas = Object.entries(porPersona)
+    .map(([pid, x]) => ({ pid, nombre: per(pid)?.nombre || '¿?', dias: Object.keys(x.dias).length, extraMin: x.extraMin, sueldo: x.sueldo, propinas: x.propinas }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  const tot = filas.reduce((a, f) => ({
+    dias: a.dias + f.dias, extraMin: a.extraMin + f.extraMin,
+    sueldo: a.sueldo + f.sueldo, propinas: a.propinas + f.propinas
+  }), { dias: 0, extraMin: 0, sueldo: 0, propinas: 0 });
+  const granTotal = tot.sueldo + tot.propinas;
+  const esSemanaActual = rangoSemana(hoyISO()).ini === ini;
+
+  let html = '<div class="encabezado-seccion"><h2 style="margin:0">💵 Pago de la semana</h2>' +
+    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarSemana(-1)">←</button>' +
+    '<button class="btn s mini" onclick="cambiarSemana(1)">→</button>' +
+    '<button class="btn s mini" onclick="exportarSemanaCSV()">⬇️ CSV</button></div></div>';
+  html += '<p class="mini muted" style="margin-top:-4px">Lunes ' + fmtFecha(ini) + ' → domingo ' + fmtFecha(fin) +
+    (esSemanaActual ? ' · <b class="amar">semana en curso</b>' : '') + ' · se paga completo el <b>domingo</b>.</p>';
+  html += '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(granTotal) + '</div><div class="l">total a pagar el domingo</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(tot.propinas) + '</div><div class="l">💳 propinas por retribuir</div></div>' +
+    '<div class="stat"><div class="v">' + tot.dias + '</div><div class="l">días trabajados en total</div></div></div>';
+  html += '<div class="card"><div class="tabla-wrap"><table>' +
+    '<tr><th>Colaborador</th><th class="num">Días trabajados</th><th class="num">Horas extra</th><th class="num">Sueldo</th><th class="num">💳 Propinas</th><th class="num">A pagar</th></tr>' +
+    (filas.map(f => '<tr><td><b>' + esc(f.nombre) + '</b></td>' +
+      '<td class="num">' + f.dias + '</td>' +
+      '<td class="num">' + fmtMin(f.extraMin) + '</td>' +
+      '<td class="num">' + fmt$(f.sueldo) + '</td>' +
+      '<td class="num">' + fmt$(f.propinas) + '</td>' +
+      '<td class="num"><b class="amar">' + fmt$(f.sueldo + f.propinas) + '</b></td></tr>').join('')
+      || '<tr><td colspan="6" class="muted">Nadie ha cerrado turno esta semana todavía.</td></tr>') +
+    (filas.length ? '<tr><td><b>TOTAL</b></td><td class="num"><b>' + tot.dias + '</b></td><td class="num"><b>' + fmtMin(tot.extraMin) +
+      '</b></td><td class="num"><b>' + fmt$(tot.sueldo) + '</b></td><td class="num"><b>' + fmt$(tot.propinas) +
+      '</b></td><td class="num"><b class="amar">' + fmt$(granTotal) + '</b></td></tr>' : '') +
+    '</table></div>' +
+    '<p class="mini muted">Cada día con turno cerrado paga el día completo. Las <b>horas extra</b> son el tiempo de más capturado al cerrar ' +
+    '(bloques de ' + BLOQUE_MIN + ' min) y ya vienen sumadas en el sueldo. Las <b>propinas digitales</b> se le retribuyen a quien las registró. ' +
+    'Para corregir un turno usa la pestaña Nómina.</p></div>';
+  return html;
+}
+function exportarSemanaCSV() {
+  const { ini, fin } = rangoSemana(semanaRef);
+  const enRango = f => f >= ini && f <= fin;
+  const porPersona = {};
+  const reg = pid => (porPersona[pid] = porPersona[pid] || { dias: {}, extraMin: 0, sueldo: 0, propinas: 0 });
+  db.turnos.filter(t => t.salida && enRango(t.fecha)).forEach(t => {
+    const c = calcularPago(t), x = reg(t.personalId);
+    x.dias[t.fecha] = true; x.extraMin += Math.max(0, c.min); x.sueldo += c.pago;
+  });
+  db.propinas.filter(x => enRango(x.fecha)).forEach(p => { reg(p.personalId).propinas += p.monto; });
+  let csv = 'Colaborador,DiasTrabajados,MinutosExtra,Sueldo,PropinasDigitales,APagar\n';
+  Object.entries(porPersona).forEach(([pid, x]) => csv += [
+    (per(pid)?.nombre || '¿?').replace(/,/g, ' '), Object.keys(x.dias).length,
+    x.extraMin, x.sueldo, x.propinas, x.sueldo + x.propinas].join(',') + '\n');
+  descargar('pago-semana-' + ini + '.csv', csv);
+  toast('⬇️ CSV de la semana descargado');
 }
 
 /* --- NÓMINA --- */
@@ -1808,5 +1954,23 @@ setInterval(() => {
   ir('scr-portada');
   pintarRed();
   if (enLinea()) sync();
-  setInterval(() => { if (enLinea()) sync(); }, 60000);
+  /* latido inteligente: sube cambios pendientes cada minuto; si no hay nada
+     que subir, solo consulta la nube cada 5 min (antes subía TODO cada 60 s) */
+  let latido = 0;
+  setInterval(() => {
+    if (!enLinea()) return;
+    latido++;
+    if (syncPendiente || latido % 5 === 0) sync();
+  }, 60000);
+  // caché de la app: abre al instante desde la 2ª visita, incluso sin internet
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('sw.js').catch(() => { });
+    // el caché sirve la versión guardada y baja la nueva por detrás: avisamos
+    // para que quien esté usando la app sepa que hay actualización lista
+    navigator.serviceWorker.addEventListener('message', ev => {
+      if (ev.data && ev.data.tipo === 'version-nueva' && !escribiendo()) {
+        toast('✨ Hay una versión nueva lista. <button class="btn p mini" style="margin-left:8px" onclick="location.reload()">Actualizar</button>', 9000);
+      }
+    });
+  }
 })();

@@ -10,7 +10,10 @@
 <title>El Ojo Maestro · El Anillo del Cíclope</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<!-- fuente sin bloquear el primer pintado: carga en segundo plano -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap"
+  rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet"></noscript>
 <style>
 :root{
   --amarillo:#FFD523; --amarillo-suave:#FFE470;
@@ -517,6 +520,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     </div>
     <div class="tabs" id="dir-tabs">
       <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
+      <button data-t="semana" onclick="dirTab('semana')">💵 Pago semanal</button>
       <button data-t="mes" onclick="dirTab('mes')">📅 Cierre de mes</button>
       <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
       <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>
