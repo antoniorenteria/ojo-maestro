@@ -318,6 +318,16 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
   .cal-t .nom{display:none}
   .cal-grid{gap:3px}
 }
+/* llenado rápido: bloques de regla y vista previa */
+.rap-regla{background:var(--fondo-4);border:1px solid var(--borde-suave);border-radius:12px;
+  padding:12px;margin-bottom:10px}
+.rap-num{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:.8rem;color:#1B0A2E;flex-shrink:0}
+.cal-mini .cal-d{min-height:52px}
+.cal-t.nuevo{border-style:dashed;border-left-width:4px;background:rgba(255,213,35,.16);
+  outline:1px dashed var(--amarillo);outline-offset:-1px}
+html[data-tema="claro"] .rap-regla{background:#FBF9FF}
+html[data-tema="claro"] .cal-t.nuevo{background:rgba(255,213,35,.3)}
 html[data-tema="claro"] .cal-d{background:#FBF9FF}
 html[data-tema="claro"] .cal-t{background:rgba(107,33,168,.10)}
 html[data-tema="claro"] .cal-d.tocable:active{background:#EADFF8}

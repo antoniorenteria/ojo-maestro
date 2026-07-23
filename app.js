@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '1.6';
+const VERSION = '1.7';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -409,6 +409,7 @@ function cargarDB() {
 function tocarCatalogos() { db.catTs = Date.now(); }
 function guardarDB(sincronizar = true) {
   db.ts = Date.now();
+  dbRev++;                          // marca de "aquí hubo un cambio local"
   recordarConfig();                 // la conexión queda respaldada aparte
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch (e) { podarFotos(true); try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (e2) { toast('⚠️ Memoria llena: exporta un respaldo en Dirección'); } }
@@ -425,7 +426,9 @@ function podarFotos(agresivo) {
 }
 
 /* ---------- sincronización con Google Apps Script ---------- */
-let syncTimer = null, syncEnCurso = false, syncPendiente = false;
+/* dbRev sube con CADA guardado local. Sirve para saber si alguien capturó
+   algo mientras el servidor estaba respondiendo un sync. */
+let syncTimer = null, syncEnCurso = false, syncPendiente = false, dbRev = 0;
 /* Payload ligero: las fotos locales (data:) NO viajan en el sync — pesan
    cientos de KB y hacían lenta la app. Las fotos en línea ya viven en Drive
    como URL; las locales se conservan en este dispositivo y se re-adjuntan
@@ -475,6 +478,7 @@ function syncPronto() { syncPendiente = true; clearTimeout(syncTimer); syncTimer
 async function sync(silencioso = true) {
   if (!enLinea() || syncEnCurso) return;
   syncEnCurso = true; syncPendiente = false;
+  const revEnviada = dbRev;      // qué versión de los datos salió al servidor
   try {
     const r = await fetch(db.config.scriptUrl, {
       method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -482,15 +486,26 @@ async function sync(silencioso = true) {
     });
     const j = await r.json();
     if (j && j.ok && j.db) {
-      const anterior = db;
-      const local = db.config.scriptUrl;           // nunca perder la URL local
-      db = j.db; db.config.scriptUrl = local;
-      reAdjuntarFotosLocales(anterior);
-      recordarConfig();
-      localStorage.setItem(DB_KEY, JSON.stringify(db));
-      // no repintar mientras alguien está capturando: se aplicará al navegar
-      if (!escribiendo()) renderTodo();
-      if (!silencioso) toast('🔄 Sincronizado con la nube Cíclope');
+      /* ⚠️ Si alguien capturó algo MIENTRAS el servidor respondía, esa
+         respuesta se calculó sin ese cambio: aplicarla lo borraría. Era el
+         bug de las cantidades de inventario (y los turnos del calendario)
+         que se regresaban solas al cambiar de pantalla. En ese caso se
+         descarta la respuesta y se vuelve a subir enseguida — nunca al
+         revés: primero manda lo que capturó la persona. */
+      if (dbRev !== revEnviada) {
+        syncPendiente = true;
+        clearTimeout(syncTimer); syncTimer = setTimeout(sync, 800);
+      } else {
+        const anterior = db;
+        const local = db.config.scriptUrl;         // nunca perder la URL local
+        db = j.db; db.config.scriptUrl = local;
+        reAdjuntarFotosLocales(anterior);
+        recordarConfig();
+        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        // no repintar mientras alguien está capturando: se aplicará al navegar
+        if (!escribiendo()) renderTodo();
+        if (!silencioso) toast('🔄 Sincronizado con la nube Cíclope');
+      }
     }
   } catch (e) { if (!silencioso) toast('⚠️ Sin conexión — los datos quedan guardados en esta tablet'); }
   syncEnCurso = false;
@@ -1590,74 +1605,133 @@ function calBorrar(id, fecha) {
 const CAL_HORARIOS = [[13, 19], [15, 21], [13, 21], [14, 21], [13, 17], [13, 20]];
 const DOW_ORDEN = [1, 2, 3, 4, 5, 6, 0];        // lunes → domingo (getDay: 0 = domingo)
 const DOW_ETI = { 1: 'L', 2: 'M', 3: 'X', 4: 'J', 5: 'V', 6: 'S', 0: 'D' };
-let rapPersona = '', rapIni = 13, rapFin = 19, rapDias = [1, 2, 3, 4, 5, 6, 0], rapAmbito = 'mes';
+/* Varias reglas a la vez: "Alex los lunes 1-7" + "Alex los jueves 3-9" + …
+   y abajo la vista previa del mes ya con todo aplicado. */
+let rapReglas = [], rapAmbito = 'mes';
 
-function calRapDia(d) {
-  rapDias = rapDias.includes(d) ? rapDias.filter(x => x !== d) : rapDias.concat(d);
+function rapSet(i, k, v) { rapReglas[i][k] = v; calRapido(); }
+function rapHorario(i, a, b) { rapReglas[i].ini = a; rapReglas[i].fin = b; calRapido(); }
+function rapDia(i, d) {
+  const r = rapReglas[i];
+  r.dias = r.dias.includes(d) ? r.dias.filter(x => x !== d) : r.dias.concat(d);
   calRapido();
 }
-function calRapFechas() {
-  const [y, m] = calMes.split('-').map(Number);
-  const ultimo = new Date(y, m, 0).getDate(), hoy = hoyISO(), out = [];
-  for (let d = 1; d <= ultimo; d++) {
-    const f = new Date(y, m - 1, d), iso = isoLocal(f);
-    if (!rapDias.includes(f.getDay())) continue;
-    if (rapAmbito === 'resto' && iso < hoy) continue;
-    out.push(iso);
-  }
-  return out;
+function rapQuitarRegla(i) { rapReglas.splice(i, 1); calRapido(); }
+function rapNuevaRegla() {
+  const g = db.personal.filter(p => p.activo && !p.del);
+  const ult = rapReglas[rapReglas.length - 1];
+  // la nueva hereda a la persona (lo común es varias reglas para el mismo)
+  rapReglas.push({ pid: ult ? ult.pid : g[0].id, ini: 15, fin: 21, dias: [] });
+  calRapido();
 }
-const rapRepetido = iso => db.calendario.some(x => !x.del && x.fecha === iso &&
-  x.sucursalId === calSuc && x.personalId === rapPersona && x.ini === rapIni && x.fin === rapFin);
-
+/* qué turnos nuevos saldrían de las reglas: sin repetir lo que ya existe
+   ni lo que otra regla ya generó */
+function rapCalcular() {
+  const [y, m] = calMes.split('-').map(Number);
+  const ultimo = new Date(y, m, 0).getDate(), hoy = hoyISO();
+  const yaHay = new Set();
+  db.calendario.forEach(x => {
+    if (!x.del && x.sucursalId === calSuc) yaHay.add(x.fecha + '|' + x.personalId + '|' + x.ini + '|' + x.fin);
+  });
+  const nuevos = [];
+  rapReglas.forEach(rg => {
+    if (!rg.pid || !rg.dias.length || rg.fin <= rg.ini) return;
+    for (let d = 1; d <= ultimo; d++) {
+      const f = new Date(y, m - 1, d), iso = isoLocal(f);
+      if (!rg.dias.includes(f.getDay())) continue;
+      if (rapAmbito === 'resto' && iso < hoy) continue;
+      const k = iso + '|' + rg.pid + '|' + rg.ini + '|' + rg.fin;
+      if (yaHay.has(k)) continue;
+      yaHay.add(k);
+      nuevos.push({ fecha: iso, pid: rg.pid, ini: rg.ini, fin: rg.fin });
+    }
+  });
+  return nuevos;
+}
+function rapVistaPrevia(nuevos) {
+  const [, m] = calMes.split('-').map(Number);
+  const porFecha = {};
+  nuevos.forEach(n => { (porFecha[n.fecha] = porFecha[n.fecha] || []).push(n); });
+  let h = '<div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
+    const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
+    h += '<div class="cal-d' + (fuera ? ' fuera' : '') + '"><div class="n">' + f.getDate() + '</div>' +
+      (fuera ? '' : calTurnosDe(iso, calSuc).map(t =>
+        '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) + '">' +
+        '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
+        (porFecha[iso] || []).map(t =>
+          '<div class="cal-t nuevo" style="border-left-color:' + colorPersona(t.pid) + '">' +
+          '<b class="nom">' + esc(calNombre(t.pid)) + '</b> ' + hCorta(t.ini) + '-' + hCorta(t.fin) + '</div>').join('')) +
+      '</div>';
+  }));
+  return h + '</div>';
+}
+function bloqueRegla(rg, i, gente) {
+  const horas = []; for (let h = 8; h <= 23; h++) horas.push(h);
+  const opt = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
+    (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
+  const cuantos = rg.dias.length;
+  return '<div class="rap-regla">' +
+    '<div class="fila" style="align-items:center;gap:8px;margin-bottom:8px">' +
+    '<span class="rap-num" style="background:' + colorPersona(rg.pid) + '">' + (i + 1) + '</span>' +
+    '<select style="flex:1;margin:0" onchange="rapSet(' + i + ',\'pid\',this.value)">' +
+    gente.map(p => '<option value="' + p.id + '"' + (p.id === rg.pid ? ' selected' : '') + '>' +
+      esc(p.nombre) + '</option>').join('') + '</select>' +
+    (rapReglas.length > 1 ? '<button class="btn s mini" onclick="rapQuitarRegla(' + i + ')">🗑️</button>' : '') +
+    '</div>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:5px">' + CAL_HORARIOS.map(([a, b]) =>
+      '<button class="btn ' + (a === rg.ini && b === rg.fin ? 'p' : 's') + ' mini" ' +
+      'onclick="rapHorario(' + i + ',' + a + ',' + b + ')">' + hCorta(a) + '-' + hCorta(b) + '</button>').join('') +
+    '</div>' +
+    '<div class="fila" style="margin-top:6px;gap:8px">' +
+    '<select style="flex:1;margin:0" onchange="rapSet(' + i + ',\'ini\',Number(this.value))">' +
+    horas.map(h => opt(h, rg.ini)).join('') + '</select>' +
+    '<select style="flex:1;margin:0" onchange="rapSet(' + i + ',\'fin\',Number(this.value))">' +
+    horas.map(h => opt(h, rg.fin)).join('') + '</select></div>' +
+    '<div class="fila" style="gap:4px;margin-top:6px">' + DOW_ORDEN.map(d =>
+      '<button class="btn ' + (rg.dias.includes(d) ? 'p' : 's') + ' mini" style="flex:1;padding:9px 0" ' +
+      'onclick="rapDia(' + i + ',' + d + ')">' + DOW_ETI[d] + '</button>').join('') + '</div>' +
+    (cuantos ? '' : '<p class="mini" style="color:var(--aviso);margin:6px 0 0">Elige los días de esta regla.</p>') +
+    '</div>';
+}
 function calRapido() {
   if (!calEdit) return toast('Toca ✏️ Modificar primero');
   const gente = db.personal.filter(p => p.activo && !p.del);
   if (!gente.length) return toast('Primero da de alta al equipo en Dirección → Administrar');
-  if (!rapPersona || !gente.some(p => p.id === rapPersona)) rapPersona = gente[0].id;
+  rapReglas = rapReglas.filter(r => gente.some(p => p.id === r.pid));
+  if (!rapReglas.length) rapReglas = [{ pid: gente[0].id, ini: 13, fin: 19, dias: [1] }];
   const [, m] = calMes.split('-').map(Number);
-  const horas = []; for (let h = 8; h <= 23; h++) horas.push(h);
-  const optH = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
-    (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
-  const nuevos = calRapFechas().filter(iso => !rapRepetido(iso)).length;
+  const nuevos = rapCalcular();
+  // conservar el scroll: el modal se vuelve a dibujar con cada toque
+  const cont = $('modal-gen-cuerpo');
+  const sc = cont ? cont.scrollTop : 0;
   abrirModal('<h3>⚡ Llenado rápido</h3>' +
-    '<p class="mini muted">Pon a una persona en todos los días que le tocan, de un jalón.</p>' +
-    '<label>Colaborador</label><select onchange="rapPersona=this.value;calRapido()">' +
-    gente.map(p => '<option value="' + p.id + '"' + (p.id === rapPersona ? ' selected' : '') + '>' +
-      esc(p.nombre) + '</option>').join('') + '</select>' +
-    '<label style="margin-top:12px">Horario</label>' +
-    '<div class="fila" style="flex-wrap:wrap;gap:6px">' + CAL_HORARIOS.map(([a, b]) =>
-      '<button class="btn ' + (a === rapIni && b === rapFin ? 'p' : 's') + ' mini" ' +
-      'onclick="rapIni=' + a + ';rapFin=' + b + ';calRapido()">' + hCorta(a) + '-' + hCorta(b) + '</button>').join('') + '</div>' +
-    '<div class="fila" style="margin-top:8px">' +
-    '<div style="flex:1"><label class="mini">Entra</label><select onchange="rapIni=Number(this.value);calRapido()">' +
-    horas.map(h => optH(h, rapIni)).join('') + '</select></div>' +
-    '<div style="flex:1"><label class="mini">Sale</label><select onchange="rapFin=Number(this.value);calRapido()">' +
-    horas.map(h => optH(h, rapFin)).join('') + '</select></div></div>' +
-    '<label style="margin-top:12px">Días de la semana</label>' +
-    '<div class="fila" style="gap:5px">' + DOW_ORDEN.map(d =>
-      '<button class="btn ' + (rapDias.includes(d) ? 'p' : 's') + ' mini" style="flex:1;padding:11px 0" ' +
-      'onclick="calRapDia(' + d + ')">' + DOW_ETI[d] + '</button>').join('') + '</div>' +
-    '<label style="margin-top:12px">Aplicar en</label>' +
+    '<p class="mini muted">Agrega las reglas que necesites (misma persona en varios días y horarios) ' +
+    'y mira abajo cómo va quedando el mes antes de guardar.</p>' +
+    rapReglas.map((rg, i) => bloqueRegla(rg, i, gente)).join('') +
+    '<button class="btn s" style="margin-top:10px" onclick="rapNuevaRegla()">➕ Agregar otra regla</button>' +
+    '<label style="margin-top:14px">Aplicar en</label>' +
     '<div class="seg" style="margin:0">' +
     '<button class="' + (rapAmbito === 'mes' ? 'on' : '') + '" onclick="rapAmbito=\'mes\';calRapido()">Todo ' + MESES[m - 1] + '</button>' +
     '<button class="' + (rapAmbito === 'resto' ? 'on' : '') + '" onclick="rapAmbito=\'resto\';calRapido()">De hoy en adelante</button></div>' +
-    '<div class="mini muted" style="margin-top:12px">Se van a agregar <b class="amar">' + nuevos + ' día' + (nuevos === 1 ? '' : 's') +
-    '</b> para ' + esc(calNombre(rapPersona)) + ' de ' + hCorta(rapIni) + '-' + hCorta(rapFin) + '.</div>' +
-    '<button class="btn p" style="margin-top:12px" onclick="calAplicarRapido()">⚡ Aplicar</button>' +
+    '<div class="sep"></div>' +
+    '<label>Vista previa de ' + MESES[m - 1] + '</label>' +
+    '<p class="mini muted" style="margin:0 0 8px">Lo <b class="amar">punteado</b> es lo que se va a agregar.</p>' +
+    rapVistaPrevia(nuevos) +
+    '<button class="btn p gigante" style="margin-top:14px" onclick="rapGuardar()">💾 Guardar ' +
+    nuevos.length + ' turno' + (nuevos.length === 1 ? '' : 's') + '</button>' +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
+  const c2 = $('modal-gen-cuerpo'); if (c2) c2.scrollTop = sc;
 }
-function calAplicarRapido() {
-  if (!rapDias.length) return toast('Elige al menos un día de la semana');
-  if (rapFin <= rapIni) return toast('La salida debe ser después de la entrada ⏰');
-  const fechas = calRapFechas().filter(iso => !rapRepetido(iso));
-  if (!fechas.length) return toast('Esos días ya están puestos así');
-  fechas.forEach(iso => db.calendario.push({
-    id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
-    personalId: rapPersona, ini: rapIni, fin: rapFin
+function rapGuardar() {
+  const nuevos = rapCalcular();
+  if (!nuevos.length) return toast('No hay turnos nuevos que agregar');
+  nuevos.forEach(n => db.calendario.push({
+    id: uid(), ts: Date.now(), fecha: n.fecha, sucursalId: calSuc,
+    personalId: n.pid, ini: n.ini, fin: n.fin
   }));
   guardarDB(); cerrarModal(); renderCalendario();
-  toast('⚡ ' + calNombre(rapPersona) + ' quedó en ' + fechas.length + ' días');
+  toast('⚡ ' + nuevos.length + ' turnos agregados a ' + MESES[Number(calMes.split('-')[1]) - 1]);
 }
 /* toma la primera semana ya armada y la repite en todo el mes */
 function calRepetirSemana() {
