@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.6';
+const VERSION = '2.7';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1057,6 +1057,24 @@ function borrarBorradorCierre(fecha, sid) {
   cierreBorrador = { ventas: '', caja: '' };
   cierreFotos = { 'r-ventas': '', 'r-caja': '' };
 }
+/* Ventas traídas de Loyverse para el día en curso (null = aún sin consultar,
+   o el POS no está conectado y se sigue capturando a mano). */
+let posHoy = null;
+async function consultarPOS() {
+  posHoy = null;
+  const enChk = () => document.querySelector('.screen.active')?.id === 'scr-chk';
+  if (!enLinea()) { if (enChk()) renderChecklist(); return; }
+  const sid = sucursalActual;
+  const r = await llamarBackend({ action: 'loyverse', fecha: hoyISO(), sucursalId: sid });
+  if (sid !== sucursalActual) return;    // ya cambió de sucursal mientras respondía
+  if (r && r.ok && r.disponible) {
+    posHoy = r;
+    // el POS manda la cifra de ventas: se refleja en el borrador
+    cierreBorrador.ventas = String(r.ventas);
+    guardarBorradorCierre();
+  }
+  if (enChk()) renderChecklist();        // refresca siempre: con o sin POS
+}
 function irChecklist() {
   opcionesPersonal($('chk-persona'), true);
   if (!$('chk-persona').value) opcionesPersonal($('chk-persona'), false);
@@ -1065,6 +1083,8 @@ function irChecklist() {
   // se recupera lo que se haya dejado a medias hoy en esta sucursal
   if (cargarBorradorCierre() && !cierreDelDia()) toast('📝 Se recuperó lo que llevabas capturado');
   renderChecklist();
+  // en segundo plano: si hay POS conectado, trae las ventas y aparece el cuadre
+  consultarPOS();
 }
 function renderChecklist() {
   renderResumenChk();
@@ -1083,10 +1103,37 @@ function renderResumenChk() {
   const ventas = cie ? cie.ventas : Number(cierreBorrador.ventas || 0);
   const caja = cie ? cie.caja : Number(cierreBorrador.caja || 0);
   const propTot = propinasDe(hoyISO(), sucursalActual).reduce((a, x) => a + x.monto, 0);
+  const pos = cie ? cie.pos : posHoy;   // desglose del punto de venta, si lo hay
   $('chk-dinero').innerHTML =
-    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas cierre</div></div>' +
+    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas' +
+    (pos ? ' · Loyverse' : ' cierre') + '</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(caja) + '</div><div class="l">caja de dinero</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propTot) + '</div><div class="l">💳 propinas</div></div>';
+  // ── cuadre de caja: efectivo que reporta el POS vs lo que se contó ──
+  const box = $('chk-cuadre');
+  if (box) {
+    if (pos) {
+      const esperado = Number(pos.efectivo || 0);
+      const dif = caja - esperado;
+      const cuadra = Math.abs(dif) < 0.5;
+      const capturada = cie ? true : cierreBorrador.caja !== '';
+      box.style.display = 'block';
+      box.innerHTML = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🧮 Cuadre de caja</h3>' +
+        '<span class="badge ' + (!capturada ? 'aviso' : cuadra ? 'ok' : 'comprar') + '">' +
+        (!capturada ? 'falta contar' : cuadra ? '✅ cuadra' : (dif > 0 ? '▲ sobra' : '▼ falta')) + '</span></div>' +
+        '<div class="fila mini" style="flex-wrap:wrap;gap:12px 20px">' +
+        '<span>💵 Efectivo (Loyverse): <b class="amar">' + fmt$(esperado) + '</b></span>' +
+        '<span>💳 Tarjeta: <b class="amar">' + fmt$(pos.tarjeta || 0) + '</b></span>' +
+        (pos.otros ? '<span>Otros: <b class="amar">' + fmt$(pos.otros) + '</b></span>' : '') +
+        '<span>📦 Contado en caja: <b class="amar">' + fmt$(caja) + '</b></span>' +
+        '</div>' +
+        (capturada ? '<div class="mini" style="margin-top:8px;color:var(--' + (cuadra ? 'ok' : 'alerta') + ')">' +
+          (cuadra ? '✅ El efectivo contado coincide con lo que reporta Loyverse.'
+            : (dif > 0 ? '▲ Hay ' + fmt$(dif) + ' de más en la caja.' : '▼ Faltan ' + fmt$(-dif) + ' en la caja.')) + '</div>'
+          : '<p class="mini muted" style="margin-top:8px">Cuenta el efectivo y captúralo en «caja de dinero» para ver si cuadra.</p>') +
+        '</div>';
+    } else { box.style.display = 'none'; box.innerHTML = ''; }
+  }
   $('chk-barra').style.width = pct + '%';
   $('chk-pct').textContent = pct + '%';
   const chip = $('chk-progreso-chip');
@@ -1128,16 +1175,23 @@ function filaDinero(r, cie) {
       '</div>';
   }
   const foto = cierreFotos[r.id];
+  // las VENTAS, cuando vienen de Loyverse, no se teclean: campo de solo lectura
+  const desdePOS = r.dinero === 'ventas' && posHoy;
+  const meta = desdePOS
+    ? '📮 Ventas de Loyverse (' + (posHoy.recibos || 0) + ' tickets) · foto opcional'
+    : (r.dinero === 'caja' && posHoy ? 'Cuenta el efectivo · foto al cerrar' : 'Monto y foto al cerrar');
   return '<div class="reg fila-cierre">' +
-    '<div class="box"></div>' +
+    '<div class="box">' + (desdePOS ? '📮' : '') + '</div>' +
     '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div>' +
-    '<div class="meta">Monto y foto al cerrar</div></div>' +
+    '<div class="meta">' + meta + '</div></div>' +
     (foto ? '<img class="reg-thumb" src="' + foto + '">' : '') +
     '<button class="reg-cam' + (foto ? ' listo' : '') + '" onclick="tomarFotoRegistro(\'' + r.id + '\')" title="Foto de ' + esc(r.n) + '">' +
     (foto ? '🔄' : '📷') + '</button>' +
     '<div class="reg-dinero">' +
-    '<input id="chk-' + r.dinero + '" type="number" inputmode="decimal" placeholder="' + r.ph + '" value="' +
-    esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;guardarBorradorCierre();renderResumenChk()">' +
+    (desdePOS
+      ? '<input id="chk-ventas" type="text" readonly value="' + fmt$(posHoy.ventas) + '" title="Viene de Loyverse" style="font-weight:700">'
+      : '<input id="chk-' + r.dinero + '" type="number" inputmode="decimal" placeholder="' + r.ph + '" value="' +
+        esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;guardarBorradorCierre();renderResumenChk()">') +
     '</div></div>';
 }
 
@@ -1399,7 +1453,8 @@ async function cerrarElDia() {
     fecha, ts: Date.now(), tsFoto: Date.now(), sucursalId: sucursalActual,
     personalId: p.id, ventas, caja, items, hechos, total: acts.length,
     foto: fotos['r-ventas'] || fotos['r-caja'] || '',
-    novedades: ($('chk-obs').value || '').trim()
+    novedades: ($('chk-obs').value || '').trim(),
+    pos: posHoy ? { fuente: 'loyverse', efectivo: posHoy.efectivo, tarjeta: posHoy.tarjeta, otros: posHoy.otros, recibos: posHoy.recibos, ts: Date.now() } : undefined
   };
   const yaEsta = db.cierres.findIndex(c => c.id === reg.id);
   if (yaEsta >= 0) db.cierres[yaEsta] = reg; else db.cierres.unshift(reg);
@@ -2811,7 +2866,8 @@ function dirMes() {
     '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th>Checklist</th><th>Novedades</th><th></th></tr>' +
     (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' +
       puntoPersona(c.personalId) + esc(per(c.personalId)?.nombre || '—') +
-      '</td><td class="num">' + fmt$(c.ventas) + '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + totalCierre(c) +
+      '</td><td class="num">' + fmt$(c.ventas) + (c.pos ? ' <span title="Efectivo ' + fmt$(c.pos.efectivo) + ' · Tarjeta ' + fmt$(c.pos.tarjeta) + '">📮</span>' : '') +
+      '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + totalCierre(c) +
       '</td><td class="mini">' + esc(c.novedades || '') +
       '</td><td><button class="btn s mini" onclick="borrarCierre(\'' + c.id + '\')">🗑️</button></td></tr>').join('')
       || '<tr><td colspan="8" class="muted">Sin cierres.</td></tr>') +

@@ -25,6 +25,188 @@ var NOMBRE_HOJA = 'El Ojo Maestro - Registros';
 var WHATSAPP_NUMERO = '5217711232884';
 var CALLMEBOT_APIKEY = '';   /* pega aqui tu apikey; vacio = desactivado */
 
+/* ================================================================
+   LOYVERSE (punto de venta) - importar las ventas solas
+   ----------------------------------------------------------------
+   Con esto la venta del dia NO se teclea: la trae el mismo sistema
+   de cobro, con su desglose de efectivo y tarjeta.
+
+   COMO CONECTARLO (una sola vez):
+   1. Entra a tu Loyverse desde la computadora: https://r.loyverse.com
+   2. Menu izquierdo > Integraciones > Access tokens (Tokens de acceso).
+   3. Boton "+ Add access token" > ponle nombre "Ojo Maestro" > Save.
+   4. Copia el token que aparece y pegalo abajo en LOYVERSE_TOKEN.
+   5. Guarda (disco) y crea una Nueva version (Implementar > Administrar).
+   6. En el editor, selecciona la funcion  loyverseListarTiendas  y dale
+      Ejecutar. En "Registro de ejecucion" vas a ver el id de cada tienda.
+   7. Copia esos id al mapa LOYVERSE_TIENDAS de abajo, junto a la sucursal
+      que le toca. Los id de sucursal del Ojo Maestro son:
+        suc-revolucion  y  suc-tulipanes
+   8. Guarda otra vez y crea Nueva version.
+   9. Selecciona  loyverseActivarImportacion  y dale Ejecutar una vez:
+      queda programado para traer las ventas cada noche solo.
+   Para probar sin esperar: ejecuta  loyverseImportarHoy  y revisa el
+   Registro de ejecucion.
+   ================================================================ */
+var LOYVERSE_TOKEN = '';   /* pega aqui tu Access token de Loyverse */
+
+/* store_id de Loyverse  ->  id de sucursal en el Ojo Maestro.
+   Llena esto DESPUES de correr loyverseListarTiendas (paso 6). */
+var LOYVERSE_TIENDAS = {
+  // 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx': 'suc-revolucion',
+  // 'yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy': 'suc-tulipanes'
+};
+
+function loyverseGet_(ruta, params) {
+  if (!LOYVERSE_TOKEN) throw new Error('Falta LOYVERSE_TOKEN');
+  var url = 'https://api.loyverse.com/v1.0/' + ruta;
+  if (params) {
+    var q = Object.keys(params).map(function (k) { return k + '=' + encodeURIComponent(params[k]); }).join('&');
+    url += (url.indexOf('?') < 0 ? '?' : '&') + q;
+  }
+  var res = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + LOYVERSE_TOKEN },
+    muteHttpExceptions: true
+  });
+  var code = res.getResponseCode();
+  if (code !== 200) throw new Error('Loyverse ' + code + ': ' + res.getContentText().slice(0, 300));
+  return JSON.parse(res.getContentText());
+}
+
+/* Paso 6: lista las tiendas para conocer sus id. Mira el Registro de ejecucion. */
+function loyverseListarTiendas() {
+  var d = loyverseGet_('stores');
+  (d.stores || []).forEach(function (s) {
+    Logger.log('TIENDA  id: ' + s.id + '   nombre: ' + s.name);
+  });
+  Logger.log('Copia cada id a LOYVERSE_TIENDAS junto a suc-revolucion / suc-tulipanes.');
+  return d.stores || [];
+}
+
+/* Rango [ini, fin) de un dia (fecha yyyy-MM-dd) en hora de Mexico, formato UTC ISO. */
+function loyverseRangoDia_(fecha) {
+  var ini = Utilities.formatDate(
+    Utilities.parseDate(fecha + ' 00:00:00', 'America/Mexico_City', 'yyyy-MM-dd HH:mm:ss'),
+    'UTC', "yyyy-MM-dd'T'HH:mm:ss.000'Z'");
+  var finD = new Date(Utilities.parseDate(fecha + ' 00:00:00', 'America/Mexico_City', 'yyyy-MM-dd HH:mm:ss').getTime() + 864e5);
+  var fin = Utilities.formatDate(finD, 'UTC', "yyyy-MM-dd'T'HH:mm:ss.000'Z'");
+  return { ini: ini, fin: fin };
+}
+
+/* Suma los recibos de un dia por tienda y por tipo de pago.
+   Devuelve { store_id: { ventas, efectivo, tarjeta, otros, recibos } } */
+function loyverseVentasDia_(fecha) {
+  var r = loyverseRangoDia_(fecha);
+  var acc = {};
+  var cursor = null, vueltas = 0;
+  do {
+    var params = { created_at_min: r.ini, created_at_max: r.fin, limit: 250 };
+    if (cursor) params.cursor = cursor;
+    var d = loyverseGet_('receipts', params);
+    (d.receipts || []).forEach(function (rec) {
+      var sid = rec.store_id;
+      var a = acc[sid] || (acc[sid] = { ventas: 0, efectivo: 0, tarjeta: 0, otros: 0, recibos: 0 });
+      // total_money de una devolucion (REFUND) viene negativo: se resta solo
+      var signo = (rec.receipt_type === 'REFUND') ? -1 : 1;
+      var neto = Number(rec.total_money || 0) * signo;
+      a.ventas += neto;
+      a.recibos += 1;
+      (rec.payments || []).forEach(function (p) {
+        var monto = Number(p.money_amount || 0) * signo;
+        var nom = ((p.name || p.type || '') + '').toLowerCase();
+        if (nom.indexOf('cash') >= 0 || nom.indexOf('efectivo') >= 0) a.efectivo += monto;
+        else if (nom.indexOf('card') >= 0 || nom.indexOf('tarjeta') >= 0) a.tarjeta += monto;
+        else a.otros += monto;
+      });
+    });
+    cursor = d.cursor;
+    vueltas++;
+  } while (cursor && vueltas < 40);
+  return acc;
+}
+
+/* Escribe las ventas de Loyverse en el cierre del dia de cada sucursal.
+   - Si no hay cierre aun, crea uno con las ventas ya puestas.
+   - Si ya hay, actualiza las ventas y el desglose, PERO respeta la caja
+     que conto la persona (eso Loyverse no lo sabe).
+   El id del cierre es determinista (cie|fecha|sucursal), igual que en la app,
+   asi el merge lo une en vez de duplicar. */
+function loyverseAplicar_(fecha) {
+  if (!Object.keys(LOYVERSE_TIENDAS).length) throw new Error('Falta llenar LOYVERSE_TIENDAS');
+  var ventas = loyverseVentasDia_(fecha);
+  var db = leerDB() || {};
+  db.cierres = db.cierres || [];
+  db.sucursales = db.sucursales || [];
+  var tocados = [];
+  Object.keys(LOYVERSE_TIENDAS).forEach(function (storeId) {
+    var sid = LOYVERSE_TIENDAS[storeId];
+    var v = ventas[storeId];
+    if (!v) return;
+    var round2 = function (n) { return Math.round(n * 100) / 100; };
+    var id = 'cie|' + fecha + '|' + sid;
+    var idx = -1;
+    for (var i = 0; i < db.cierres.length; i++) { if (db.cierres[i].id === id && !db.cierres[i].del) { idx = i; break; } }
+    var base = idx >= 0 ? db.cierres[idx] : {
+      id: id, fecha: fecha, sucursalId: sid, personalId: '', caja: 0,
+      items: {}, hechos: 0, total: 0, novedades: ''
+    };
+    base.ts = Date.now();
+    base.ventas = round2(v.ventas);
+    base.pos = { fuente: 'loyverse', efectivo: round2(v.efectivo), tarjeta: round2(v.tarjeta), otros: round2(v.otros), recibos: v.recibos, ts: Date.now() };
+    if (idx >= 0) db.cierres[idx] = base; else db.cierres.unshift(base);
+    tocados.push({ sid: sid, ventas: base.ventas, efectivo: base.pos.efectivo, tarjeta: base.pos.tarjeta });
+  });
+  if (tocados.length) escribirDB(db);
+  return tocados;
+}
+
+/* Importa el dia de HOY (hora Mexico). Es lo que corre el trigger nocturno. */
+function loyverseImportarHoy() {
+  var fecha = fechaHoyMX();
+  var t = loyverseAplicar_(fecha);
+  Logger.log('Loyverse ' + fecha + ': ' + JSON.stringify(t));
+  if (t.length) {
+    var cuerpo = 'Ventas importadas de Loyverse (' + fecha + '):\n\n' + t.map(function (x) {
+      return '- ' + x.sid + ': $' + x.ventas.toFixed(2) + '  (efectivo $' + x.efectivo.toFixed(2) + ' / tarjeta $' + x.tarjeta.toFixed(2) + ')';
+    }).join('\n');
+    accionNotificar('Ventas de Loyverse cargadas', cuerpo);
+  }
+  return t;
+}
+/* Reimportar un dia concreto a mano, p.ej. loyverseImportarFecha('2026-07-25') */
+function loyverseImportarFecha(fecha) { return loyverseAplicar_(fecha); }
+
+/* La app llama esto EN VIVO al abrir el cierre: devuelve las ventas de hoy
+   (o de la fecha pedida) de esa sucursal, para prellenar y cuadrar la caja.
+   Si Loyverse no esta configurado, responde disponible:false y la app sigue
+   funcionando en modo manual, como siempre. */
+function accionLoyverse(fecha, sucursalId) {
+  if (!LOYVERSE_TOKEN || !Object.keys(LOYVERSE_TIENDAS).length) return { ok: true, disponible: false };
+  try {
+    var f = fecha || fechaHoyMX();
+    var ventas = loyverseVentasDia_(f);
+    var storeId = null;
+    Object.keys(LOYVERSE_TIENDAS).forEach(function (sid) { if (LOYVERSE_TIENDAS[sid] === sucursalId) storeId = sid; });
+    if (!storeId) return { ok: true, disponible: false };
+    var v = ventas[storeId] || { ventas: 0, efectivo: 0, tarjeta: 0, otros: 0, recibos: 0 };
+    var r2 = function (n) { return Math.round(n * 100) / 100; };
+    return { ok: true, disponible: true, fecha: f, sucursalId: sucursalId,
+      ventas: r2(v.ventas), efectivo: r2(v.efectivo), tarjeta: r2(v.tarjeta), otros: r2(v.otros), recibos: v.recibos };
+  } catch (err) {
+    return { ok: true, disponible: false, error: String(err) };
+  }
+}
+
+/* Paso 9: programa la importacion automatica cada noche a las 23:15. */
+function loyverseActivarImportacion() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'loyverseImportarHoy') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('loyverseImportarHoy').timeBased().everyDays(1).atHour(23).nearMinute(15).create();
+  Logger.log('Listo: las ventas se importaran solas cada noche.');
+}
+
 /* ----------------------------------------------------------------
    Entradas HTTP
 ---------------------------------------------------------------- */
@@ -41,6 +223,7 @@ function doPost(e) {
     if (accion === 'foto') return respuesta(accionFoto(req.b64, req.meta || {}));
     if (accion === 'notify') return respuesta(accionNotificar(req.asunto, req.cuerpo));
     if (accion === 'backup') return respuesta(accionRespaldo(req.db));
+    if (accion === 'loyverse') return respuesta(accionLoyverse(req.fecha, req.sucursalId));
     return respuesta({ ok: false, error: 'accion desconocida' });
   } catch (err) {
     return respuesta({ ok: false, error: String(err) });
@@ -136,7 +319,15 @@ function mezclar(a, b) {
       delete mapa[x.id];
       /* duplicado: en turnos gana el que tiene salida; en lo demas la version mas reciente */
       if (k === 'turnos') return (!x.salida && o.salida) ? o : x;
-      return ((o.ts || 0) > (x.ts || 0)) ? o : x;
+      var gana = ((o.ts || 0) > (x.ts || 0)) ? o : x, otroLado = (gana === o) ? x : o;
+      /* las ventas de Loyverse (campo pos) no se pierden aunque un dispositivo
+         reenvie una version mas nueva sin ellas: se conservan del lado que las
+         tenga, junto con las ventas ya importadas. */
+      if (k === 'cierres' && otroLado.pos && !gana.pos) {
+        gana.pos = otroLado.pos;
+        if (otroLado.ventas) gana.ventas = otroLado.ventas;
+      }
+      return gana;
     });
     db[k] = baseLista.concat(Object.keys(mapa).map(function (id) { return mapa[id]; }));
     db[k].sort(function (p, q) { return (q.ts || q.entrada || 0) - (p.ts || p.entrada || 0); });
