@@ -9,7 +9,7 @@
      tipografía solo se descargan una vez. */
 const CACHE = 'ojo-maestro-v5';
 const SHELL = ['./', 'index.html', 'app.js', 'assets.js', 'fotos-productos.js',
-  'manifest.json', 'img/icono.png', 'img/icono-180.png'];
+  'manifest.json', 'img/icono.png', 'img/icono-180.png', 'img/logo-negro.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

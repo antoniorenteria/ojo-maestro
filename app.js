@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '1.9';
+const VERSION = '2.1';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -472,7 +472,7 @@ function pintarRed() {
   if (av) {
     av.style.display = on ? 'none' : 'block';
     if (!on) av.innerHTML = '<div class="card amarilla" style="margin:18px auto 0;max-width:420px;text-align:left">' +
-      '<b style="color:var(--amarillo)">⚠️ Este dispositivo está en modo local</b>' +
+      '<b class="amar">⚠️ Este dispositivo está en modo local</b>' +
       '<p class="mini muted" style="margin:6px 0 10px">Lo que se capture aquí no llega a los demás. ' +
       'Conéctalo una vez y ya no se vuelve a perder.</p>' +
       '<button class="btn p" onclick="conectarDispositivo()">🔌 Conectar a la nube</button></div>';
@@ -767,7 +767,7 @@ function renderSucursal() {
   $('suc-en-turno').innerHTML = abiertos.length
     ? '<div class="mini muted" style="margin-bottom:8px">EN TURNO AHORA</div>' + abiertos.map(t => {
       const p = per(t.personalId);
-      return '<div class="item-linea"><div class="avatar">' + esc((p?.nombre || '?')[0]) + '</div>' +
+      return '<div class="item-linea">' + avatarPersona(t.personalId, p?.nombre) +
         '<div class="grow"><b>' + esc(p?.nombre || '¿?') + '</b><div class="mini muted">' +
         (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') + ' · entró ' + fmtHora(t.entrada) + '</div></div>' +
         '<span class="badge mor">activo</span></div>';
@@ -1152,7 +1152,8 @@ function renderPropinas() {
       '<div class="stat"><div class="v">' + fmt$(m) + '</div><div class="l">💳 ' + esc(per(pid)?.nombre || '¿?') + ' hoy</div></div>').join('') + '</div>'
     : '<p class="muted centrado">Aún no hay propinas digitales registradas hoy.</p>';
   $('prop-lista').innerHTML = lista.map(x =>
-    '<div class="item-linea"><div class="avatar">💳</div><div class="grow"><b>' + fmt$(x.monto) + '</b> — ' + esc(per(x.personalId)?.nombre || '¿?') +
+    '<div class="item-linea">' + avatarPersona(x.personalId) + '<div class="grow"><b>' + fmt$(x.monto) + '</b> — ' +
+    esc(per(x.personalId)?.nombre || '¿?') +
     '<div class="mini muted">' + fmtHora(x.ts) + (x.nota ? ' · ' + esc(x.nota) : '') + '</div></div></div>').join('');
 }
 function registrarPropina() {
@@ -1391,7 +1392,9 @@ function cardObservaciones(fecha, sid) {
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const delDia = fecha ? todas.filter(x => x.fecha === fecha) : [];
   const anteriores = (fecha ? todas.filter(x => x.fecha !== fecha) : todas).slice(0, 6);
-  const fila = o => '<div class="item-linea"><div class="avatar">🗒️</div><div class="grow"><div class="mini">' + esc(o.novedades) + '</div>' +
+  const fila = o => '<div class="item-linea">' +
+    (per(o.personalId) ? avatarPersona(o.personalId) : '<div class="avatar">🗒️</div>') +
+    '<div class="grow"><div class="mini">' + esc(o.novedades) + '</div>' +
     '<div class="mini muted">' + esc(per(o.personalId)?.nombre || 'Equipo') + ' · ' + esc(suc(o.sucursalId)?.nombre || '') +
     ' · ' + fmtFecha(o.fecha) + ' ' + fmtHora(o.ts) + '</div></div></div>';
   if (!todas.length) return '<div class="card"><h3>🗒️ Notas y observaciones del equipo</h3><p class="muted mini">Aún no hay observaciones registradas.</p></div>';
@@ -1460,6 +1463,15 @@ function colorPersona(pid) {
   const i = ids.indexOf(pid);
   return PALETA_PERSONAS[(i < 0 ? 0 : i) % PALETA_PERSONAS.length];
 }
+/* El color del colaborador se reutiliza en toda la app para reconocerlo de un
+   vistazo: círculo con su inicial donde ya había avatar, y un punto antes del
+   nombre en las tablas. Solo se agrega color, no se cambia ninguna estructura. */
+function avatarPersona(pid, nombre) {
+  const n = nombre || per(pid)?.nombre || '?';
+  return '<div class="avatar" style="background:' + colorPersona(pid) + ';color:#1B0A2E">' +
+    esc(n[0]) + '</div>';
+}
+const puntoPersona = pid => '<span class="pt-per" style="background:' + colorPersona(pid) + '"></span>';
 /* primer color de la paleta que nadie esté usando */
 function colorLibre() {
   const usados = new Set(db.personal.filter(p => !p.del && p.color).map(p => p.color));
@@ -1473,6 +1485,23 @@ const rangoCorto = t => hCorta(t.ini) + '-' + hCorta(t.fin);
 function irCalendario() {
   if (!calSuc) calSuc = sucursalActual || (db.sucursales.filter(s => s.activa && !s.del)[0] || {}).id;
   ir('scr-cal');
+}
+/* ---------- nadie puede estar dos veces el mismo día ----------
+   Ni con otro horario en la misma sucursal, ni en la otra: una persona no
+   puede estar en Revolución y en Tulipanes el mismo día. */
+function turnoDelDia(pid, fecha, exceptoId) {
+  return db.calendario.find(x => !x.del && x.fecha === fecha &&
+    x.personalId === pid && x.id !== exceptoId);
+}
+function avisoChoque(pid, choque) {
+  return '⛔ ' + calNombre(pid) + ' ya tiene turno ese día en ' +
+    (suc(choque.sucursalId)?.nombre || 'la otra sucursal') + ' (' + rangoCorto(choque) + ')';
+}
+/* clave fecha|persona de TODO el calendario, para los llenados masivos */
+function ocupadosDelCalendario() {
+  const s = new Set();
+  db.calendario.forEach(x => { if (!x.del) s.add(x.fecha + '|' + x.personalId); });
+  return s;
 }
 function calVolver() {
   calEdit = false;
@@ -1533,7 +1562,8 @@ function renderCalendario() {
     html += '<div class="cal-d' + (fuera ? ' fuera' : '') + (iso === hoy ? ' hoy' : '') + (fuera ? '' : ' tocable') + '"' +
       (fuera ? '' : ' onclick="modalDiaCal(\'' + iso + '\')"') + '>' +
       '<div class="n">' + f.getDate() + '</div>' +
-      ts.map(t => '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) + '">' +
+      ts.map(t => '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) +
+        ';background:' + colorPersona(t.personalId) + '26">' +
         '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
       '</div>';
   }));
@@ -1597,13 +1627,16 @@ function modalDiaCal(fecha) {
   for (let h = 8; h <= 23; h++) horas.push(h);
   const opt = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
     (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
-  abrirModal('<h3>📅 ' + fmtFecha(fecha) + '</h3>' +
+  abrirModal('<div class="encabezado-seccion"><h3 style="margin:0">📅 ' + fmtFecha(fecha) + '</h3>' +
+    (ts.length ? '<button class="btn s mini" onclick="modalCopiarDia(\'' + fecha + '\')">📋 Copiar día</button>' : '') +
+    '</div>' +
     '<p class="mini muted">' + esc(suc(calSuc)?.nombre || '') + '</p>' +
     (ts.length ? ts.map(t => '<div class="item-linea">' +
       '<div class="avatar" style="background:' + colorPersona(t.personalId) + ';color:#1B0A2E">' +
       esc(calNombre(t.personalId)[0]) + '</div>' +
       '<div class="grow"><b>' + esc(calNombre(t.personalId)) + '</b>' +
       '<div class="mini muted">' + rangoCorto(t) + ' · ' + t.ini + ':00 a ' + t.fin + ':00</div></div>' +
+      '<button class="btn s mini" onclick="modalEditarTurno(\'' + t.id + '\',\'' + fecha + '\')">✏️</button>' +
       '<button class="btn s mini" onclick="calBorrar(\'' + t.id + '\',\'' + fecha + '\')">🗑️</button></div>').join('')
       : '<p class="muted mini">Sin turnos este día.</p>') +
     '<div class="sep"></div><label>Agregar turno</label>' +
@@ -1619,16 +1652,53 @@ function modalDiaCal(fecha) {
     '<button class="btn p" style="margin-top:12px" onclick="calAgregar(\'' + fecha + '\')">➕ Agregar</button>' +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
 }
-/* los atajos de horario llenan los dos selectores de golpe */
-function calFijarHoras(a, b) {
-  if ($('cal-ini')) $('cal-ini').value = a;
-  if ($('cal-fin')) $('cal-fin').value = b;
-  toast('⏰ Horario ' + hCorta(a) + '-' + hCorta(b) + ' · elige a quién y dale Agregar');
+/* los atajos de horario llenan los dos selectores de golpe (sirven igual
+   para el bloque de agregar y para el de editar) */
+function calFijarHoras(a, b, idIni, idFin) {
+  const i = $(idIni || 'cal-ini'), f = $(idFin || 'cal-fin');
+  if (i) i.value = a;
+  if (f) f.value = b;
+  toast('⏰ Horario ' + hCorta(a) + '-' + hCorta(b));
+}
+/* editar un turno que ya está puesto: cambiar la hora o pasárselo a otra persona */
+function modalEditarTurno(id, fecha) {
+  const t = db.calendario.find(x => x.id === id); if (!t) return;
+  const gente = db.personal.filter(p => (p.activo && !p.del) || p.id === t.personalId);
+  const horas = []; for (let h = 8; h <= 23; h++) horas.push(h);
+  const opt = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
+    (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
+  abrirModal('<h3>✏️ Editar turno</h3>' +
+    '<p class="mini muted">' + fmtFecha(fecha) + ' · ' + esc(suc(t.sucursalId)?.nombre || '') + '</p>' +
+    '<label>Colaborador</label><select id="et-per">' + gente.map(p =>
+      '<option value="' + p.id + '"' + (p.id === t.personalId ? ' selected' : '') + '>' +
+      esc(p.nombre) + '</option>').join('') + '</select>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:5px;margin-top:10px">' + CAL_HORARIOS.map(([a, b]) =>
+      '<button class="btn ' + (a === t.ini && b === t.fin ? 'p' : 's') + ' mini" ' +
+      'onclick="calFijarHoras(' + a + ',' + b + ',\'et-ini\',\'et-fin\')">' +
+      hCorta(a) + '-' + hCorta(b) + '</button>').join('') + '</div>' +
+    '<div class="fila" style="margin-top:8px">' +
+    '<div style="flex:1"><label class="mini">Entra</label><select id="et-ini">' + horas.map(h => opt(h, t.ini)).join('') + '</select></div>' +
+    '<div style="flex:1"><label class="mini">Sale</label><select id="et-fin">' + horas.map(h => opt(h, t.fin)).join('') + '</select></div></div>' +
+    '<button class="btn p" style="margin-top:14px" onclick="guardarEdicionTurno(\'' + id + '\',\'' + fecha + '\')">💾 Guardar cambios</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="modalDiaCal(\'' + fecha + '\')">← Volver al día</button>');
+}
+function guardarEdicionTurno(id, fecha) {
+  const t = db.calendario.find(x => x.id === id); if (!t) return;
+  const pid = $('et-per').value, ini = Number($('et-ini').value), fin = Number($('et-fin').value);
+  if (!pid) return toast('Elige al colaborador');
+  if (fin <= ini) return toast('La salida debe ser después de la entrada ⏰');
+  const choque = turnoDelDia(pid, fecha, id);      // el propio turno no cuenta
+  if (choque) return toast(avisoChoque(pid, choque));
+  Object.assign(t, { personalId: pid, ini, fin, ts: Date.now() });
+  guardarDB(); modalDiaCal(fecha); renderCalendario();
+  toast('✏️ ' + calNombre(pid) + ' queda de ' + hCorta(ini) + '-' + hCorta(fin));
 }
 function calAgregar(fecha) {
   const pid = $('cal-per').value, ini = Number($('cal-ini').value), fin = Number($('cal-fin').value);
   if (!pid) return toast('Elige al colaborador');
   if (fin <= ini) return toast('La hora de salida debe ser después de la entrada ⏰');
+  const choque = turnoDelDia(pid, fecha);
+  if (choque) return toast(avisoChoque(pid, choque) + '. Edítalo en vez de agregar otro.');
   db.calendario.push({
     id: uid(), ts: Date.now(), fecha, sucursalId: calSuc, personalId: pid, ini, fin
   });
@@ -1643,6 +1713,129 @@ function calBorrar(id, fecha) {
   modalDiaCal(fecha); renderCalendario();
   toast('🗑️ Turno quitado');
 }
+/* ---------- copiar la configuración de UN día a otros días ---------- */
+let diaOrigen = '', diaDestinos = [], diaReemplazar = false;
+
+function modalCopiarDia(fecha) {
+  diaOrigen = fecha; diaDestinos = []; diaReemplazar = false;
+  pintarCopiarDia();
+}
+/* qué pasaría al pegar, sin tocar nada */
+function copiaDiaPlan() {
+  const patron = calTurnosDe(diaOrigen, calSuc);
+  const ocupados = ocupadosDelCalendario();
+  const plan = { agregar: 0, quitar: 0, saltados: 0, porFecha: {} };
+  diaDestinos.forEach(iso => {
+    const existentes = calTurnosDe(iso, calSuc);
+    if (diaReemplazar) {
+      plan.quitar += existentes.length;
+      existentes.forEach(t => ocupados.delete(iso + '|' + t.personalId));
+    }
+    patron.forEach(t => {
+      const k = iso + '|' + t.personalId;
+      if (ocupados.has(k)) { plan.saltados++; return; }
+      ocupados.add(k);
+      (plan.porFecha[iso] = plan.porFecha[iso] || []).push({ pid: t.personalId, ini: t.ini, fin: t.fin });
+      plan.agregar++;
+    });
+  });
+  return plan;
+}
+function pintarCopiarDia() {
+  const patron = calTurnosDe(diaOrigen, calSuc);
+  const [, m] = calMes.split('-').map(Number);
+  const plan = copiaDiaPlan();
+  // rejilla del mes: se tocan los días donde pegar
+  let grid = '<div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
+    const iso = isoLocal(f), fuera = f.getMonth() !== m - 1, esOrigen = iso === diaOrigen;
+    const marcado = diaDestinos.includes(iso);
+    grid += '<div class="cal-d' + (fuera ? ' fuera' : '') + (esOrigen ? ' origen' : '') +
+      (marcado ? ' elegido' : '') + (!fuera && !esOrigen ? ' tocable' : '') + '"' +
+      (!fuera && !esOrigen ? ' onclick="copiaDiaTocar(\'' + iso + '\')"' : '') + '>' +
+      '<div class="n">' + f.getDate() + '</div>' +
+      (fuera ? '' : (esOrigen ? '<div class="cal-t" style="border-left-color:var(--amarillo)">origen</div>'
+        : calTurnosDe(iso, calSuc).map(t => '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) +
+          ';background:' + colorPersona(t.personalId) + '26"><b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' +
+          rangoCorto(t) + '</div>').join('') +
+        (plan.porFecha[iso] || []).map(t => '<div class="cal-t nuevo" style="border-left-color:' + colorPersona(t.pid) +
+          '"><b class="nom">' + esc(calNombre(t.pid)) + '</b> ' + hCorta(t.ini) + '-' + hCorta(t.fin) + '</div>').join(''))) +
+      '</div>';
+  }));
+  grid += '</div>';
+  const cont = $('modal-gen-cuerpo'); const sc = cont ? cont.scrollTop : 0;
+  abrirModal('<h3>📋 Copiar el día ' + fmtFecha(diaOrigen) + '</h3>' +
+    '<p class="mini muted">Se copia esta configuración:</p>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">' + patron.map(t =>
+      '<span class="cal-t" style="border-left-color:' + colorPersona(t.personalId) + ';background:' +
+      colorPersona(t.personalId) + '26;padding:4px 8px"><b>' + esc(calNombre(t.personalId)) + '</b> ' +
+      rangoCorto(t) + '</span>').join('') + '</div>' +
+    '<label>Toca los días donde pegarla</label>' +
+    '<p class="mini muted" style="margin:0 0 8px">Lo <b class="amar">punteado</b> es lo que quedaría.</p>' +
+    grid +
+    '<div class="fila" style="margin-top:10px;gap:6px">' +
+    '<button class="btn s mini" onclick="copiaDiaMismoDiaSemana()">Todos los ' + CAL_DIAS[(new Date(diaOrigen + 'T12:00').getDay() + 6) % 7] + '</button>' +
+    '<button class="btn s mini" onclick="diaDestinos=[];pintarCopiarDia()">Limpiar</button></div>' +
+    '<div class="seg" style="margin:12px 0 0">' +
+    '<button class="' + (!diaReemplazar ? 'on' : '') + '" onclick="diaReemplazar=false;pintarCopiarDia()">➕ Sumar</button>' +
+    '<button class="' + (diaReemplazar ? 'on' : '') + '" onclick="diaReemplazar=true;pintarCopiarDia()">♻️ Reemplazar</button></div>' +
+    '<div class="mini" style="margin-top:10px">Resultado: <b class="amar">+' + plan.agregar + ' turnos</b>' +
+    (plan.quitar ? ' · <b style="color:var(--alerta)">−' + plan.quitar + '</b>' : '') +
+    ' en ' + diaDestinos.length + ' día' + (diaDestinos.length === 1 ? '' : 's') + '</div>' +
+    (plan.saltados ? '<p class="mini" style="color:var(--aviso);margin-top:6px">⛔ ' + plan.saltados +
+      ' se saltan porque esa persona ya tiene turno ese día.</p>' : '') +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="aplicarCopiaDia()">📋 Pegar en ' +
+    diaDestinos.length + ' día' + (diaDestinos.length === 1 ? '' : 's') + '</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="modalDiaCal(\'' + diaOrigen + '\')">← Volver al día</button>');
+  const c2 = $('modal-gen-cuerpo'); if (c2) c2.scrollTop = sc;
+}
+function copiaDiaTocar(iso) {
+  diaDestinos = diaDestinos.includes(iso) ? diaDestinos.filter(x => x !== iso) : diaDestinos.concat(iso);
+  pintarCopiarDia();
+}
+/* atajo: marcar todos los días del mes que caen en el mismo día de la semana */
+function copiaDiaMismoDiaSemana() {
+  const dow = new Date(diaOrigen + 'T12:00').getDay();
+  const [y, m] = calMes.split('-').map(Number), ultimo = new Date(y, m, 0).getDate();
+  const todos = [];
+  for (let d = 1; d <= ultimo; d++) {
+    const f = new Date(y, m - 1, d), iso = isoLocal(f);
+    if (f.getDay() === dow && iso !== diaOrigen) todos.push(iso);
+  }
+  const yaEstan = todos.every(x => diaDestinos.includes(x));
+  diaDestinos = yaEstan ? diaDestinos.filter(x => !todos.includes(x))
+    : diaDestinos.concat(todos.filter(x => !diaDestinos.includes(x)));
+  pintarCopiarDia();
+}
+function aplicarCopiaDia() {
+  if (!diaDestinos.length) return toast('Toca los días donde quieres pegarlo');
+  const plan = copiaDiaPlan();
+  if (!plan.agregar && !plan.quitar) return toast('Esos días ya están igual');
+  if (diaReemplazar && plan.quitar &&
+    !confirm('Se van a quitar ' + plan.quitar + ' turnos de los días elegidos. ¿Continuar?')) return;
+  const patron = calTurnosDe(diaOrigen, calSuc).map(t => ({ pid: t.personalId, ini: t.ini, fin: t.fin }));
+  const ocupados = ocupadosDelCalendario();
+  let n = 0, saltados = 0;
+  diaDestinos.forEach(iso => {
+    if (diaReemplazar) calTurnosDe(iso, calSuc).forEach(t => {
+      t.del = true; t.ts = Date.now(); ocupados.delete(iso + '|' + t.personalId);
+    });
+    patron.forEach(t => {
+      const k = iso + '|' + t.pid;
+      if (ocupados.has(k)) { saltados++; return; }
+      ocupados.add(k);
+      db.calendario.push({
+        id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
+        personalId: t.pid, ini: t.ini, fin: t.fin
+      });
+      n++;
+    });
+  });
+  guardarDB(); cerrarModal(); renderCalendario();
+  toast('📋 ' + n + ' turnos pegados en ' + diaDestinos.length + ' días' +
+    (saltados ? ' · ' + saltados + ' saltados por choque' : ''));
+}
+
 /* ---------- llenado rápido: armar el mes sin capturar día por día ---------- */
 const CAL_HORARIOS = [[13, 19], [15, 21], [13, 21], [14, 21], [13, 17], [13, 20]];
 const DOW_ORDEN = [1, 2, 3, 4, 5, 6, 0];        // lunes → domingo (getDay: 0 = domingo)
@@ -1671,20 +1864,18 @@ function rapNuevaRegla() {
 function rapCalcular() {
   const [y, m] = calMes.split('-').map(Number);
   const ultimo = new Date(y, m, 0).getDate(), hoy = hoyISO();
-  const yaHay = new Set();
-  db.calendario.forEach(x => {
-    if (!x.del && x.sucursalId === calSuc) yaHay.add(x.fecha + '|' + x.personalId + '|' + x.ini + '|' + x.fin);
-  });
-  const nuevos = [];
+  // ocupados = quién ya tiene turno ese día en CUALQUIER sucursal
+  const ocupados = ocupadosDelCalendario();
+  const nuevos = []; nuevos.saltados = 0;
   rapReglas.forEach(rg => {
     if (!rg.pid || !rg.dias.length || rg.fin <= rg.ini) return;
     for (let d = 1; d <= ultimo; d++) {
       const f = new Date(y, m - 1, d), iso = isoLocal(f);
       if (!rg.dias.includes(f.getDay())) continue;
       if (rapAmbito === 'resto' && iso < hoy) continue;
-      const k = iso + '|' + rg.pid + '|' + rg.ini + '|' + rg.fin;
-      if (yaHay.has(k)) continue;
-      yaHay.add(k);
+      const k = iso + '|' + rg.pid;
+      if (ocupados.has(k)) { nuevos.saltados++; continue; }   // ya está ese día
+      ocupados.add(k);
       nuevos.push({ fecha: iso, pid: rg.pid, ini: rg.ini, fin: rg.fin });
     }
   });
@@ -1699,7 +1890,8 @@ function rapVistaPrevia(nuevos) {
     const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
     h += '<div class="cal-d' + (fuera ? ' fuera' : '') + '"><div class="n">' + f.getDate() + '</div>' +
       (fuera ? '' : calTurnosDe(iso, calSuc).map(t =>
-        '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) + '">' +
+        '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) +
+        ';background:' + colorPersona(t.personalId) + '26">' +
         '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
         (porFecha[iso] || []).map(t =>
           '<div class="cal-t nuevo" style="border-left-color:' + colorPersona(t.pid) + '">' +
@@ -1759,6 +1951,8 @@ function calRapido() {
     '<div class="sep"></div>' +
     '<label>Vista previa de ' + MESES[m - 1] + '</label>' +
     '<p class="mini muted" style="margin:0 0 8px">Lo <b class="amar">punteado</b> es lo que se va a agregar.</p>' +
+    (nuevos.saltados ? '<p class="mini" style="color:var(--aviso);margin:0 0 8px">⛔ Se saltan ' + nuevos.saltados +
+      ' día' + (nuevos.saltados === 1 ? '' : 's') + ' porque esa persona ya tiene turno ahí (aquí o en la otra sucursal).</p>' : '') +
     rapVistaPrevia(nuevos) +
     '<button class="btn p gigante" style="margin-top:14px" onclick="rapGuardar()">💾 Guardar ' +
     nuevos.length + ' turno' + (nuevos.length === 1 ? '' : 's') + '</button>' +
@@ -1799,16 +1993,24 @@ function calCopiaPlan() {
   const [, m] = calMes.split('-').map(Number);
   const semanas = semanasDelMes(calMes);
   const org = semanas[copOrigen];
-  const plan = { agregar: 0, quitar: 0 };
+  const plan = { agregar: 0, quitar: 0, saltados: 0 };
   if (!org) return plan;
+  const ocupados = ocupadosDelCalendario();
   copDestinos.forEach(di => {
     const dst = semanas[di]; if (!dst) return;
     dst.forEach((f, i) => {
       if (f.getMonth() !== m - 1) return;
-      const existentes = calTurnosDe(isoLocal(f), calSuc);
-      if (copReemplazar) plan.quitar += existentes.length;
+      const isoD = isoLocal(f);
+      const existentes = calTurnosDe(isoD, calSuc);
+      if (copReemplazar) {
+        plan.quitar += existentes.length;
+        // al borrarlos, esas personas quedan libres ese día
+        existentes.forEach(t => ocupados.delete(isoD + '|' + t.personalId));
+      }
       calTurnosDe(isoLocal(org[i]), calSuc).forEach(t => {
-        if (!copReemplazar && existentes.some(x => x.personalId === t.personalId && x.ini === t.ini && x.fin === t.fin)) return;
+        const k = isoD + '|' + t.personalId;
+        if (ocupados.has(k)) { plan.saltados++; return; }   // ya tiene turno ese día
+        ocupados.add(k);
         plan.agregar++;
       });
     });
@@ -1849,6 +2051,8 @@ function calCopiar() {
       : 'Sumar: conserva lo que ya hay y agrega lo que falte, sin repetir.') + '</p>' +
     '<div class="mini" style="margin-top:12px">Resultado: <b class="amar">+' + plan.agregar + ' turnos</b>' +
     (plan.quitar ? ' · <b style="color:var(--alerta)">−' + plan.quitar + ' que se quitan</b>' : '') + '</div>' +
+    (plan.saltados ? '<p class="mini" style="color:var(--aviso);margin-top:6px">⛔ ' + plan.saltados +
+      ' se saltan porque esa persona ya tiene turno ese día.</p>' : '') +
     '<button class="btn p gigante" style="margin-top:12px" onclick="calAplicarCopia()">📋 Copiar</button>' +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
 }
@@ -1874,16 +2078,20 @@ function calAplicarCopia() {
     !confirm('Se van a quitar ' + plan.quitar + ' turnos de las semanas destino y dejar la copia. ¿Continuar?')) return;
   // se lee el origen ANTES de tocar nada, por si algo se traslapa
   const patron = org.map(f => calTurnosDe(isoLocal(f), calSuc).map(t => ({ pid: t.personalId, ini: t.ini, fin: t.fin })));
-  let n = 0;
+  const ocupados = ocupadosDelCalendario();
+  let n = 0, saltados = 0;
   copDestinos.forEach(di => {
     const dst = semanas[di]; if (!dst) return;
     dst.forEach((f, i) => {
       if (f.getMonth() !== m - 1) return;
       const iso = isoLocal(f);
-      if (copReemplazar) calTurnosDe(iso, calSuc).forEach(t => { t.del = true; t.ts = Date.now(); });
+      if (copReemplazar) calTurnosDe(iso, calSuc).forEach(t => {
+        t.del = true; t.ts = Date.now(); ocupados.delete(iso + '|' + t.personalId);
+      });
       patron[i].forEach(t => {
-        if (!copReemplazar && db.calendario.some(x => !x.del && x.fecha === iso && x.sucursalId === calSuc &&
-          x.personalId === t.pid && x.ini === t.ini && x.fin === t.fin)) return;
+        const k = iso + '|' + t.pid;
+        if (ocupados.has(k)) { saltados++; return; }   // esa persona ya trabaja ese día
+        ocupados.add(k);
         db.calendario.push({
           id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
           personalId: t.pid, ini: t.ini, fin: t.fin
@@ -1893,7 +2101,7 @@ function calAplicarCopia() {
     });
   });
   guardarDB(); cerrarModal(); renderCalendario();
-  toast('📋 ' + n + ' turnos copiados a ' + copDestinos.length + ' semana' + (copDestinos.length === 1 ? '' : 's'));
+  toast('📋 ' + n + ' turnos copiados' + (saltados ? ' · ' + saltados + ' saltados por choque de día' : ''));
 }
 /* ---------- copiar el mes completo a otro mes ----------
    "La base de julio pégala en agosto": se copia semana con semana y día con
@@ -1911,7 +2119,8 @@ const nombreMes = mes => MESES[Number(mes.split('-')[1]) - 1] + ' ' + mes.split(
 function calCopiaMesPlan() {
   const org = semanasDelMes(calMes), dst = semanasDelMes(mesDestino);
   const mO = Number(calMes.split('-')[1]), mD = Number(mesDestino.split('-')[1]);
-  const plan = { agregar: 0, quitar: 0, semanas: Math.min(org.length, dst.length), sinCubrir: 0 };
+  const plan = { agregar: 0, quitar: 0, semanas: Math.min(org.length, dst.length), sinCubrir: 0, saltados: 0 };
+  const ocupados = ocupadosDelCalendario();
   /* Días del mes destino que NO reciben ningún patrón: o porque su semana va
      más allá de las del origen, o porque el día que les toca del origen cae
      fuera de ese mes. Se cuentan para avisarlo en vez de dejarlo pasar callado.
@@ -1930,9 +2139,14 @@ function calCopiaMesPlan() {
       if (fO.getMonth() !== mO - 1 || fD.getMonth() !== mD - 1) continue;
       const isoD = isoLocal(fD);
       const existentes = calTurnosDe(isoD, calSuc);
-      if (mesReemplazar) plan.quitar += existentes.length;
+      if (mesReemplazar) {
+        plan.quitar += existentes.length;
+        existentes.forEach(t => ocupados.delete(isoD + '|' + t.personalId));
+      }
       calTurnosDe(isoLocal(fO), calSuc).forEach(t => {
-        if (!mesReemplazar && existentes.some(x => x.personalId === t.personalId && x.ini === t.ini && x.fin === t.fin)) return;
+        const k = isoD + '|' + t.personalId;
+        if (ocupados.has(k)) { plan.saltados++; return; }
+        ocupados.add(k);
         plan.agregar++;
       });
     }
@@ -1962,6 +2176,8 @@ function calCopiarMes() {
       : 'Sumar: conserva lo que ya haya en ' + nombreMes(mesDestino) + ' y agrega lo que falte.') + '</p>' +
     '<div class="mini" style="margin-top:12px">Resultado: <b class="amar">+' + plan.agregar + ' turnos</b>' +
     (plan.quitar ? ' · <b style="color:var(--alerta)">−' + plan.quitar + ' que se quitan</b>' : '') + '</div>' +
+    (plan.saltados ? '<p class="mini" style="color:var(--aviso);margin-top:6px">⛔ ' + plan.saltados +
+      ' se saltan porque esa persona ya tiene turno ese día.</p>' : '') +
     (plan.sinCubrir
       ? '<p class="mini" style="color:var(--aviso);margin-top:6px">⚠️ Los meses no empatan día por día: ' +
         plan.sinCubrir + ' día' + (plan.sinCubrir === 1 ? '' : 's') + ' de ' + nombreMes(mesDestino) +
@@ -1984,15 +2200,19 @@ function calAplicarCopiaMes() {
     patron.push(org[s].map(f => f.getMonth() === mO - 1
       ? calTurnosDe(isoLocal(f), calSuc).map(t => ({ pid: t.personalId, ini: t.ini, fin: t.fin })) : []));
   }
-  let n = 0;
+  const ocupados = ocupadosDelCalendario();
+  let n = 0, saltados = 0;
   patron.forEach((sem, s) => sem.forEach((turnos, i) => {
     const fD = dst[s][i];
     if (fD.getMonth() !== mD - 1) return;
     const isoD = isoLocal(fD);
-    if (mesReemplazar) calTurnosDe(isoD, calSuc).forEach(t => { t.del = true; t.ts = Date.now(); });
+    if (mesReemplazar) calTurnosDe(isoD, calSuc).forEach(t => {
+      t.del = true; t.ts = Date.now(); ocupados.delete(isoD + '|' + t.personalId);
+    });
     turnos.forEach(t => {
-      if (!mesReemplazar && db.calendario.some(x => !x.del && x.fecha === isoD && x.sucursalId === calSuc &&
-        x.personalId === t.pid && x.ini === t.ini && x.fin === t.fin)) return;
+      const k = isoD + '|' + t.pid;
+      if (ocupados.has(k)) { saltados++; return; }
+      ocupados.add(k);
       db.calendario.push({
         id: uid(), ts: Date.now(), fecha: isoD, sucursalId: calSuc,
         personalId: t.pid, ini: t.ini, fin: t.fin
@@ -2003,7 +2223,8 @@ function calAplicarCopiaMes() {
   const destino = mesDestino;
   guardarDB(); cerrarModal();
   calMes = destino; renderCalendario();     // te deja parado en el mes copiado
-  toast('📅 ' + n + ' turnos copiados a ' + nombreMes(destino));
+  toast('📅 ' + n + ' turnos copiados a ' + nombreMes(destino) +
+    (saltados ? ' · ' + saltados + ' saltados por choque de día' : ''));
 }
 function calVaciarMes() {
   const del = db.calendario.filter(x => !x.del && x.fecha.startsWith(calMes) && x.sucursalId === calSuc);
@@ -2126,10 +2347,21 @@ function toggleTema() {
   const claro = document.documentElement.dataset.tema === 'claro';
   if (claro) { delete document.documentElement.dataset.tema; localStorage.setItem('ojo_tema', 'oscuro'); }
   else { document.documentElement.dataset.tema = 'claro'; localStorage.setItem('ojo_tema', 'claro'); }
+  aplicarLogo();
   toast(claro ? '🌌 Modo oscuro — la noche cósmica de Cyclos' : '☀️ Modo claro');
 }
 function initTema() {
   if (localStorage.getItem('ojo_tema') === 'claro') document.documentElement.dataset.tema = 'claro';
+  aplicarLogo();
+}
+/* en tema claro va el logotipo negro; en oscuro el amarillo de siempre */
+function aplicarLogo() {
+  const claro = document.documentElement.dataset.tema === 'claro';
+  const src = claro ? 'img/logo-negro.png'
+    : (window.CICLOPE_ASSETS ? 'data:image/png;base64,' + CICLOPE_ASSETS.logo : '');
+  if (!src) return;
+  document.querySelectorAll('.logo-img').forEach(i => i.src = src);
+  const lp = $('logo-portada'); if (lp) lp.src = src;
 }
 
 /* ═══════════ DIRECCIÓN ═══════════ */
@@ -2173,7 +2405,7 @@ function dirHoy() {
       (falt.length ? '<span class="badge comprar">🛒 ' + falt.length + ' por comprar</span>' : '<span class="badge ok">stock OK</span>') + '</div>';
     html += enTurno.length ? enTurno.map(t => {
       const p = per(t.personalId);
-      return '<div class="item-linea"><div class="avatar">' + esc((p?.nombre || '?')[0]) + '</div><div class="grow"><b>' + esc(p?.nombre || '') +
+      return '<div class="item-linea">' + avatarPersona(t.personalId, p?.nombre) + '<div class="grow"><b>' + esc(p?.nombre || '') +
         '</b><div class="mini muted">' + (t.tipo === 'matutino' ? '☀️' : '🌙') + ' entró ' + fmtHora(t.entrada) + '</div></div><span class="badge mor">en turno</span></div>';
     }).join('') : '<p class="muted mini">Nadie en turno.</p>';
     const evHoyS = db.evidencias.filter(e => e.fecha === hoy && e.sucursalId === s.id).length;
@@ -2308,7 +2540,7 @@ function dirSemana() {
     '<div class="stat"><div class="v">' + tot.dias + '</div><div class="l">días trabajados en total</div></div></div>';
   html += '<div class="card"><div class="tabla-wrap"><table>' +
     '<tr><th>Colaborador</th><th class="num">Días trabajados</th><th class="num">Horas extra</th><th class="num">Sueldo</th><th class="num">💳 Propinas</th><th class="num">A pagar</th></tr>' +
-    (filas.map(f => '<tr><td><b>' + esc(f.nombre) + '</b></td>' +
+    (filas.map(f => '<tr><td>' + puntoPersona(f.pid) + '<b>' + esc(f.nombre) + '</b></td>' +
       '<td class="num">' + f.dias + '</td>' +
       '<td class="num">' + fmtMin(f.extraMin) + '</td>' +
       '<td class="num">' + fmt$(f.sueldo) + '</td>' +
@@ -2371,7 +2603,7 @@ function dirNomina() {
   html += '<div class="card"><div class="tabla-wrap"><table><tr><th>Colaborador</th><th class="num">Turnos</th><th class="num">Horas</th><th class="num">Sueldo</th><th class="num">💳 Propinas</th><th class="num">A pagar</th></tr>' +
     (Object.entries(porPersona).map(([pid, x]) => {
       const p = per(pid);
-      return '<tr><td>' + esc(p?.nombre || '¿?') + '</td><td class="num">' + x.turnos + '</td><td class="num">' + x.horas.toFixed(1) +
+      return '<tr><td>' + puntoPersona(pid) + esc(p?.nombre || '¿?') + '</td><td class="num">' + x.turnos + '</td><td class="num">' + x.horas.toFixed(1) +
         ' h</td><td class="num">' + fmt$(x.pago) + '</td><td class="num">' + fmt$(x.propinas) + '</td><td class="num"><b class="amar">' + fmt$(x.pago + x.propinas) + '</b></td></tr>';
     }).join('') || '<tr><td colspan="6" class="muted">Sin registros este mes.</td></tr>') + '</table></div>' +
     '<p class="mini muted">Se paga <b>por día trabajado</b> (entrada + cierre = turno completo). Los minutos de más o de menos se ajustan en bloques de ' +
@@ -2379,7 +2611,8 @@ function dirNomina() {
   // propinas del mes con opción de eliminar
   html += '<div class="card"><h3>💳 Propinas digitales del mes</h3>' +
     (propMes.length ? '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th class="num">Monto</th><th>Nota</th><th></th></tr>' +
-      propMes.map(x => '<tr><td>' + fmtFecha(x.fecha) + ' ' + fmtHora(x.ts) + '</td><td>' + esc(per(x.personalId)?.nombre || '¿?') +
+      propMes.map(x => '<tr><td>' + fmtFecha(x.fecha) + ' ' + fmtHora(x.ts) + '</td><td>' +
+        puntoPersona(x.personalId) + esc(per(x.personalId)?.nombre || '¿?') +
         '</td><td>' + esc(suc(x.sucursalId)?.nombre || '') + '</td><td class="num">' + fmt$(x.monto) + '</td><td class="mini">' + esc(x.nota || '') +
         '</td><td><button class="btn s mini" onclick="borrarPropina(\'' + x.id + '\')">🗑️</button></td></tr>').join('') + '</table></div>'
       : '<p class="muted mini">Sin propinas digitales este mes.</p>') + '</div>';
@@ -2387,7 +2620,8 @@ function dirNomina() {
   html += '<div class="card"><h3>Detalle de turnos</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Turno</th><th>Entrada</th><th>Salida</th><th class="num">En piso</th><th>Ajuste</th><th class="num">Pago</th><th></th></tr>' +
     (turnos.map(t => {
       const c = calcularPago(t);
-      return '<tr><td>' + fmtFecha(t.fecha) + '</td><td>' + esc(per(t.personalId)?.nombre || '') + '</td><td>' + esc(suc(t.sucursalId)?.nombre || '') +
+      return '<tr><td>' + fmtFecha(t.fecha) + '</td><td>' + puntoPersona(t.personalId) +
+        esc(per(t.personalId)?.nombre || '') + '</td><td>' + esc(suc(t.sucursalId)?.nombre || '') +
         '</td><td>' + (t.tipo === 'matutino' ? '☀️' : '🌙') + '</td><td>' + fmtHora(t.entrada) + '</td><td>' + fmtHora(t.salida) +
         '</td><td class="num">' + c.horas + ' h</td><td class="mini">' + txtAjuste(c.bloques) +
         (t.motivoAjuste ? '<div class="mini muted">' + esc(t.motivoAjuste) + '</div>' : '') +
@@ -2498,7 +2732,8 @@ function dirAdmin() {
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">👥 Personal y sueldos</h3>' +
     '<button class="btn s mini" onclick="modalPersona()">+ Agregar</button></div>' +
     '<div class="tabla-wrap"><table><tr><th>Nombre</th><th class="num">$/turno (' + (c.baseHoras || 6) + 'h)</th><th class="num">$/h extra</th><th>Estado</th><th></th></tr>' +
-    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' + esc(p.nombre) +
+    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' +
+      puntoPersona(p.id) + esc(p.nombre) +
       '</td><td class="num">' + fmt$(p.pagoTurno) + '</td><td class="num">' + fmt$(p.pagoHora) +
       '</td><td class="mini">' + (p.activo ? 'activo' : 'inactivo') +
       '</td><td><button class="btn s mini" onclick="modalPersona(\'' + p.id + '\')">✏️</button></td></tr>').join('') + '</table></div></div>';
@@ -2773,9 +3008,7 @@ setInterval(() => {
     const st = document.createElement('style');
     st.textContent = "@font-face{font-family:'SerifGothic';src:url(data:font/otf;base64," + CICLOPE_ASSETS.font + ") format('opentype');font-display:swap}";
     document.head.appendChild(st);
-    const logo = 'data:image/png;base64,' + CICLOPE_ASSETS.logo;
-    document.querySelectorAll('.logo-img').forEach(i => i.src = logo);
-    $('logo-portada').src = logo;
+    // el logo lo pone aplicarLogo(), que además elige la versión según el tema
     /* el favicon y el icono de pantalla de inicio ya vienen como archivos
        reales (img/icono.png) declarados en el <head>: así los toma iOS al
        "Agregar a pantalla de inicio" sin depender de que corra el JS. */
