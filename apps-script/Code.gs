@@ -127,7 +127,7 @@ function mezclar(a, b) {
   });
   db.catTs = Math.max(a.catTs || 0, b.catTs || 0);
 
-  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones'].forEach(function (k) {
+  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
     var baseLista = (base[k] || []).map(function (x) {

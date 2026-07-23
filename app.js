@@ -42,7 +42,7 @@ const SEED_PRODUCTOS = [
   ['Crema Batida ReddiWip', 'Pieza', 2, 'POC'], ['Mermelada Fresa', ESCALA + ' frasco', 251, 'POC'],
   ['Mermelada Zarzamora', ESCALA + ' frasco', 251, 'POC'], ['Mega limón', 'Pieza', 1, 'BEB'],
   ['7up', 'Pieza', 1, 'BEB'], ['Empaque 6x6 Negro', 'Paquete', 251, 'EMP'], ['Empaque 7x7 Negro', 'Paquete', 251, 'EMP'],
-  ['Vaso plástico', 'Paquete', 251, 'EMP'], ['Tapa Plana', 'Paquete', 251, 'EMP'], ['Tapa domo', 'Paquete', 251, 'EMP'],
+  ['Vaso plástico', 'Paquete', 251, 'EMP'], ['Tapa Plana', 'Pieza', 251, 'EMP'], ['Tapa domo', 'Pieza', 251, 'EMP'],
   ['Vaso café c/tapa', 'Paquete', 251, 'EMP'], ['Masa Crepiburger', 'Tupper', 251, 'COC'],
   ['Limón', ESCALA + ' kilo', 251, 'COC'], ['Encendedor', 'Pieza', 2, 'GEN'],
   ['Espadas Plástico', ESCALA + ' caja', 251, 'EMP'], ['Impek multiusos', ESCALA + ' garrafón', 251, 'LIM'],
@@ -60,7 +60,7 @@ const SEED_PRODUCTOS = [
   ['Tocino Ahumado', 'Bolsa', 2, 'COC'], ['Chocoretas', 'Bolsa', 1, 'POC'],
   ['Caramelo Chupón (Anillo)', 'Pieza', 10, 'POC'], ['Té de Limón', 'Caja', 1, 'BEB'],
   ['Rollos Impresión', 'Pieza', 2, 'GEN'], ['Queso Gouda', ESCALA, 251, 'COC'],
-  ['Vaso Soufflé c/tapa', 'Paquete', 251, 'EMP'], ['Media Crema', 'Pieza', 2, 'POC'],
+  ['Vaso Soufflé c/tapa', 'Pieza', 251, 'EMP'], ['Media Crema', 'Pieza', 2, 'POC'],
   ['Jarabe Tucán Mango', 'Pieza', 1, 'BEB'], ['Lechuga Italiana', 'Pieza', 1, 'COC'],
   ['Sal La Fina', ESCALA + ' bolsa', 251, 'COC'], ['Sal con Ajo', 'Pieza', 1, 'COC'],
   ['Popote estuchado', ESCALA + ' caja', 251, 'EMP'], ['Jalapeño', 'Pieza', 2, 'COC'],
@@ -319,18 +319,30 @@ function seedDB() {
     ],
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
+    calendario: [],
   };
 }
+/* productos que se cuentan por pieza desde v1.5 (antes iban por paquete) */
+const A_PIEZA = ['Tapa Plana', 'Tapa domo', 'Vaso Soufflé c/tapa'];
 function migrarDB() {
   // agrega estructuras/productos nuevos a instalaciones existentes
   if (!db.propinas) db.propinas = [];
   if (!db.tareas) db.tareas = [];
   if (!db.revisiones) db.revisiones = [];
   if (!db.preparaciones) db.preparaciones = [];
+  if (!db.calendario) db.calendario = [];
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
+  /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
+     Se sube la marca t de cada producto para que el cambio gane en el merge
+     (los productos se mezclan registro por registro por su propia t). */
+  db.productos.forEach(p => {
+    if (A_PIEZA.includes(p.nombre) && p.unidad !== 'Pieza') {
+      p.unidad = 'Pieza'; p.t = Date.now(); limpio = true;
+    }
+  });
   if (!db.config.supervisorPin) db.config.supervisorPin = '4040';
   if (!db.configTs) db.configTs = {};
   if (db.catTs === undefined) db.catTs = 0;
@@ -553,6 +565,7 @@ function renderPantalla(id) {
   if (id === 'scr-asis') renderAsistencia();
   if (id === 'scr-prep') renderPreparaciones();
   if (id === 'scr-proto') renderProtocolos();
+  if (id === 'scr-cal') renderCalendario();
   if (id === 'scr-dir') renderDireccion();
 }
 /* menú del título: saltar entre sucursales y paneles sin volver al inicio */
@@ -563,6 +576,7 @@ function menuNavegacion() {
       'onclick="cerrarModal();entrarSucursal(\'' + s.id + '\')">🏬 ' + esc(s.nombre) +
       (s.id === sucursalActual ? ' · aquí estás' : '') + '</button>').join('') +
     '<div class="sep"></div>' +
+    '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();irCalendario()">📅 Calendario</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinSupervision()">🔍 Supervisión</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinAdmin()">👁️ Dirección</button>' +
     '<button class="btn s" onclick="cerrarModal();salirASucursales()">🏠 Pantalla de inicio</button>');
@@ -1287,6 +1301,331 @@ function guardarRevision(fecha, sid, pct) {
   renderRevision();
 }
 
+/* ═══════════ CALENDARIO DE TURNOS ═══════════
+   Reemplaza la tabla que Toño armaba en Canva: se edita aquí, se ve en todos
+   los dispositivos y se manda por WhatsApp como PNG.
+   El PDF de referencia vive en SU PROPIA llave de localStorage — nunca dentro
+   de db — porque pesa cientos de KB y haría lento cada guardado y cada sync. */
+const CAL_PDF_KEY = 'ojo_cal_pdf';
+const CAL_COLORES = ['#FFD523', '#4ADE80', '#60A5FA', '#F472B6', '#FB923C', '#A78BFA', '#2DD4BF', '#F87171'];
+const CAL_DIAS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
+let calMes = mesISO(), calSuc = null, calEdit = false;
+
+/* color estable por persona: se calcula del id, así todos los dispositivos
+   pintan a cada quien del mismo color sin guardar nada extra */
+function colorPersona(pid) {
+  let h = 0;
+  String(pid).split('').forEach(c => { h = (h * 31 + c.charCodeAt(0)) >>> 0; });
+  return CAL_COLORES[h % CAL_COLORES.length];
+}
+const calNombre = pid => (per(pid)?.nombre || '¿?').split(' ')[0];
+/* 13 → "1", 21 → "9": la notación corta que ya se usa en el calendario */
+const hCorta = h => (h > 12 ? h - 12 : h);
+const rangoCorto = t => hCorta(t.ini) + '-' + hCorta(t.fin);
+
+function irCalendario() {
+  if (!calSuc) calSuc = sucursalActual || (db.sucursales.filter(s => s.activa && !s.del)[0] || {}).id;
+  ir('scr-cal');
+}
+function calVolver() {
+  calEdit = false;
+  ir(sucursalActual ? 'scr-suc' : 'scr-portada');
+}
+function calTurnosDe(fecha, sid) {
+  return db.calendario.filter(x => !x.del && x.fecha === fecha && x.sucursalId === sid)
+    .sort((a, b) => (a.ini - b.ini) || calNombre(a.personalId).localeCompare(calNombre(b.personalId), 'es'));
+}
+/* semanas del mes empezando en lunes, igual que la hoja de Toño */
+function semanasDelMes(mes) {
+  const [y, m] = mes.split('-').map(Number);
+  const ultimo = new Date(y, m, 0).getDate();
+  const off = (new Date(y, m - 1, 1).getDay() + 6) % 7;   // 0 = lunes
+  const semanas = [];
+  for (let d = 1 - off; d <= ultimo; d += 7) {
+    const fila = [];
+    for (let i = 0; i < 7; i++) fila.push(new Date(y, m - 1, d + i));
+    semanas.push(fila);
+  }
+  return semanas;
+}
+function personasDelMes() {
+  const ids = {};
+  db.calendario.forEach(x => { if (!x.del && x.fecha.startsWith(calMes) && x.sucursalId === calSuc) ids[x.personalId] = 1; });
+  return Object.keys(ids).map(id => ({ id, nombre: calNombre(id) }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+function cambiarCalMes(d) {
+  let [y, m] = calMes.split('-').map(Number);
+  m += d; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; }
+  calMes = y + '-' + String(m).padStart(2, '0');
+  renderCalendario();
+}
+function calCambiaSuc(sid) { calSuc = sid; renderCalendario(); }
+
+function renderCalendario() {
+  if (!calSuc) calSuc = (db.sucursales.filter(s => s.activa && !s.del)[0] || {}).id;
+  const s = suc(calSuc), [y, m] = calMes.split('-').map(Number);
+  const sucs = db.sucursales.filter(x => x.activa && !x.del);
+  const hoy = hoyISO();
+  let html = '<div class="card"><div class="encabezado-seccion">' +
+    '<h2 style="margin:0">📅 ' + MESES[m - 1] + ' ' + y + '</h2>' +
+    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarCalMes(-1)">←</button>' +
+    '<button class="btn s mini" onclick="cambiarCalMes(1)">→</button></div></div>' +
+    (sucs.length > 1 ? '<div class="seg" style="margin:0 0 14px">' + sucs.map(x =>
+      '<button class="' + (x.id === calSuc ? 'on' : '') + '" onclick="calCambiaSuc(\'' + x.id + '\')">🏬 ' +
+      esc(x.nombre) + '</button>').join('') + '</div>' : '') +
+    (calEdit ? '<p class="mini" style="color:var(--amarillo);margin:0 0 10px">✏️ Modo edición: toca un día para asignar turnos.</p>' : '');
+  // rejilla del mes
+  html += '<div class="cal-grid">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
+    const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
+    const ts = fuera ? [] : calTurnosDe(iso, calSuc);
+    /* En teléfono la celda mide ~41 px: ahí el nombre se oculta y a cada quien
+       lo identifica su color (la leyenda de abajo dice de quién es). Se toca
+       el día para ver el detalle completo. */
+    html += '<div class="cal-d' + (fuera ? ' fuera' : '') + (iso === hoy ? ' hoy' : '') + (fuera ? '' : ' tocable') + '"' +
+      (fuera ? '' : ' onclick="modalDiaCal(\'' + iso + '\')"') + '>' +
+      '<div class="n">' + f.getDate() + '</div>' +
+      ts.map(t => '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) + '">' +
+        '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
+      '</div>';
+  }));
+  html += '</div>';
+  // leyenda
+  const gente = personasDelMes();
+  if (gente.length) html += '<div class="cal-leyenda">' + gente.map(p =>
+    '<span><i style="background:' + colorPersona(p.id) + '"></i>' + esc(p.nombre) + '</span>').join('') + '</div>';
+  else html += '<p class="muted mini" style="margin-top:10px">Aún no hay turnos en este mes. Toca ✏️ Modificar para armarlo.</p>';
+  html += '<div class="fila" style="margin-top:16px">' +
+    '<button class="btn ' + (calEdit ? 'p' : 's') + '" onclick="calModificar()">' + (calEdit ? '✅ Listo' : '✏️ Modificar') + '</button>' +
+    '<button class="btn p" onclick="calendarioPNG()">📤 Enviar PNG</button></div>';
+  if (calEdit) html += '<div class="fila" style="margin-top:10px">' +
+    '<button class="btn s mini" onclick="calCopiarSemana()">📋 Copiar semana anterior</button>' +
+    '<button class="btn s mini" onclick="calVaciarMes()">🗑️ Vaciar el mes</button></div>';
+  html += '</div>';
+  // PDF de referencia
+  const hayPdf = !!localStorage.getItem(CAL_PDF_KEY);
+  html += '<div class="card"><h3>📄 Calendario en PDF (referencia)</h3>' +
+    '<p class="mini muted">' + (hayPdf
+      ? 'Tienes un PDF guardado en <b>este dispositivo</b>. Ábrelo para consultarlo o súbelo de nuevo para reemplazarlo.'
+      : 'Opcional: sube el PDF que armas aparte para tenerlo a la mano. Se guarda solo en este dispositivo (no se sincroniza porque pesa mucho).') + '</p>' +
+    '<div class="fila" style="margin-top:10px">' +
+    (hayPdf ? '<button class="btn p" onclick="calPdfVer()">👁️ Ver PDF</button>' : '') +
+    '<label class="btn s" style="cursor:pointer;margin:0">' + (hayPdf ? '🔄 Sustituir' : '⬆️ Subir PDF') +
+    '<input type="file" accept="application/pdf,.pdf" style="display:none" onchange="calPdfGuardar(this)"></label>' +
+    (hayPdf ? '<button class="btn s" onclick="calPdfQuitar()">🗑️</button>' : '') +
+    '</div></div>';
+  $('cal-contenido').innerHTML = html;
+}
+
+/* editar requiere PIN de Dirección (el calendario lo arma la Dirección) */
+function calModificar() {
+  if (calEdit) { calEdit = false; return renderCalendario(); }
+  if (esAdmin) { calEdit = true; return renderCalendario(); }
+  abrirPin('PIN de Dirección', pin => {
+    if (pin === db.config.adminPin) { calEdit = true; renderCalendario(); }
+    else toast('⛔ PIN incorrecto');
+  });
+}
+function modalDiaCal(fecha) {
+  const ts = calTurnosDe(fecha, calSuc);
+  /* sin modo edición es solo consulta: en el teléfono es la forma de ver
+     quién entra ese día, porque en la rejilla no cabe el nombre */
+  if (!calEdit) {
+    return abrirModal('<h3>📅 ' + fmtFecha(fecha) + '</h3>' +
+      '<p class="mini muted">' + esc(suc(calSuc)?.nombre || '') + '</p>' +
+      (ts.length ? ts.map(t => '<div class="item-linea">' +
+        '<div class="avatar" style="background:' + colorPersona(t.personalId) + ';color:#1B0A2E">' +
+        esc(calNombre(t.personalId)[0]) + '</div>' +
+        '<div class="grow"><b>' + esc(per(t.personalId)?.nombre || '¿?') + '</b>' +
+        '<div class="mini muted">' + t.ini + ':00 a ' + t.fin + ':00 · ' + rangoCorto(t) + '</div></div></div>').join('')
+        : '<p class="muted mini">Nadie tiene turno este día.</p>') +
+      '<button class="btn s" style="margin-top:12px" onclick="cerrarModal()">Cerrar</button>');
+  }
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  if (!gente.length) return toast('Primero da de alta al equipo en Dirección → Administrar');
+  const horas = [];
+  for (let h = 8; h <= 23; h++) horas.push(h);
+  const opt = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
+    (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
+  abrirModal('<h3>📅 ' + fmtFecha(fecha) + '</h3>' +
+    '<p class="mini muted">' + esc(suc(calSuc)?.nombre || '') + '</p>' +
+    (ts.length ? ts.map(t => '<div class="item-linea">' +
+      '<div class="avatar" style="background:' + colorPersona(t.personalId) + ';color:#1B0A2E">' +
+      esc(calNombre(t.personalId)[0]) + '</div>' +
+      '<div class="grow"><b>' + esc(calNombre(t.personalId)) + '</b>' +
+      '<div class="mini muted">' + rangoCorto(t) + ' · ' + t.ini + ':00 a ' + t.fin + ':00</div></div>' +
+      '<button class="btn s mini" onclick="calBorrar(\'' + t.id + '\',\'' + fecha + '\')">🗑️</button></div>').join('')
+      : '<p class="muted mini">Sin turnos este día.</p>') +
+    '<div class="sep"></div><label>Agregar turno</label>' +
+    '<select id="cal-per">' + gente.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('') + '</select>' +
+    '<div class="fila" style="margin-top:8px">' +
+    '<div style="flex:1"><label class="mini">Entra</label><select id="cal-ini">' + horas.map(h => opt(h, 13)).join('') + '</select></div>' +
+    '<div style="flex:1"><label class="mini">Sale</label><select id="cal-fin">' + horas.map(h => opt(h, 19)).join('') + '</select></div>' +
+    '</div>' +
+    '<button class="btn p" style="margin-top:12px" onclick="calAgregar(\'' + fecha + '\')">➕ Agregar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
+}
+function calAgregar(fecha) {
+  const pid = $('cal-per').value, ini = Number($('cal-ini').value), fin = Number($('cal-fin').value);
+  if (!pid) return toast('Elige al colaborador');
+  if (fin <= ini) return toast('La hora de salida debe ser después de la entrada ⏰');
+  db.calendario.push({
+    id: uid(), ts: Date.now(), fecha, sucursalId: calSuc, personalId: pid, ini, fin
+  });
+  guardarDB();
+  modalDiaCal(fecha); renderCalendario();
+  toast('📅 ' + calNombre(pid) + ' ' + hCorta(ini) + '-' + hCorta(fin) + ' el ' + fmtFecha(fecha));
+}
+function calBorrar(id, fecha) {
+  const t = db.calendario.find(x => x.id === id); if (!t) return;
+  t.del = true; t.ts = Date.now();          // marca, no borrado: así también se sincroniza
+  guardarDB();
+  modalDiaCal(fecha); renderCalendario();
+  toast('🗑️ Turno quitado');
+}
+/* copia la última semana con turnos a la siguiente vacía: arma el mes en segundos */
+function calCopiarSemana() {
+  const semanas = semanasDelMes(calMes);
+  let origen = -1, destino = -1;
+  semanas.forEach((sem, i) => {
+    const con = sem.some(f => calTurnosDe(isoLocal(f), calSuc).length);
+    if (con) origen = i;
+    else if (origen >= 0 && destino < 0) destino = i;
+  });
+  if (origen < 0) return toast('Primero arma una semana para poder copiarla');
+  if (destino < 0) return toast('No hay ninguna semana vacía adelante');
+  let n = 0;
+  semanas[origen].forEach((f, i) => {
+    const dst = semanas[destino][i];
+    if (dst.getMonth() !== Number(calMes.split('-')[1]) - 1) return;
+    calTurnosDe(isoLocal(f), calSuc).forEach(t => {
+      db.calendario.push({
+        id: uid(), ts: Date.now(), fecha: isoLocal(dst), sucursalId: calSuc,
+        personalId: t.personalId, ini: t.ini, fin: t.fin
+      });
+      n++;
+    });
+  });
+  guardarDB(); renderCalendario();
+  toast('📋 ' + n + ' turnos copiados a la semana del ' + fmtFecha(isoLocal(semanas[destino][0])));
+}
+function calVaciarMes() {
+  const del = db.calendario.filter(x => !x.del && x.fecha.startsWith(calMes) && x.sucursalId === calSuc);
+  if (!del.length) return toast('Este mes ya está vacío');
+  if (!confirm('¿Quitar los ' + del.length + ' turnos de ' + MESES[Number(calMes.split('-')[1]) - 1] +
+    ' en ' + (suc(calSuc)?.nombre || '') + '?')) return;
+  del.forEach(t => { t.del = true; t.ts = Date.now(); });
+  guardarDB(); renderCalendario();
+  toast('🗑️ Mes vaciado');
+}
+
+/* ---------- exportar el calendario como PNG ---------- */
+async function calendarioPNG() {
+  const s = suc(calSuc), [y, m] = calMes.split('-').map(Number);
+  const semanas = semanasDelMes(calMes), gente = personasDelMes();
+  if (!gente.length) return toast('Arma el calendario antes de enviarlo 📅');
+  toast('🖼️ Generando imagen…');
+  try { await document.fonts.ready; } catch (e) { }
+  const x0 = 40, W = 1480, celW = (W - x0 * 2) / 7, celH = 152, y0 = 214;
+  const legY = y0 + semanas.length * celH + 52, H = legY + 96;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#0D0015'; c.fillRect(0, 0, W, H);
+  c.textAlign = 'center'; c.fillStyle = '#FFD523';
+  c.font = '700 46px Poppins, system-ui, sans-serif';
+  c.fillText('CALENDARIO ' + (s?.nombre || '').toUpperCase(), W / 2, 80);
+  c.fillStyle = '#F5F0FF'; c.font = '600 34px Poppins, system-ui, sans-serif';
+  c.fillText(MESES[m - 1].toUpperCase() + ' ' + y, W / 2, 130);
+  c.fillStyle = '#9B87B8'; c.font = '600 20px Poppins, system-ui, sans-serif';
+  ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO']
+    .forEach((d, i) => c.fillText(d, x0 + celW * i + celW / 2, y0 - 20));
+  semanas.forEach((sem, r) => sem.forEach((f, i) => {
+    const x = x0 + celW * i, yy = y0 + celH * r, fuera = f.getMonth() !== m - 1;
+    c.fillStyle = fuera ? '#0A0011' : '#160026';
+    c.fillRect(x + 3, yy + 3, celW - 6, celH - 6);
+    c.strokeStyle = 'rgba(147,51,234,.35)'; c.lineWidth = 2;
+    c.strokeRect(x + 3, yy + 3, celW - 6, celH - 6);
+    c.textAlign = 'left';
+    c.fillStyle = fuera ? '#4B3A63' : '#F5F0FF';
+    c.font = '700 25px Poppins, system-ui, sans-serif';
+    c.fillText(String(f.getDate()), x + 16, yy + 36);
+    if (fuera) return;
+    const lista = calTurnosDe(isoLocal(f), calSuc);
+    lista.slice(0, 4).forEach((t, k) => {
+      const ty = yy + 62 + k * 25;
+      c.fillStyle = colorPersona(t.personalId);
+      c.fillRect(x + 14, ty - 12, 7, 16);
+      c.fillStyle = '#F5F0FF'; c.font = '600 18px Poppins, system-ui, sans-serif';
+      c.fillText(calNombre(t.personalId) + '  ' + rangoCorto(t), x + 29, ty + 2);
+    });
+    if (lista.length > 4) {
+      c.fillStyle = '#9B87B8'; c.font = '400 15px Poppins, system-ui, sans-serif';
+      c.fillText('+' + (lista.length - 4) + ' más', x + 29, yy + 62 + 4 * 25);
+    }
+  }));
+  c.textAlign = 'left'; c.font = '600 21px Poppins, system-ui, sans-serif';
+  let lx = x0;
+  gente.forEach(p => {
+    c.fillStyle = colorPersona(p.id); c.fillRect(lx, legY - 15, 17, 17);
+    c.fillStyle = '#F5F0FF'; c.fillText(p.nombre, lx + 26, legY);
+    lx += 52 + c.measureText(p.nombre).width;
+  });
+  c.font = '400 18px Poppins, system-ui, sans-serif'; c.fillStyle = '#9B87B8';
+  c.fillText('El Anillo del Cíclope · El Ojo Maestro · actualizado el ' + fmtFecha(hoyISO()), x0, legY + 48);
+  const nombre = 'Calendario-' + (s?.nombre || 'sucursal').replace(/\s+/g, '-') + '-' + calMes + '.png';
+  cv.toBlob(async blob => {
+    if (!blob) return toast('⚠️ No se pudo generar la imagen');
+    // en iPhone/Android sale la hoja de compartir (WhatsApp); si no, se descarga
+    try {
+      const file = new File([blob], nombre, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: nombre });
+        return;
+      }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = nombre; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('⬇️ ' + nombre);
+  }, 'image/png');
+}
+
+/* ---------- PDF de referencia (solo en este dispositivo) ---------- */
+function calPdfGuardar(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return toast('Tiene que ser un archivo PDF 📄');
+  if (f.size > 4 * 1024 * 1024) return toast('El PDF pesa más de 4 MB — expórtalo más ligero');
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      localStorage.setItem(CAL_PDF_KEY, r.result);
+      toast('📄 PDF guardado en este dispositivo');
+      renderCalendario();
+    } catch (e) { toast('⚠️ No cupo en la memoria del dispositivo'); }
+  };
+  r.readAsDataURL(f);
+  input.value = '';
+}
+function calPdfVer() {
+  const d = localStorage.getItem(CAL_PDF_KEY); if (!d) return;
+  // data: URL → blob: Safari de iPhone no abre PDFs desde data:
+  try {
+    const b64 = d.split(',')[1], bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { toast('⚠️ No se pudo abrir el PDF'); }
+}
+function calPdfQuitar() {
+  if (!confirm('¿Quitar el PDF guardado en este dispositivo?')) return;
+  localStorage.removeItem(CAL_PDF_KEY);
+  renderCalendario(); toast('🗑️ PDF quitado');
+}
+
 /* ═══════════ TEMA CLARO / OSCURO ═══════════ */
 function toggleTema() {
   const claro = document.documentElement.dataset.tema === 'claro';
@@ -1919,11 +2258,9 @@ setInterval(() => {
     const logo = 'data:image/png;base64,' + CICLOPE_ASSETS.logo;
     document.querySelectorAll('.logo-img').forEach(i => i.src = logo);
     $('logo-portada').src = logo;
-    const fav = document.createElement('link'); fav.rel = 'icon';
-    fav.href = 'data:image/png;base64,' + (CICLOPE_ASSETS.isotipo || CICLOPE_ASSETS.logo);
-    document.head.appendChild(fav);
-    const touch = document.createElement('link'); touch.rel = 'apple-touch-icon'; touch.href = fav.href;
-    document.head.appendChild(touch);
+    /* el favicon y el icono de pantalla de inicio ya vienen como archivos
+       reales (img/icono.png) declarados en el <head>: así los toma iOS al
+       "Agregar a pantalla de inicio" sin depender de que corra el JS. */
   }
   initTema();
   cargarDB();

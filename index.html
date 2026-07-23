@@ -8,6 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Ojo Maestro">
 <title>El Ojo Maestro · El Anillo del Cíclope</title>
+<!-- icono del Cíclope: pestaña del navegador y acceso directo en los dispositivos -->
+<link rel="icon" type="image/png" sizes="512x512" href="img/icono.png">
+<link rel="apple-touch-icon" sizes="180x180" href="img/icono-180.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3B0764">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- fuente sin bloquear el primer pintado: carga en segundo plano -->
@@ -287,6 +292,36 @@ html[data-tema="claro"] .tabs button{background:#F8F5FE}
 html[data-tema="claro"] .tabs button.on{background:#6B21A8;color:#fff;border-color:#6B21A8}
 html[data-tema="claro"] .topbar .sub{color:var(--muted)}
 
+/* ═══════ CALENDARIO DE TURNOS (v1.5) ═══════ */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal-h{text-align:center;font-size:.66rem;letter-spacing:1px;text-transform:uppercase;
+  color:var(--muted);padding:2px 0 6px}
+.cal-d{background:var(--fondo-4);border:1px solid var(--borde-suave);border-radius:9px;
+  padding:5px 4px;min-height:74px;overflow:hidden}
+.cal-d .n{font-size:.78rem;font-weight:700;color:var(--texto);margin-bottom:3px;text-align:right;padding-right:2px}
+.cal-d.fuera{opacity:.32}
+.cal-d.hoy{border-color:var(--amarillo);box-shadow:0 0 0 1px var(--amarillo) inset}
+.cal-d.tocable{cursor:pointer}
+.cal-d.tocable:active{background:var(--morado-oscuro)}
+.cal-t{font-size:.62rem;line-height:1.25;background:rgba(147,51,234,.16);border-left:3px solid var(--amarillo);
+  border-radius:0 5px 5px 0;padding:2px 3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-t b{font-weight:700}
+.cal-leyenda{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:14px;font-size:.74rem;color:var(--muted)}
+.cal-leyenda span{display:inline-flex;align-items:center;gap:6px}
+.cal-leyenda i{width:13px;height:13px;border-radius:4px;display:inline-block}
+/* en teléfono no cabe el nombre (celda ~41px): manda el color + el horario,
+   y se toca el día para ver el detalle con nombres completos */
+@media(max-width:620px){
+  .cal-d{min-height:62px;padding:4px 2px}
+  .cal-d .n{font-size:.7rem}
+  .cal-t{font-size:.58rem;padding:1px 2px;text-align:center;border-left-width:4px}
+  .cal-t .nom{display:none}
+  .cal-grid{gap:3px}
+}
+html[data-tema="claro"] .cal-d{background:#FBF9FF}
+html[data-tema="claro"] .cal-t{background:rgba(107,33,168,.10)}
+html[data-tema="claro"] .cal-d.tocable:active{background:#EADFF8}
+
 /* ═══════ REGISTROS CON EVIDENCIA (sección 1 del checklist) ═══════ */
 .reg{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:14px;border:1.5px solid var(--borde);
   margin-bottom:9px;background:#190C2E;transition:.15s}
@@ -336,7 +371,10 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <h1 style="margin-top:26px;color:var(--amarillo);font-size:2rem">EL OJO MAESTRO</h1>
       <p class="muted" style="letter-spacing:3px;text-transform:uppercase;font-size:.72rem">Centro de operaciones · Universo Cíclope</p>
       <div style="max-width:420px;margin:34px auto 0" id="portada-sucursales"></div>
-      <div style="max-width:420px;margin:14px auto 0;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+      <div style="max-width:420px;margin:14px auto 0">
+        <button class="btn s" style="width:100%" onclick="irCalendario()"><span class="ico">📅</span> Calendario</button>
+      </div>
+      <div style="max-width:420px;margin:10px auto 0;display:grid;gap:10px;grid-template-columns:1fr 1fr">
         <button class="btn s" onclick="pedirPinSupervision()"><span class="ico">🔍</span> Supervisión</button>
         <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección</button>
       </div>
@@ -370,6 +408,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
       <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Recetario</span><div class="d">Gramajes y montaje de cada producto</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
+      <div class="menu-item" onclick="irCalendario()"><span class="em" style="--tint:#60A5FA">📅</span><span class="t">Calendario</span><div class="d">Turnos del mes por sucursal</div></div>
     </div>
   </section>
 
@@ -505,6 +544,14 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="tabs" id="proto-tabs"></div>
     </div>
     <div id="proto-lista" style="margin-top:14px"></div>
+  </section>
+
+  <!-- ══════════ CALENDARIO ══════════ -->
+  <section class="screen" id="scr-cal">
+    <div class="topbar"><button class="btn s mini" onclick="calVolver()">← Volver</button>
+      <div><div class="tit amar" style="font-weight:700">📅 Calendario</div><div class="sub">Turnos del mes</div></div>
+      <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
+    <div id="cal-contenido"></div>
   </section>
 
   <!-- ══════════ DIRECCIÓN ══════════ -->

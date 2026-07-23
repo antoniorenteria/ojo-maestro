@@ -7,8 +7,9 @@
      versión nueva queda lista para la siguiente apertura.
    - Imágenes y fuentes: caché primero → las 70 fotos del inventario y la
      tipografía solo se descargan una vez. */
-const CACHE = 'ojo-maestro-v4';
-const SHELL = ['./', 'index.html', 'app.js', 'assets.js', 'fotos-productos.js'];
+const CACHE = 'ojo-maestro-v5';
+const SHELL = ['./', 'index.html', 'app.js', 'assets.js', 'fotos-productos.js',
+  'manifest.json', 'img/icono.png', 'img/icono-180.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
