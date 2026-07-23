@@ -552,7 +552,9 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
   <section class="screen" id="scr-rev">
     <div class="topbar"><button class="btn s mini" onclick="salirASucursales()">← Salir</button>
       <div><div class="tit amar" style="font-weight:700">🔍 Supervisión</div><div class="sub">Revisión y verificación</div></div>
-      <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
+      <div class="grow"></div>
+      <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
+      <button class="btn s mini" onclick="toggleTema()">🌓</button></div>
     <div class="card">
       <div class="fila">
         <div><label>Sucursal</label><select id="rev-suc" onchange="renderRevision()"></select></div>
@@ -631,6 +633,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div><div class="tit amar" style="font-weight:700">👁️ Dirección</div>
         <div class="sub">El ojo que todo lo ve</div></div>
       <div class="grow"></div>
+      <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
       <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
       <button class="btn s mini" onclick="salirASucursales()">Salir</button>

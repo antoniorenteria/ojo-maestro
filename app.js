@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.4';
+const VERSION = '2.5';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1494,6 +1494,8 @@ function renderRevision() {
   const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid && !e.regId);
   if (evs.length) html += '<div class="card"><h3>📎 Otras evidencias (' + evs.length + ')</h3>' +
     '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div></div>';
+  // quién debía entrar hoy y quién realmente marcó
+  html += cardProgramadoVsReal(fecha, sid);
   // notas y observaciones del equipo
   html += cardObservaciones(fecha, sid);
   // cierre del día
@@ -1514,12 +1516,17 @@ function renderRevision() {
     '<button id="rev-v-nocumplido" onclick="revVeredicto=\'nocumplido\';marcarVeredicto()">⛔ No cumplido</button></div></div></div>' +
     '<label>Retroalimentación para el equipo</label>' +
     '<textarea id="rev-comentario" placeholder="Ej. Excelente turno, solo faltó rellenar salsas…"></textarea>' +
-    '<div style="margin-top:14px"><button class="btn p gigante" onclick="guardarRevision(\'' + fecha + '\',\'' + sid + '\',' + pct + ')">🔍 Enviar revisión</button></div></div>';
+    '<div style="margin-top:14px"><button class="btn p gigante" onclick="guardarRevision(\'' + fecha + '\',\'' + sid + '\',' + pct + ')">🔍 Enviar revisión</button></div>' +
+    '<div style="margin-top:10px"><button class="btn s" onclick="tareaDeRevision(\'' + fecha + '\',\'' + sid + '\')">' +
+    '✅ Convertir esto en tarea</button></div></div>';
   // historial
   const hist = db.revisiones.filter(r => r.sucursalId === sid).slice(0, 7);
   if (hist.length) html += '<div class="card"><h3>📜 Revisiones recientes</h3>' + hist.map(r =>
     '<div class="item-linea"><div class="grow"><b>' + (r.veredicto === 'cumplido' ? '✅' : r.veredicto === 'ajustes' ? '⚠️' : '⛔') +
-    ' ' + fmtFecha(r.fecha) + ' · ' + r.pct + '%</b><div class="mini muted">' + esc(r.comentario || '') + '</div></div></div>').join('') + '</div>';
+    ' ' + fmtFecha(r.fecha) + ' · ' + r.pct + '%</b><div class="mini muted">' + esc(r.comentario || '') + '</div></div>' +
+    (r.comentario ? btnTarea('Dar seguimiento: ' + r.comentario,
+      'Revisión de ' + (suc(r.sucursalId)?.nombre || '') + ' del ' + fmtFecha(r.fecha) + ' · ' + r.pct + '% de cumplimiento') : '') +
+    '</div>').join('') + '</div>';
   $('rev-contenido').innerHTML = html;
   marcarVeredicto();
 }
@@ -1546,6 +1553,133 @@ function verificarRegistro(rid, fecha, sid) {
   guardarDB(); renderRevision();
 }
 /* notas y observaciones de los colaboradores (se muestra en Supervisión y Dirección) */
+/* ═══════════ TAREAS A TODOIST ═══════════
+   Se usa el enlace de "añadir tarea" de Todoist (todoist.com/add). Abre la app
+   del teléfono con la tarea ya escrita y solo hay que confirmar.
+   Se eligió así a propósito: no pide token ni contraseña de Todoist, no hay
+   credenciales guardadas en una app que vive en un repo público, y funciona
+   igual en el teléfono, la tablet y la computadora. */
+/* La prioridad se manda como p1…p4 DENTRO del texto, que es la misma sintaxis
+   que se teclea en Todoist (p1 = urgente). El parámetro "priority" de la URL
+   usa la escala invertida de la API y se presta a confusión. */
+let tareaTxt = '', tareaDesc = '', tareaFecha = '', tareaPrio = 3;
+const PRIORIDADES = [[1, 'P1 urgente'], [2, 'P2 alta'], [3, 'P3 media'], [4, 'P4 normal']];
+
+function abrirTarea(texto, descripcion, fechaSugerida) {
+  tareaTxt = texto || '';
+  tareaDesc = descripcion || '';
+  tareaFecha = fechaSugerida || hoyISO();
+  tareaPrio = 3;
+  pintarTarea();
+}
+function pintarTarea() {
+  const proy = (db.config.todoistProyecto || '').trim();
+  const atajos = [
+    ['Hoy', hoyISO()],
+    ['Mañana', isoLocal(new Date(Date.now() + 864e5))],
+    ['En 3 días', isoLocal(new Date(Date.now() + 3 * 864e5))],
+    ['Próximo lunes', (() => { const d = new Date(); d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7)); return isoLocal(d); })()]
+  ];
+  abrirModal('<h3>✅ Crear tarea</h3>' +
+    '<p class="mini muted">Se abre Todoist con la tarea lista' + (proy ? ' en <b>#' + esc(proy) + '</b>' : '') + '. Solo confirmas.</p>' +
+    '<label>Tarea</label><input id="tk-txt" value="' + esc(tareaTxt) + '" oninput="tareaTxt=this.value">' +
+    '<label style="margin-top:10px">Detalle (opcional)</label>' +
+    '<textarea id="tk-desc" style="min-height:70px" oninput="tareaDesc=this.value">' + esc(tareaDesc) + '</textarea>' +
+    '<label style="margin-top:10px">Para cuándo</label>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:6px">' + atajos.map(([n, f]) =>
+      '<button class="btn ' + (tareaFecha === f ? 'p' : 's') + ' mini" onclick="tareaFecha=\'' + f + '\';pintarTarea()">' +
+      n + '</button>').join('') + '</div>' +
+    '<input type="date" style="margin-top:8px" value="' + tareaFecha + '" onchange="tareaFecha=this.value;pintarTarea()">' +
+    '<label style="margin-top:10px">Prioridad</label>' +
+    '<div class="seg" style="margin:0">' + PRIORIDADES.map(([v, n]) =>
+      '<button class="' + (tareaPrio === v ? 'on' : '') + '" onclick="tareaPrio=' + v + ';pintarTarea()">' + n + '</button>').join('') + '</div>' +
+    '<button class="btn p gigante" style="margin-top:14px" onclick="mandarATodoist()">✅ Crear en Todoist</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="copiarTarea()">📋 Copiar el texto</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function textoTarea() {
+  const proy = (db.config.todoistProyecto || '').trim();
+  return tareaTxt.trim() +
+    (tareaPrio < 4 ? ' p' + tareaPrio : '') +          // p4 es "sin prioridad": no hace falta escribirla
+    (proy ? ' #' + proy.replace(/\s+/g, '') : '');
+}
+function mandarATodoist() {
+  if (!tareaTxt.trim()) return toast('Escribe de qué es la tarea');
+  const p = new URLSearchParams();
+  p.set('content', textoTarea());
+  if (tareaDesc.trim()) p.set('description', tareaDesc.trim());
+  if (tareaFecha) p.set('date', tareaFecha);
+  window.open('https://todoist.com/add?' + p.toString(), '_blank');
+  cerrarModal();
+  toast('✅ Tarea enviada a Todoist — confírmala ahí');
+}
+function copiarTarea() {
+  const t = textoTarea() + (tareaFecha ? ' ' + fmtFecha(tareaFecha) : '') + (tareaDesc ? '\n' + tareaDesc : '');
+  navigator.clipboard.writeText(t).then(() => toast('📋 Copiado')).catch(() => toast('No se pudo copiar'));
+}
+/* convierte la revisión que se está escribiendo en una tarea de seguimiento */
+function tareaDeRevision(fecha, sid) {
+  const com = ($('rev-comentario') ? $('rev-comentario').value : '').trim();
+  const s = suc(sid), pct = avanceDia(fecha, sid).pct;
+  abrirTarea(
+    com || 'Dar seguimiento a ' + (s?.nombre || '') + ' (' + fmtFecha(fecha) + ')',
+    'Revisión del ' + fmtFecha(fecha) + ' en ' + (s?.nombre || '') + '\nCumplimiento: ' + pct + '%\n' +
+    'Veredicto: ' + revVeredicto,
+    isoLocal(new Date(Date.now() + 864e5)));
+}
+/* botón chico para colgar una tarea de cualquier cosa que se vea en pantalla */
+function btnTarea(texto, descripcion, fecha) {
+  const e = s => String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+  return '<button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea(\'' +
+    e(texto) + '\',\'' + e(descripcion) + '\',\'' + (fecha || '') + '\')">✅</button>';
+}
+
+/* ═══════════ PROGRAMADO vs REAL ═══════════
+   Cruza el calendario con la asistencia: quién debía entrar y quién marcó.
+   No pide capturar nada nuevo — los dos datos ya están — y es lo que convierte
+   el calendario en un control y no solo en un aviso. */
+const TOLERANCIA_MIN = 10;
+function cardProgramadoVsReal(fecha, sid) {
+  const prog = db.calendario.filter(x => !x.del && x.fecha === fecha && (!sid || x.sucursalId === sid));
+  const turnos = db.turnos.filter(t => t.fecha === fecha && (!sid || t.sucursalId === sid));
+  if (!prog.length && !turnos.length) return '';
+  const filas = prog.map(p => ({ pid: p.personalId, sid: p.sucursalId, p, t: turnos.find(x => x.personalId === p.personalId) }));
+  turnos.forEach(t => {
+    if (!prog.some(p => p.personalId === t.personalId)) filas.push({ pid: t.personalId, sid: t.sucursalId, p: null, t });
+  });
+  const [y, m, d] = fecha.split('-').map(Number);
+  let faltas = 0, tardes = 0;
+  const html = filas.sort((a, b) => calNombre(a.pid).localeCompare(calNombre(b.pid), 'es')).map(f => {
+    let estado, detalle;
+    if (!f.p) { estado = '<span class="badge aviso">➕ sin programar</span>'; detalle = 'Marcó ' + fmtHora(f.t.entrada); }
+    else if (!f.t) { estado = '<span class="badge comprar">❌ no marcó</span>'; detalle = 'Debía entrar ' + f.p.ini + ':00'; faltas++; }
+    else {
+      const esperado = new Date(y, m - 1, d, f.p.ini, 0).getTime();
+      const min = Math.round((f.t.entrada - esperado) / 60000);
+      if (min > TOLERANCIA_MIN) { estado = '<span class="badge aviso">⏰ ' + min + ' min tarde</span>'; tardes++; }
+      else estado = '<span class="badge ok">✅ a tiempo</span>';
+      detalle = 'Programado ' + rangoCorto(f.p) + ' · marcó ' + fmtHora(f.t.entrada);
+    }
+    return '<div class="item-linea">' + avatarPersona(f.pid) +
+      '<div class="grow"><b>' + esc(calNombre(f.pid)) + '</b>' +
+      '<div class="mini muted">' + detalle + (sid ? '' : ' · ' + esc(suc(f.sid)?.nombre || '')) + '</div></div>' +
+      estado + '</div>';
+  }).join('');
+  const alerta = faltas || tardes;
+  return '<div class="card' + (alerta ? ' amarilla' : '') + '"><div class="encabezado-seccion">' +
+    '<h3 style="margin:0">🎯 Programado vs. real</h3>' +
+    (alerta
+      ? '<span class="badge aviso">' + (faltas ? faltas + ' sin marcar' : '') + (faltas && tardes ? ' · ' : '') +
+        (tardes ? tardes + ' tarde' : '') + '</span>'
+      : '<span class="badge ok">todo en orden</span>') + '</div>' +
+    html +
+    (alerta ? '<div style="margin-top:10px">' + btnTarea(
+      'Revisar asistencia del ' + fmtFecha(fecha) + (sid ? ' en ' + (suc(sid)?.nombre || '') : ''),
+      filas.filter(f => !f.t || !f.p).map(f => '· ' + calNombre(f.pid) + (f.t ? ' entró sin estar programado' : ' no marcó entrada')).join('\n')) +
+      ' <span class="mini muted">dar seguimiento</span></div>' : '') +
+    '</div>';
+}
+
 function cardObservaciones(fecha, sid) {
   const todas = db.checklists.filter(x => x.tipo === 'observacion' && (!sid || x.sucursalId === sid))
     .concat(cierresVivos().filter(c => c.novedades && (!sid || c.sucursalId === sid))
@@ -1557,7 +1691,11 @@ function cardObservaciones(fecha, sid) {
     (per(o.personalId) ? avatarPersona(o.personalId) : '<div class="avatar">🗒️</div>') +
     '<div class="grow"><div class="mini">' + esc(o.novedades) + '</div>' +
     '<div class="mini muted">' + esc(per(o.personalId)?.nombre || 'Equipo') + ' · ' + esc(suc(o.sucursalId)?.nombre || '') +
-    ' · ' + fmtFecha(o.fecha) + ' ' + fmtHora(o.ts) + '</div></div></div>';
+    ' · ' + fmtFecha(o.fecha) + ' ' + fmtHora(o.ts) + '</div></div>' +
+    btnTarea(o.novedades,
+      'Observación de ' + (per(o.personalId)?.nombre || 'el equipo') + ' · ' + (suc(o.sucursalId)?.nombre || '') +
+      ' · ' + fmtFecha(o.fecha)) +
+    '</div>';
   if (!todas.length) return '<div class="card"><h3>🗒️ Notas y observaciones del equipo</h3><p class="muted mini">Aún no hay observaciones registradas.</p></div>';
   return '<div class="card"><h3>🗒️ Notas y observaciones del equipo</h3>' +
     (fecha ? ('<div class="mini muted" style="margin-bottom:4px">Del día seleccionado (' + fmtFecha(fecha) + '):</div>' +
@@ -2543,9 +2681,13 @@ function dirHoy() {
       (revS ? '<span>🔍 Últ. revisión: <b class="amar">' + (revS.veredicto === 'cumplido' ? '✅' : revS.veredicto === 'ajustes' ? '⚠️' : '⛔') +
         ' ' + revS.pct + '%</b></span>' : '') + '</div>';
     if (falt.length) html += '<div class="mini" style="margin-top:8px;color:var(--alerta)">Faltan: ' +
-      falt.slice(0, 8).map(p => esc(p.nombre)).join(', ') + (falt.length > 8 ? ' +' + (falt.length - 8) + ' más' : '') + '</div>';
+      falt.slice(0, 8).map(p => esc(p.nombre)).join(', ') + (falt.length > 8 ? ' +' + (falt.length - 8) + ' más' : '') + '</div>' +
+      '<div style="margin-top:8px">' + btnTarea('Comprar para ' + s.nombre + ' (' + falt.length + ' productos)',
+        falt.map(p => '· ' + p.nombre + ' — mín ' + p.minimo).join('\n')) + ' <span class="mini muted">crear la compra como tarea</span></div>';
     html += '</div>';
   });
+  // asistencia contra lo programado, en las dos sucursales
+  html += cardProgramadoVsReal(hoy, null);
   // notas y observaciones del equipo (mismo bloque que ve Supervisión, de todas las sucursales)
   html += cardObservaciones(hoy, null);
   // bitácora
@@ -2891,6 +3033,10 @@ function dirAdmin() {
     '<label>Correo de notificaciones</label><input id="cfg-email" value="' + esc(c.emailTo) + '">' +
     '<label>WhatsApp de avisos (con lada país, ej. 52771…)</label><input id="cfg-wa" value="' + esc(c.whatsapp) + '">' +
     '<label>URL del backend (Google Apps Script)</label><input id="cfg-url" value="' + esc(c.scriptUrl) + '" placeholder="https://script.google.com/macros/s/…/exec">' +
+    '<label>Proyecto de Todoist (opcional)</label><input id="cfg-todoist" value="' + esc(c.todoistProyecto || '') +
+    '" placeholder="Ej. Ciclope — sin espacios">' +
+    '<p class="mini muted">Las tareas que crees desde Supervisión y Dirección caen en ese proyecto. ' +
+    'Déjalo vacío para que lleguen a tu Bandeja de entrada.</p>' +
     '<div class="fila" style="margin-top:14px"><button class="btn p" onclick="guardarConfig()">💾 Guardar</button>' +
     '<button class="btn s" onclick="probarConexion()">🔌 Probar conexión</button>' +
     '<button class="btn s" onclick="enlaceInstalacion()">🔗 Enlace de instalación</button></div>' +
@@ -3061,6 +3207,7 @@ function guardarConfig() {
     baseHoras: Number($('cfg-base').value) || 6,
     emailTo: $('cfg-email').value.trim(),
     whatsapp: $('cfg-wa').value.replace(/\D/g, ''),
+    todoistProyecto: ($('cfg-todoist') ? $('cfg-todoist').value : '').trim(),
   };
   // marca de tiempo POR CAMPO: solo lo que realmente cambió viaja como "nuevo"
   Object.keys(nuevos).forEach(k => {
