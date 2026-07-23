@@ -4,6 +4,9 @@
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 
+/* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
+const VERSION = '1.6';
+
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -356,16 +359,57 @@ function migrarDB() {
   });
   return limpio;   // hubo que borrar PINs: conviene persistir la limpieza
 }
+/* ---------- la conexión del dispositivo, a prueba de actualizaciones ----------
+   La URL del backend y los PINs viven en su PROPIA llave de localStorage,
+   aparte de la base. Si la base se pierde, se corrompe o se vuelve a sembrar,
+   el dispositivo sigue sabiendo a dónde conectarse y no regresa a modo local. */
+const CFG_KEY = 'ojo_cfg_dispositivo';
+let cfgFirma = '';
+function recordarConfig() {
+  const c = db.config || {};
+  if (!c.scriptUrl) return;                     // nada que recordar todavía
+  const guardar = {
+    scriptUrl: c.scriptUrl, adminPin: c.adminPin, supervisorPin: c.supervisorPin,
+    emailTo: c.emailTo, whatsapp: c.whatsapp, baseHoras: c.baseHoras, ts: Date.now()
+  };
+  const firma = JSON.stringify(guardar).replace(/"ts":\d+/, '');
+  if (firma === cfgFirma) return;               // sin cambios: no reescribir
+  cfgFirma = firma;
+  try { localStorage.setItem(CFG_KEY, JSON.stringify(guardar)); } catch (e) { }
+}
+function recuperarConfig() {
+  let g; try { g = JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch (e) { }
+  if (!g || !g.scriptUrl) return false;
+  const c = db.config, seed = seedDB().config;
+  let rescate = false;
+  if (!c.scriptUrl) { c.scriptUrl = g.scriptUrl; rescate = true; }
+  // los demás campos solo se reponen si la base quedó con los valores de fábrica
+  ['adminPin', 'supervisorPin', 'emailTo', 'whatsapp', 'baseHoras'].forEach(k => {
+    if (g[k] !== undefined && c[k] === seed[k] && g[k] !== seed[k]) {
+      c[k] = g[k];
+      db.configTs[k] = Math.max(db.configTs[k] || 0, g.ts || 0);
+      rescate = true;
+    }
+  });
+  return rescate;
+}
 function cargarDB() {
+  let cargada = false;
   try {
     const raw = localStorage.getItem(DB_KEY);
-    if (raw) { db = JSON.parse(raw); if (migrarDB()) guardarDB(false); return; }
+    if (raw) { db = JSON.parse(raw); cargada = true; }
   } catch (e) { }
-  db = seedDB(); guardarDB(false);
+  if (!cargada) db = seedDB();
+  const migro = cargada ? migrarDB() : false;
+  const rescato = recuperarConfig();
+  if (rescato) toast('🔌 Conexión del dispositivo recuperada');
+  if (!cargada || migro || rescato) guardarDB(false);
+  recordarConfig();
 }
 function tocarCatalogos() { db.catTs = Date.now(); }
 function guardarDB(sincronizar = true) {
   db.ts = Date.now();
+  recordarConfig();                 // la conexión queda respaldada aparte
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
   catch (e) { podarFotos(true); try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (e2) { toast('⚠️ Memoria llena: exporta un respaldo en Dirección'); } }
   if (sincronizar) syncPronto();
@@ -413,6 +457,16 @@ function pintarRed() {
     chip.classList.toggle('on', on); chip.classList.toggle('off', !on);
     $(t).textContent = on ? 'en línea' : 'modo local';
   });
+  /* en modo local el aviso es accionable: reconectar sin entrar a Dirección */
+  const av = $('portada-aviso');
+  if (av) {
+    av.style.display = on ? 'none' : 'block';
+    if (!on) av.innerHTML = '<div class="card amarilla" style="margin:18px auto 0;max-width:420px;text-align:left">' +
+      '<b style="color:var(--amarillo)">⚠️ Este dispositivo está en modo local</b>' +
+      '<p class="mini muted" style="margin:6px 0 10px">Lo que se capture aquí no llega a los demás. ' +
+      'Conéctalo una vez y ya no se vuelve a perder.</p>' +
+      '<button class="btn p" onclick="conectarDispositivo()">🔌 Conectar a la nube</button></div>';
+  }
   const pe = $('portada-estado');
   if (pe) pe.innerHTML = on ? '🟢 Conectado a la nube Cíclope — datos sincronizados entre dispositivos'
     : '🟡 Modo local (solo esta tablet). Conecta el backend en Dirección → Administrar para sincronizar, notificar por correo y respaldar en Drive.';
@@ -432,6 +486,7 @@ async function sync(silencioso = true) {
       const local = db.config.scriptUrl;           // nunca perder la URL local
       db = j.db; db.config.scriptUrl = local;
       reAdjuntarFotosLocales(anterior);
+      recordarConfig();
       localStorage.setItem(DB_KEY, JSON.stringify(db));
       // no repintar mientras alguien está capturando: se aplicará al navegar
       if (!escribiendo()) renderTodo();
@@ -621,6 +676,51 @@ function pedirPinAdmin() {
 /* ---------- modal general ---------- */
 function abrirModal(html) { $('modal-gen-cuerpo').innerHTML = html; $('modal-gen').classList.add('ver'); }
 function cerrarModal() { $('modal-gen').classList.remove('ver'); }
+
+/* trae la última versión publicada aunque el caché tenga una anterior.
+   La configuración NO se toca: vive en su propia llave (CFG_KEY). */
+async function forzarActualizacion() {
+  toast('🔄 Buscando la última versión…');
+  try {
+    if ('caches' in window) {
+      const ks = await caches.keys();
+      await Promise.all(ks.map(k => caches.delete(k)));
+    }
+    if (navigator.serviceWorker) {
+      const rs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map(r => r.update().catch(() => { })));
+    }
+  } catch (e) { }
+  location.reload();
+}
+
+/* reconectar el dispositivo sin tener que entrar a Dirección */
+function conectarDispositivo() {
+  let g; try { g = JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch (e) { }
+  abrirModal('<h3>🔌 Conectar este dispositivo</h3>' +
+    (g && g.scriptUrl
+      ? '<p class="mini muted">Este dispositivo ya estuvo conectado antes. Puedes reponer esa conexión de un toque:</p>' +
+      '<button class="btn p" style="margin-bottom:12px" onclick="usarConexionGuardada()">↩️ Reponer la conexión anterior</button><div class="sep"></div>'
+      : '') +
+    '<p class="mini muted">Pega la URL del backend (la que termina en <b>/exec</b>). La encuentras en cualquier ' +
+    'dispositivo ya conectado, en Dirección → ⚙️ Administrar → 🔗 Enlace de instalación.</p>' +
+    '<input id="conn-url" placeholder="https://script.google.com/macros/s/…/exec">' +
+    '<button class="btn p" style="margin-top:12px" onclick="guardarConexion()">💾 Conectar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function usarConexionGuardada() {
+  if (!recuperarConfig()) return toast('No hay una conexión guardada en este dispositivo');
+  guardarDB(false); cerrarModal(); pintarRed();
+  toast('🔌 Conexión repuesta'); if (enLinea()) sync(false);
+}
+function guardarConexion() {
+  const u = $('conn-url').value.trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/.+\/exec$/.test(u))
+    return toast('La URL debe empezar con https://script.google.com/macros/ y terminar en /exec');
+  db.config.scriptUrl = u;
+  guardarDB(false); cerrarModal(); pintarRed();
+  toast('🔌 Dispositivo conectado'); sync(false);
+}
 
 /* ═══════════ PORTADA ═══════════ */
 function renderPortada() {
@@ -1399,7 +1499,9 @@ function renderCalendario() {
   html += '<div class="fila" style="margin-top:16px">' +
     '<button class="btn ' + (calEdit ? 'p' : 's') + '" onclick="calModificar()">' + (calEdit ? '✅ Listo' : '✏️ Modificar') + '</button>' +
     '<button class="btn p" onclick="calendarioPNG()">📤 Enviar PNG</button></div>';
-  if (calEdit) html += '<div class="fila" style="margin-top:10px">' +
+  if (calEdit) html += '<button class="btn p gigante" style="margin-top:10px" onclick="calRapido()">⚡ Llenado rápido</button>' +
+    '<div class="fila" style="margin-top:10px;flex-wrap:wrap">' +
+    '<button class="btn s mini" onclick="calRepetirSemana()">🔁 Repetir semana en el mes</button>' +
     '<button class="btn s mini" onclick="calCopiarSemana()">📋 Copiar semana anterior</button>' +
     '<button class="btn s mini" onclick="calVaciarMes()">🗑️ Vaciar el mes</button></div>';
   html += '</div>';
@@ -1483,6 +1585,106 @@ function calBorrar(id, fecha) {
   guardarDB();
   modalDiaCal(fecha); renderCalendario();
   toast('🗑️ Turno quitado');
+}
+/* ---------- llenado rápido: armar el mes sin capturar día por día ---------- */
+const CAL_HORARIOS = [[13, 19], [15, 21], [13, 21], [14, 21], [13, 17], [13, 20]];
+const DOW_ORDEN = [1, 2, 3, 4, 5, 6, 0];        // lunes → domingo (getDay: 0 = domingo)
+const DOW_ETI = { 1: 'L', 2: 'M', 3: 'X', 4: 'J', 5: 'V', 6: 'S', 0: 'D' };
+let rapPersona = '', rapIni = 13, rapFin = 19, rapDias = [1, 2, 3, 4, 5, 6, 0], rapAmbito = 'mes';
+
+function calRapDia(d) {
+  rapDias = rapDias.includes(d) ? rapDias.filter(x => x !== d) : rapDias.concat(d);
+  calRapido();
+}
+function calRapFechas() {
+  const [y, m] = calMes.split('-').map(Number);
+  const ultimo = new Date(y, m, 0).getDate(), hoy = hoyISO(), out = [];
+  for (let d = 1; d <= ultimo; d++) {
+    const f = new Date(y, m - 1, d), iso = isoLocal(f);
+    if (!rapDias.includes(f.getDay())) continue;
+    if (rapAmbito === 'resto' && iso < hoy) continue;
+    out.push(iso);
+  }
+  return out;
+}
+const rapRepetido = iso => db.calendario.some(x => !x.del && x.fecha === iso &&
+  x.sucursalId === calSuc && x.personalId === rapPersona && x.ini === rapIni && x.fin === rapFin);
+
+function calRapido() {
+  if (!calEdit) return toast('Toca ✏️ Modificar primero');
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  if (!gente.length) return toast('Primero da de alta al equipo en Dirección → Administrar');
+  if (!rapPersona || !gente.some(p => p.id === rapPersona)) rapPersona = gente[0].id;
+  const [, m] = calMes.split('-').map(Number);
+  const horas = []; for (let h = 8; h <= 23; h++) horas.push(h);
+  const optH = (h, sel) => '<option value="' + h + '"' + (h === sel ? ' selected' : '') + '>' +
+    (h > 12 ? (h - 12) + ' pm' : h + (h === 12 ? ' pm' : ' am')) + '</option>';
+  const nuevos = calRapFechas().filter(iso => !rapRepetido(iso)).length;
+  abrirModal('<h3>⚡ Llenado rápido</h3>' +
+    '<p class="mini muted">Pon a una persona en todos los días que le tocan, de un jalón.</p>' +
+    '<label>Colaborador</label><select onchange="rapPersona=this.value;calRapido()">' +
+    gente.map(p => '<option value="' + p.id + '"' + (p.id === rapPersona ? ' selected' : '') + '>' +
+      esc(p.nombre) + '</option>').join('') + '</select>' +
+    '<label style="margin-top:12px">Horario</label>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:6px">' + CAL_HORARIOS.map(([a, b]) =>
+      '<button class="btn ' + (a === rapIni && b === rapFin ? 'p' : 's') + ' mini" ' +
+      'onclick="rapIni=' + a + ';rapFin=' + b + ';calRapido()">' + hCorta(a) + '-' + hCorta(b) + '</button>').join('') + '</div>' +
+    '<div class="fila" style="margin-top:8px">' +
+    '<div style="flex:1"><label class="mini">Entra</label><select onchange="rapIni=Number(this.value);calRapido()">' +
+    horas.map(h => optH(h, rapIni)).join('') + '</select></div>' +
+    '<div style="flex:1"><label class="mini">Sale</label><select onchange="rapFin=Number(this.value);calRapido()">' +
+    horas.map(h => optH(h, rapFin)).join('') + '</select></div></div>' +
+    '<label style="margin-top:12px">Días de la semana</label>' +
+    '<div class="fila" style="gap:5px">' + DOW_ORDEN.map(d =>
+      '<button class="btn ' + (rapDias.includes(d) ? 'p' : 's') + ' mini" style="flex:1;padding:11px 0" ' +
+      'onclick="calRapDia(' + d + ')">' + DOW_ETI[d] + '</button>').join('') + '</div>' +
+    '<label style="margin-top:12px">Aplicar en</label>' +
+    '<div class="seg" style="margin:0">' +
+    '<button class="' + (rapAmbito === 'mes' ? 'on' : '') + '" onclick="rapAmbito=\'mes\';calRapido()">Todo ' + MESES[m - 1] + '</button>' +
+    '<button class="' + (rapAmbito === 'resto' ? 'on' : '') + '" onclick="rapAmbito=\'resto\';calRapido()">De hoy en adelante</button></div>' +
+    '<div class="mini muted" style="margin-top:12px">Se van a agregar <b class="amar">' + nuevos + ' día' + (nuevos === 1 ? '' : 's') +
+    '</b> para ' + esc(calNombre(rapPersona)) + ' de ' + hCorta(rapIni) + '-' + hCorta(rapFin) + '.</div>' +
+    '<button class="btn p" style="margin-top:12px" onclick="calAplicarRapido()">⚡ Aplicar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
+}
+function calAplicarRapido() {
+  if (!rapDias.length) return toast('Elige al menos un día de la semana');
+  if (rapFin <= rapIni) return toast('La salida debe ser después de la entrada ⏰');
+  const fechas = calRapFechas().filter(iso => !rapRepetido(iso));
+  if (!fechas.length) return toast('Esos días ya están puestos así');
+  fechas.forEach(iso => db.calendario.push({
+    id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
+    personalId: rapPersona, ini: rapIni, fin: rapFin
+  }));
+  guardarDB(); cerrarModal(); renderCalendario();
+  toast('⚡ ' + calNombre(rapPersona) + ' quedó en ' + fechas.length + ' días');
+}
+/* toma la primera semana ya armada y la repite en todo el mes */
+function calRepetirSemana() {
+  const semanas = semanasDelMes(calMes);
+  const [, m] = calMes.split('-').map(Number);
+  const origen = semanas.find(sem => sem.some(f => f.getMonth() === m - 1 && calTurnosDe(isoLocal(f), calSuc).length));
+  if (!origen) return toast('Arma una semana y yo la repito en el mes');
+  let n = 0;
+  semanas.forEach(sem => {
+    if (sem === origen) return;
+    sem.forEach((f, i) => {
+      if (f.getMonth() !== m - 1) return;
+      const iso = isoLocal(f);
+      calTurnosDe(isoLocal(origen[i]), calSuc).forEach(t => {
+        if (db.calendario.some(x => !x.del && x.fecha === iso && x.sucursalId === calSuc &&
+          x.personalId === t.personalId && x.ini === t.ini && x.fin === t.fin)) return;
+        db.calendario.push({
+          id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
+          personalId: t.personalId, ini: t.ini, fin: t.fin
+        });
+        n++;
+      });
+    });
+  });
+  if (!n) return toast('Las demás semanas ya tienen ese patrón');
+  guardarDB(); renderCalendario();
+  toast('🔁 ' + n + ' turnos repetidos en el mes');
 }
 /* copia la última semana con turnos a la siguiente vacía: arma el mes en segundos */
 function calCopiarSemana() {
@@ -2023,6 +2225,9 @@ function dirAdmin() {
     '<div class="fila" style="margin-top:14px"><button class="btn p" onclick="guardarConfig()">💾 Guardar</button>' +
     '<button class="btn s" onclick="probarConexion()">🔌 Probar conexión</button>' +
     '<button class="btn s" onclick="enlaceInstalacion()">🔗 Enlace de instalación</button></div>' +
+    '<div class="sep"></div><div class="fila" style="align-items:center">' +
+    '<span class="mini muted">Versión de esta app: <b class="amar">' + VERSION + '</b></span>' +
+    '<button class="btn s mini" onclick="forzarActualizacion()">🔄 Buscar actualización</button></div>' +
     '<p class="mini muted" style="margin-top:10px">Sin backend el sistema funciona en modo local (solo esta tablet). ' +
     'Con el backend conectado: sincronización entre dispositivos, correos automáticos a ' + esc(c.emailTo) + ', fotos y respaldos en el Drive del negocio. Ver GUIA-INSTALACION.md.</p></div>';
   /* respaldos */
