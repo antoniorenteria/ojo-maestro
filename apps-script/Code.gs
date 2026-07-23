@@ -84,6 +84,35 @@ function loyverseListarTiendas() {
   return d.stores || [];
 }
 
+/* DIAGNOSTICO: corre esto y mira el Registro. Compara los store_id que traen
+   los tickets REALES contra los que pusiste en LOYVERSE_TIENDAS, y cuenta las
+   ventas de ayer y de hoy. Con esto se ve si el problema es "sin ventas aun" o
+   "los id no coinciden". */
+function loyverseDiagnostico() {
+  Logger.log('== TIENDAS CONFIGURADAS en LOYVERSE_TIENDAS ==');
+  Object.keys(LOYVERSE_TIENDAS).forEach(function (id) { Logger.log('  ' + id + '  ->  ' + LOYVERSE_TIENDAS[id]); });
+  try {
+    Logger.log('== TIENDAS REALES en tu Loyverse (loyverseListarTiendas) ==');
+    (loyverseGet_('stores').stores || []).forEach(function (s) { Logger.log('  ' + s.id + '  ->  ' + s.name); });
+  } catch (e) { Logger.log('ERROR al listar tiendas: ' + e); }
+  var hoy = fechaHoyMX();
+  var ayer = Utilities.formatDate(new Date(new Date().getTime() - 864e5), 'America/Mexico_City', 'yyyy-MM-dd');
+  [ayer, hoy].forEach(function (f) {
+    try {
+      var v = loyverseVentasDia_(f);
+      var claves = Object.keys(v);
+      Logger.log('== ' + f + ': ' + claves.length + ' tienda(s) con ventas ==');
+      claves.forEach(function (sid) {
+        var conf = LOYVERSE_TIENDAS[sid] ? ('SI -> ' + LOYVERSE_TIENDAS[sid]) : 'NO (ese id no esta en LOYVERSE_TIENDAS)';
+        Logger.log('  store ' + sid + ' | ventas $' + v[sid].ventas.toFixed(2) +
+          ' | efectivo $' + v[sid].efectivo.toFixed(2) + ' | tarjeta $' + v[sid].tarjeta.toFixed(2) +
+          ' | recibos ' + v[sid].recibos + ' | configurada: ' + conf);
+      });
+      if (!claves.length) Logger.log('  (sin ventas ese dia)');
+    } catch (e) { Logger.log('ERROR en ' + f + ': ' + e); }
+  });
+}
+
 /* Rango [ini, fin) de un dia (fecha yyyy-MM-dd) en hora de Mexico, formato UTC ISO. */
 function loyverseRangoDia_(fecha) {
   var ini = Utilities.formatDate(
