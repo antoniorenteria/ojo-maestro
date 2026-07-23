@@ -318,6 +318,14 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
   .cal-t .nom{display:none}
   .cal-grid{gap:3px}
 }
+/* paleta de color por colaborador */
+.paleta{display:flex;flex-wrap:wrap;gap:8px}
+.swatch{width:40px;height:40px;border-radius:11px;border:2px solid transparent;cursor:pointer;
+  position:relative;padding:0;display:flex;align-items:center;justify-content:center}
+.swatch.on{border-color:var(--texto);box-shadow:0 0 0 3px rgba(255,213,35,.5)}
+.swatch.usado span{font-size:.7rem;font-weight:800;color:rgba(0,0,0,.55)}
+.swatch.usado{opacity:.55}
+
 /* llenado rápido: bloques de regla y vista previa */
 .rap-regla{background:var(--fondo-4);border:1px solid var(--borde-suave);border-radius:12px;
   padding:12px;margin-bottom:10px}
@@ -329,7 +337,12 @@ html[data-tema="claro"] .topbar .sub{color:var(--muted)}
 html[data-tema="claro"] .rap-regla{background:#FBF9FF}
 html[data-tema="claro"] .cal-t.nuevo{background:rgba(255,213,35,.3)}
 html[data-tema="claro"] .cal-d{background:#FBF9FF}
-html[data-tema="claro"] .cal-t{background:rgba(107,33,168,.10)}
+/* en claro, un filete oscuro delimita la franja de color: si no, los tonos
+   claros (amarillo, cian, lima) casi desaparecen sobre el fondo blanco */
+html[data-tema="claro"] .cal-t{background:rgba(107,33,168,.10);border:1px solid rgba(0,0,0,.14)}
+html[data-tema="claro"] .cal-t{border-left-width:4px}
+html[data-tema="claro"] .swatch{border-color:rgba(0,0,0,.18)}
+html[data-tema="claro"] .swatch.on{border-color:#3A2354}
 html[data-tema="claro"] .cal-d.tocable:active{background:#EADFF8}
 
 /* ═══════ REGISTROS CON EVIDENCIA (sección 1 del checklist) ═══════ */
@@ -390,7 +403,8 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       </div>
       <div id="portada-aviso" style="display:none"></div>
       <div style="margin-top:18px"><button class="btn s mini" onclick="toggleTema()">🌓 Cambiar tema</button></div>
-      <p class="mini muted" style="margin-top:26px" id="portada-estado"></p>
+      <p class="mini muted" style="margin-top:22px" id="portada-version"></p>
+      <p class="mini muted" style="margin-top:14px" id="portada-estado"></p>
     </div>
   </section>
 
