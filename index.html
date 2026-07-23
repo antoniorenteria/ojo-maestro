@@ -88,6 +88,14 @@ a{color:var(--amarillo)}
 .menu-item .em{font-size:2.2rem;display:block;margin-bottom:8px}
 .menu-item .t{font-weight:700;font-size:1.02rem}
 .menu-item .d{font-size:.76rem;color:var(--muted);margin-top:4px}
+/* en teléfono: dos botones por fila, más compactos (en tablet queda igual) */
+@media(max-width:620px){
+  .menu-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .menu-item{padding:16px 10px}
+  .menu-item .em{font-size:1.9rem;margin-bottom:5px}
+  .menu-item .t{font-size:.92rem}
+  .menu-item .d{font-size:.68rem;margin-top:3px}
+}
 
 /* ---------- formularios ---------- */
 label{display:block;font-size:.8rem;color:var(--muted);margin:12px 0 5px;font-weight:500}
@@ -475,11 +483,11 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="menu-item" onclick="irAsistencia()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Entrada / Salida</span><div class="d">Asistencia y pago del día</div></div>
       <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del día</span><div class="d">Cierre, evidencias y acciones</div></div>
       <div class="menu-item" onclick="ir('scr-inv')"><span class="em" style="--tint:#A78BFA">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
+      <div class="menu-item" onclick="irGastos()"><span class="em" style="--tint:#F87171">💸</span><span class="t">Gastos y compras</span><div class="d">Lo que sale de la caja</div></div>
+      <div class="menu-item" onclick="irCalendario()"><span class="em" style="--tint:#60A5FA">📅</span><span class="t">Calendario</span><div class="d">Turnos del mes por sucursal</div></div>
       <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
       <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Recetario</span><div class="d">Gramajes y montaje de cada producto</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
-      <div class="menu-item" onclick="irCalendario()"><span class="em" style="--tint:#60A5FA">📅</span><span class="t">Calendario</span><div class="d">Turnos del mes por sucursal</div></div>
-      <div class="menu-item" onclick="irGastos()"><span class="em" style="--tint:#F87171">💸</span><span class="t">Gastos y compras</span><div class="d">Lo que sale de la caja</div></div>
     </div>
   </section>
 
@@ -552,8 +560,10 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
 
   <!-- ══════════ SUPERVISIÓN ══════════ -->
   <section class="screen" id="scr-rev">
-    <div class="topbar"><button class="btn s mini" onclick="salirASucursales()">← Salir</button>
-      <div><div class="tit amar" style="font-weight:700">🔍 Supervisión</div><div class="sub">Revisión y verificación</div></div>
+    <div class="topbar">
+      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+      <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
+        <div class="tit amar" style="font-weight:700">🔍 Supervisión</div><div class="sub">Revisión y verificación ▾</div></div>
       <div class="grow"></div>
       <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
       <button class="btn s mini" onclick="toggleTema()">🌓</button></div>
@@ -627,7 +637,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
     <div class="grid c3" id="gas-resumen"></div>
     <div class="card">
-      <h3>Registrar un gasto</h3>
+      <h3 id="gas-titulo">Registrar un gasto</h3>
       <p class="mini muted">Captúralo al momento, con el ticket en la mano. Así Dirección ve lo que
         de verdad queda y no solo lo que entra.</p>
       <div class="fila">
@@ -641,9 +651,21 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <select id="gas-cat"></select>
       <label style="margin-top:10px">Nota (opcional)</label>
       <input id="gas-nota" placeholder="Proveedor, factura, quién autorizó…">
-      <button class="btn p gigante" style="margin-top:14px" onclick="registrarGasto()">💸 Registrar gasto</button>
+      <label style="margin-top:10px">Foto del ticket (opcional)</label>
+      <div class="fila" style="align-items:center">
+        <button class="btn s" onclick="$('gas-foto-input').click()">📷 <span id="gas-foto-tx">Tomar foto</span></button>
+        <img id="gas-foto-prev" style="display:none;height:52px;border-radius:8px" onclick="verFotoGasto()">
+        <button class="btn s mini" id="gas-foto-quitar" style="display:none" onclick="quitarFotoGasto()">🗑️</button>
+        <input id="gas-foto-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="tomarFotoGasto(this)">
+      </div>
+      <button class="btn p gigante" style="margin-top:14px" id="gas-guardar" onclick="registrarGasto()">💸 Registrar gasto</button>
+      <button class="btn s" style="margin-top:8px;display:none" id="gas-cancelar" onclick="cancelarEdicionGasto()">Cancelar edición</button>
     </div>
-    <div class="card"><h3>Gastos de hoy</h3><div id="gas-lista"></div></div>
+    <div class="card">
+      <div class="encabezado-seccion"><h3 style="margin:0">Gastos de hoy</h3></div>
+      <input id="gas-buscar" placeholder="🔍 Buscar en concepto o nota…" oninput="renderGastos()" style="margin-bottom:8px">
+      <div id="gas-lista"></div>
+    </div>
   </section>
 
   <!-- ══════════ CALENDARIO ══════════ -->
@@ -657,14 +679,14 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
   <!-- ══════════ DIRECCIÓN ══════════ -->
   <section class="screen" id="scr-dir">
     <div class="topbar">
-      <img class="logo logo-img" alt="logo">
-      <div><div class="tit amar" style="font-weight:700">👁️ Dirección</div>
-        <div class="sub">El ojo que todo lo ve</div></div>
+      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+      <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
+        <div class="tit amar" style="font-weight:700">👁️ Dirección</div>
+        <div class="sub">El ojo que todo lo ve ▾</div></div>
       <div class="grow"></div>
       <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
       <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
-      <button class="btn s mini" onclick="salirASucursales()">Salir</button>
     </div>
     <div class="tabs" id="dir-tabs">
       <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>

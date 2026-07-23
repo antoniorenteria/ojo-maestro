@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.7';
+const VERSION = '2.8';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -634,7 +634,7 @@ async function llamarBackend(payload) {
    Dirección. Para volver a activar alguno, pon su valor en true. */
 const NOTIFICAR_CORREO = {
   entrada: true, salida: true, cierre: true, inventario: true, revision: true,
-  evidencia: false, observacion: false, gasto: false
+  evidencia: false, observacion: false, gasto: true
 };
 function notificar(asunto, cuerpo, tipo) {
   // todo queda SIEMPRE en la bitácora local y en la hoja de registros
@@ -1425,10 +1425,12 @@ async function cerrarElDia() {
   const fecha = hoyISO();
   // el dinero se confirma a la vista: es el dato del que cuelga todo lo demás
   const faltan = REGISTROS.filter(r => !registroListo(r)).length;
+  const sinGastos = !gastosDe(fecha, fecha, sucursalActual).length;
   if (!confirm('Vas a cerrar el día en ' + s.nombre + ':\n\n' +
     'Ventas: ' + fmt$(ventas) + '\nCaja de dinero: ' + fmt$(caja) +
     '\nResponsable: ' + p.nombre +
     (faltan ? '\n\n⚠️ Quedan ' + faltan + ' registro(s) sin evidencia.' : '') +
+    (sinGastos ? '\n\n💸 Hoy NO se registró ningún gasto. Si hubo compras, captúralas en «Gastos y compras» antes de cerrar.' : '') +
     '\n\nSe envía UNA sola vez al día. ¿Los montos están bien?')) return;
   // el avance del cierre son las acciones del día
   const acts = tareasDelDia();
@@ -1628,12 +1630,18 @@ const gastosVivos = () => db.gastos.filter(g => !g.del);
 const gastosDe = (desde, hasta, sid) => gastosVivos().filter(g =>
   g.fecha >= desde && g.fecha <= hasta && (!sid || g.sucursalId === sid));
 
-function irGastos() { ir('scr-gastos'); }
+let gastoEditando = null;   // id del gasto en edición
+let gastoFoto = '';         // foto del ticket en captura (data: o URL de Drive)
+function irGastos() { gastoEditando = null; gastoFoto = ''; ir('scr-gastos'); }
 function renderGastos() {
-  opcionesPersonal($('gas-persona'), true);
-  if (!$('gas-persona').value) opcionesPersonal($('gas-persona'), false);
+  // TODAS las personas del panel de trabajadores, no solo las que están en turno
+  const sel = $('gas-persona'), prev = sel.value;
+  sel.innerHTML = db.personal.filter(p => p.activo && !p.del)
+    .map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('');
+  if (prev) sel.value = prev;
   if (!$('gas-cat').options.length)
     $('gas-cat').innerHTML = CAT_GASTO.map(([v, n]) => '<option value="' + v + '">' + n + '</option>').join('');
+  pintarFotoGasto();
   const hoy = hoyISO();
   const delDia = gastosDe(hoy, hoy, sucursalActual);
   const mes = gastosDe(hoy.slice(0, 8) + '01', hoy, sucursalActual);
@@ -1643,22 +1651,61 @@ function renderGastos() {
     '<div class="stat rojo"><div class="v">' + fmt$(totDia) + '</div><div class="l">gastado hoy</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(totMes) + '</div><div class="l">en lo que va del mes</div></div>' +
     '<div class="stat"><div class="v">' + delDia.length + '</div><div class="l">movimientos de hoy</div></div>';
-  $('gas-lista').innerHTML = delDia.length
-    ? delDia.map(g => '<div class="item-linea">' + avatarPersona(g.personalId) +
+  // búsqueda: por concepto o por nota, en los gastos de hoy
+  const q = ($('gas-buscar') ? $('gas-buscar').value : '').trim().toLowerCase();
+  const lista = q ? delDia.filter(g => (g.concepto + ' ' + (g.nota || '')).toLowerCase().includes(q)) : delDia;
+  $('gas-lista').innerHTML = lista.length
+    ? lista.map(g => '<div class="item-linea">' + avatarPersona(g.personalId) +
       '<div class="grow"><b>' + fmt$(g.monto) + '</b> — ' + esc(g.concepto) +
       '<div class="mini muted">' + esc(nombreCat(g.categoria)) + ' · ' + fmtHora(g.ts) +
       (g.nota ? ' · ' + esc(g.nota) : '') + '</div></div>' +
+      (g.foto ? '<img class="reg-thumb" src="' + fotoURL(g.foto) + '" onclick="verFoto2(\'' + esc(fotoURL(g.foto)) + '\')" loading="lazy">' : '') +
+      '<button class="btn s mini" onclick="editarGasto(\'' + g.id + '\')">✏️</button>' +
       '<button class="btn s mini" onclick="borrarGasto(\'' + g.id + '\')">🗑️</button></div>').join('')
-    : '<p class="muted mini">Aún no hay gastos capturados hoy.</p>';
+    : (q ? '<p class="muted mini">Nada coincide con «' + esc(q) + '».</p>'
+      : '<p class="muted mini">Aún no hay gastos capturados hoy.</p>');
 }
-function registrarGasto() {
+/* ---- foto del ticket ---- */
+function tomarFotoGasto(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  comprimirFoto(f, dataUrl => { gastoFoto = dataUrl; pintarFotoGasto(); });
+  input.value = '';
+}
+function pintarFotoGasto() {
+  const prev = $('gas-foto-prev'), tx = $('gas-foto-tx'), quitar = $('gas-foto-quitar');
+  if (!prev) return;
+  if (gastoFoto) { prev.src = fotoURL(gastoFoto); prev.style.display = ''; quitar.style.display = ''; tx.textContent = 'Cambiar foto'; }
+  else { prev.style.display = 'none'; quitar.style.display = 'none'; tx.textContent = 'Tomar foto'; }
+}
+function quitarFotoGasto() { gastoFoto = ''; pintarFotoGasto(); }
+function verFotoGasto() { if (gastoFoto) verFoto2(fotoURL(gastoFoto)); }
+function verFoto2(src) { abrirModal('<img src="' + src + '" style="width:100%;border-radius:12px">' +
+  '<button class="btn s" style="margin-top:10px" onclick="cerrarModal()">Cerrar</button>'); }
+
+async function registrarGasto() { return unaVez('gasto', guardarGasto); }
+async function guardarGasto() {
   const monto = Number($('gas-monto').value);
   if (!monto || monto <= 0) return toast('Captura cuánto se gastó 💸');
   const concepto = $('gas-concepto').value.trim();
   if (!concepto) return toast('¿En qué se gastó?');
   const p = per($('gas-persona').value);
   if (!p) return toast('Indica quién lo compró 👤');
-  // mismo criterio que en propinas: casi siempre es doble toque, no dos compras
+  const s = suc(sucursalActual);
+  // sube la foto del ticket a Drive si es nueva (data:)
+  let foto = gastoFoto;
+  if (foto && foto.startsWith('data:')) {
+    toast('⬆️ Subiendo ticket…');
+    foto = await subirFotoDrive(foto, { tipo: 'gasto', sucursal: s?.nombre, fecha: hoyISO() });
+  }
+  if (gastoEditando) {
+    // ---- EDICIÓN ----
+    const g = gastosVivos().find(x => x.id === gastoEditando);
+    if (!g) { cancelarEdicionGasto(); return toast('El gasto ya no existe'); }
+    Object.assign(g, { personalId: p.id, categoria: $('gas-cat').value, concepto, monto, nota: $('gas-nota').value.trim(), foto, ts: Date.now() });
+    guardarDB(); cancelarEdicionGasto(); renderGastos();
+    return toast('✏️ Gasto actualizado');
+  }
+  // ---- NUEVO ----
   const repe = gastosVivos().find(g => g.monto === monto && g.concepto === concepto &&
     g.sucursalId === sucursalActual && Date.now() - g.ts < 120000);
   if (repe && !confirm('Hace un momento ya registraste ' + fmt$(monto) + ' de "' + concepto +
@@ -1666,20 +1713,43 @@ function registrarGasto() {
   db.gastos.unshift({
     id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
     personalId: p.id, categoria: $('gas-cat').value, concepto, monto,
-    nota: $('gas-nota').value.trim()
+    nota: $('gas-nota').value.trim(), foto
   });
   guardarDB();
-  notificar('💸 Gasto — ' + (suc(sucursalActual)?.nombre || '') + ' · ' + fmt$(monto),
-    p.nombre + ' registró un gasto de ' + fmt$(monto) + ' en ' + (suc(sucursalActual)?.nombre || '') +
-    '\nConcepto: ' + concepto + '\nCategoría: ' + nombreCat($('gas-cat').value), 'gasto');
+  notificar('💸 Gasto — ' + (s?.nombre || '') + ' · ' + fmt$(monto),
+    p.nombre + ' registró un gasto de ' + fmt$(monto) + ' en ' + (s?.nombre || '') +
+    '\nConcepto: ' + concepto + '\nCategoría: ' + nombreCat($('gas-cat').value) +
+    (foto && foto.startsWith('http') ? '\nTicket: ' + foto : ''), 'gasto');
   $('gas-monto').value = ''; $('gas-concepto').value = ''; $('gas-nota').value = '';
+  gastoFoto = '';
   renderGastos();
   toast('💸 Gasto de ' + fmt$(monto) + ' registrado');
+}
+function editarGasto(id) {
+  const g = gastosVivos().find(x => x.id === id); if (!g) return;
+  gastoEditando = id; gastoFoto = g.foto || '';
+  renderGastos();
+  $('gas-monto').value = g.monto; $('gas-concepto').value = g.concepto;
+  $('gas-cat').value = g.categoria; $('gas-persona').value = g.personalId;
+  $('gas-nota').value = g.nota || '';
+  $('gas-titulo').textContent = '✏️ Editar gasto';
+  $('gas-guardar').innerHTML = '💾 Guardar cambios';
+  $('gas-cancelar').style.display = '';
+  $('scr-gastos').scrollIntoView({ behavior: 'smooth' });
+}
+function cancelarEdicionGasto() {
+  gastoEditando = null; gastoFoto = '';
+  $('gas-monto').value = ''; $('gas-concepto').value = ''; $('gas-nota').value = '';
+  $('gas-titulo').textContent = 'Registrar un gasto';
+  $('gas-guardar').innerHTML = '💸 Registrar gasto';
+  $('gas-cancelar').style.display = 'none';
+  pintarFotoGasto();
 }
 function borrarGasto(id) {
   const g = gastosVivos().find(x => x.id === id); if (!g) return;
   if (!confirm('¿Quitar el gasto de ' + fmt$(g.monto) + ' (' + g.concepto + ')?')) return;
   g.del = true; g.ts = Date.now();
+  if (gastoEditando === id) cancelarEdicionGasto();
   guardarDB(); renderGastos(); toast('🗑️ Gasto quitado');
 }
 
@@ -2982,16 +3052,23 @@ function dirGastos() {
       '<td class="num">' + fmt$(x.gs) + '</td><td class="num"><b class="amar">' + fmt$(x.vs - x.gs) + '</b></td></tr>').join('') +
     '</table></div></div>';
   // detalle
-  html += '<div class="card"><h3>Detalle de gastos</h3><div class="tabla-wrap"><table>' +
+  const q = (gastoBuscarDir || '').trim().toLowerCase();
+  const filtrados = q ? gastos.filter(g => (g.concepto + ' ' + (g.nota || '') + ' ' + (per(g.personalId)?.nombre || '') + ' ' + nombreCat(g.categoria)).toLowerCase().includes(q)) : gastos;
+  html += '<div class="card"><h3>Detalle de gastos</h3>' +
+    '<input id="gas-buscar-dir" placeholder="🔍 Buscar en concepto, nota, quién o categoría…" value="' + esc(gastoBuscarDir || '') +
+    '" oninput="gastoBuscarDir=this.value;renderDireccion();setTimeout(()=>{var b=$(\'gas-buscar-dir\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin-bottom:8px">' +
+    '<div class="tabla-wrap"><table>' +
     '<tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>Concepto</th><th>Categoría</th><th class="num">Monto</th><th></th></tr>' +
-    (gastos.map(g => '<tr><td>' + fmtFecha(g.fecha) + '</td><td>' + esc(suc(g.sucursalId)?.nombre || '') + '</td><td>' +
+    (filtrados.map(g => '<tr><td>' + fmtFecha(g.fecha) + '</td><td>' + esc(suc(g.sucursalId)?.nombre || '') + '</td><td>' +
       puntoPersona(g.personalId) + esc(per(g.personalId)?.nombre || '—') + '</td><td>' + esc(g.concepto) +
+      (g.foto ? ' <span title="Con foto del ticket" onclick="verFoto2(\'' + esc(fotoURL(g.foto)) + '\')" style="cursor:pointer">📎</span>' : '') +
       '</td><td class="mini">' + esc(nombreCat(g.categoria)) + '</td><td class="num">' + fmt$(g.monto) +
       '</td><td><button class="btn s mini" onclick="borrarGastoDir(\'' + g.id + '\')">🗑️</button></td></tr>').join('')
-      || '<tr><td colspan="7" class="muted">Sin gastos este mes.</td></tr>') +
+      || '<tr><td colspan="7" class="muted">' + (q ? 'Nada coincide con «' + esc(q) + '».' : 'Sin gastos este mes.') + '</td></tr>') +
     '</table></div></div>';
   return html;
 }
+let gastoBuscarDir = '';
 function borrarGastoDir(id) {
   const g = gastosVivos().find(x => x.id === id); if (!g) return;
   if (!confirm('¿Quitar el gasto de ' + fmt$(g.monto) + ' (' + g.concepto + ')?')) return;

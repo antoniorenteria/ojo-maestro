@@ -558,18 +558,36 @@ function revisarCierresDelDia() {
   var db = leerDB();
   if (!db || !db.sucursales) return;
   var hoy = fechaHoyMX();
+  var activas = (db.sucursales || []).filter(function (s) { return s.activa && !s.del; });
   var cierres = (db.cierres || []).filter(function (c) { return !c.del && c.fecha === hoy; });
-  var faltan = (db.sucursales || []).filter(function (s) {
-    if (!s.activa || s.del) return false;
+  var gastos = (db.gastos || []).filter(function (g) { return !g.del && g.fecha === hoy; });
+  var faltanCierre = activas.filter(function (s) {
     return !cierres.some(function (c) { return c.sucursalId === s.id; });
   });
-  if (!faltan.length) return;   // todo cerrado: no se molesta a nadie
-  var nombres = faltan.map(function (s) { return s.nombre; }).join(', ');
-  var cuerpo = 'Ya paso la hora de corte y estas sucursales NO han enviado su cierre de hoy (' + hoy + '):\n\n' +
-    faltan.map(function (s) { return '- ' + s.nombre; }).join('\n') +
-    '\n\nSin cierre no quedan registradas las ventas del dia ni el checklist verificable.' +
-    '\nEntra a El Ojo Maestro > Direccion > Hoy para verlo.';
-  accionNotificar('Falta el cierre de ' + nombres, cuerpo);
+  // recordatorio de gastos: sucursal que SI cerro pero no registro ningun gasto
+  var sinGastos = activas.filter(function (s) {
+    var cerro = cierres.some(function (c) { return c.sucursalId === s.id; });
+    var tieneGastos = gastos.some(function (g) { return g.sucursalId === s.id; });
+    return cerro && !tieneGastos;
+  });
+  if (!faltanCierre.length && !sinGastos.length) return;   // todo en orden
+  var cuerpo = '', asunto = '';
+  if (faltanCierre.length) {
+    var nc = faltanCierre.map(function (s) { return s.nombre; }).join(', ');
+    asunto = 'Falta el cierre de ' + nc;
+    cuerpo += 'Ya paso la hora de corte y estas sucursales NO han enviado su cierre de hoy (' + hoy + '):\n\n' +
+      faltanCierre.map(function (s) { return '- ' + s.nombre; }).join('\n') +
+      '\n\nSin cierre no quedan registradas las ventas del dia ni el checklist verificable.\n';
+  }
+  if (sinGastos.length) {
+    var ng = sinGastos.map(function (s) { return s.nombre; }).join(', ');
+    asunto = asunto ? (asunto + ' · sin gastos: ' + ng) : ('Recordatorio: registrar gastos de ' + ng);
+    cuerpo += (cuerpo ? '\n' : '') + 'Recordatorio: hoy (' + hoy + ') NO se registro ningun gasto en:\n\n' +
+      sinGastos.map(function (s) { return '- ' + s.nombre; }).join('\n') +
+      '\n\nSi hubo compras, capturalas en El Ojo Maestro > Gastos y compras para ver la utilidad real.\n';
+  }
+  cuerpo += '\nEntra a El Ojo Maestro > Direccion > Hoy para verlo.';
+  accionNotificar(asunto, cuerpo);
 }
 function activarAvisoDeCierre() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
