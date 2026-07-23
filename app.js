@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '1.7';
+const VERSION = '1.8';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1516,8 +1516,7 @@ function renderCalendario() {
     '<button class="btn p" onclick="calendarioPNG()">📤 Enviar PNG</button></div>';
   if (calEdit) html += '<button class="btn p gigante" style="margin-top:10px" onclick="calRapido()">⚡ Llenado rápido</button>' +
     '<div class="fila" style="margin-top:10px;flex-wrap:wrap">' +
-    '<button class="btn s mini" onclick="calRepetirSemana()">🔁 Repetir semana en el mes</button>' +
-    '<button class="btn s mini" onclick="calCopiarSemana()">📋 Copiar semana anterior</button>' +
+    '<button class="btn s mini" onclick="calCopiar()">📋 Copiar una semana a otras</button>' +
     '<button class="btn s mini" onclick="calVaciarMes()">🗑️ Vaciar el mes</button></div>';
   html += '</div>';
   // PDF de referencia
@@ -1576,12 +1575,22 @@ function modalDiaCal(fecha) {
       : '<p class="muted mini">Sin turnos este día.</p>') +
     '<div class="sep"></div><label>Agregar turno</label>' +
     '<select id="cal-per">' + gente.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('') + '</select>' +
+    // atajos: los horarios de siempre a un toque; abajo siguen los manuales
+    '<div class="fila" style="flex-wrap:wrap;gap:5px;margin-top:10px">' + CAL_HORARIOS.map(([a, b]) =>
+      '<button class="btn s mini" onclick="calFijarHoras(' + a + ',' + b + ')">' +
+      hCorta(a) + '-' + hCorta(b) + '</button>').join('') + '</div>' +
     '<div class="fila" style="margin-top:8px">' +
     '<div style="flex:1"><label class="mini">Entra</label><select id="cal-ini">' + horas.map(h => opt(h, 13)).join('') + '</select></div>' +
     '<div style="flex:1"><label class="mini">Sale</label><select id="cal-fin">' + horas.map(h => opt(h, 19)).join('') + '</select></div>' +
     '</div>' +
     '<button class="btn p" style="margin-top:12px" onclick="calAgregar(\'' + fecha + '\')">➕ Agregar</button>' +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
+}
+/* los atajos de horario llenan los dos selectores de golpe */
+function calFijarHoras(a, b) {
+  if ($('cal-ini')) $('cal-ini').value = a;
+  if ($('cal-fin')) $('cal-fin').value = b;
+  toast('⏰ Horario ' + hCorta(a) + '-' + hCorta(b) + ' · elige a quién y dale Agregar');
 }
 function calAgregar(fecha) {
   const pid = $('cal-per').value, ini = Number($('cal-ini').value), fin = Number($('cal-fin').value);
@@ -1733,58 +1742,125 @@ function rapGuardar() {
   guardarDB(); cerrarModal(); renderCalendario();
   toast('⚡ ' + nuevos.length + ' turnos agregados a ' + MESES[Number(calMes.split('-')[1]) - 1]);
 }
-/* toma la primera semana ya armada y la repite en todo el mes */
-function calRepetirSemana() {
-  const semanas = semanasDelMes(calMes);
+/* ---------- copiar una semana a otras ----------
+   Antes había dos botones que ADIVINABAN el origen y el destino, y cuando la
+   suposición no se cumplía solo respondían "no hay semana vacía" o "ya tienen
+   ese patrón", sin decir qué hacer. Ahora se elige a mano: de cuál semana, a
+   cuáles, y si se reemplaza o se suma. */
+let copOrigen = null, copDestinos = [], copReemplazar = false;
+
+function semanasInfo() {
   const [, m] = calMes.split('-').map(Number);
-  const origen = semanas.find(sem => sem.some(f => f.getMonth() === m - 1 && calTurnosDe(isoLocal(f), calSuc).length));
-  if (!origen) return toast('Arma una semana y yo la repito en el mes');
+  return semanasDelMes(calMes).map((sem, i) => {
+    const dias = sem.filter(f => f.getMonth() === m - 1);
+    const n = dias.reduce((a, f) => a + calTurnosDe(isoLocal(f), calSuc).length, 0);
+    return {
+      i, sem, turnos: n,
+      eti: dias.length ? (dias[0].getDate() + '–' + dias[dias.length - 1].getDate()) : '',
+      hay: dias.length > 0
+    };
+  }).filter(x => x.hay);
+}
+/* qué pasaría al aplicar, sin tocar nada */
+function calCopiaPlan() {
+  const [, m] = calMes.split('-').map(Number);
+  const semanas = semanasDelMes(calMes);
+  const org = semanas[copOrigen];
+  const plan = { agregar: 0, quitar: 0 };
+  if (!org) return plan;
+  copDestinos.forEach(di => {
+    const dst = semanas[di]; if (!dst) return;
+    dst.forEach((f, i) => {
+      if (f.getMonth() !== m - 1) return;
+      const existentes = calTurnosDe(isoLocal(f), calSuc);
+      if (copReemplazar) plan.quitar += existentes.length;
+      calTurnosDe(isoLocal(org[i]), calSuc).forEach(t => {
+        if (!copReemplazar && existentes.some(x => x.personalId === t.personalId && x.ini === t.ini && x.fin === t.fin)) return;
+        plan.agregar++;
+      });
+    });
+  });
+  return plan;
+}
+function calCopiar() {
+  if (!calEdit) return toast('Toca ✏️ Modificar primero');
+  const info = semanasInfo();
+  if (info.length < 2) return toast('Este mes no tiene dos semanas que comparar');
+  // por defecto: la semana con más turnos como origen, el resto como destino
+  if (copOrigen === null || !info.some(x => x.i === copOrigen)) {
+    copOrigen = info.reduce((a, b) => (b.turnos > a.turnos ? b : a), info[0]).i;
+    copDestinos = [];
+  }
+  copDestinos = copDestinos.filter(d => d !== copOrigen && info.some(x => x.i === d));
+  const plan = calCopiaPlan();
+  const org = info.find(x => x.i === copOrigen);
+  abrirModal('<h3>📋 Copiar una semana</h3>' +
+    '<p class="mini muted">Elige de qué semana copiar los turnos y a cuáles pegarlos. ' +
+    'Se respeta el día: lo del lunes cae en lunes.</p>' +
+    '<label>Copiar DE esta semana</label>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:6px">' + info.map(x =>
+      '<button class="btn ' + (x.i === copOrigen ? 'p' : 's') + ' mini" onclick="copSetOrigen(' + x.i + ')">' +
+      x.eti + ' <span class="mini muted">(' + x.turnos + ')</span></button>').join('') + '</div>' +
+    (org && !org.turnos ? '<p class="mini" style="color:var(--aviso);margin:8px 0 0">Esa semana está vacía: elige una que tenga turnos.</p>' : '') +
+    '<label style="margin-top:14px">Pegar EN estas semanas</label>' +
+    '<div class="fila" style="flex-wrap:wrap;gap:6px">' + info.filter(x => x.i !== copOrigen).map(x =>
+      '<button class="btn ' + (copDestinos.includes(x.i) ? 'p' : 's') + ' mini" onclick="copDestino(' + x.i + ')">' +
+      x.eti + ' <span class="mini muted">(' + x.turnos + ')</span></button>').join('') +
+    '<button class="btn s mini" onclick="copTodas()">Todas</button></div>' +
+    '<div class="sep"></div>' +
+    '<div class="seg" style="margin:0">' +
+    '<button class="' + (!copReemplazar ? 'on' : '') + '" onclick="copReemplazar=false;calCopiar()">➕ Sumar</button>' +
+    '<button class="' + (copReemplazar ? 'on' : '') + '" onclick="copReemplazar=true;calCopiar()">♻️ Reemplazar</button></div>' +
+    '<p class="mini muted" style="margin-top:6px">' + (copReemplazar
+      ? 'Reemplazar: borra lo que haya en esas semanas y deja solo la copia.'
+      : 'Sumar: conserva lo que ya hay y agrega lo que falte, sin repetir.') + '</p>' +
+    '<div class="mini" style="margin-top:12px">Resultado: <b class="amar">+' + plan.agregar + ' turnos</b>' +
+    (plan.quitar ? ' · <b style="color:var(--alerta)">−' + plan.quitar + ' que se quitan</b>' : '') + '</div>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="calAplicarCopia()">📋 Copiar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>');
+}
+function copSetOrigen(i) { copOrigen = i; copDestinos = copDestinos.filter(d => d !== i); calCopiar(); }
+function copDestino(i) {
+  copDestinos = copDestinos.includes(i) ? copDestinos.filter(d => d !== i) : copDestinos.concat(i);
+  calCopiar();
+}
+function copTodas() {
+  const otras = semanasInfo().map(x => x.i).filter(i => i !== copOrigen);
+  copDestinos = copDestinos.length === otras.length ? [] : otras;
+  calCopiar();
+}
+function calAplicarCopia() {
+  const [, m] = calMes.split('-').map(Number);
+  const semanas = semanasDelMes(calMes);
+  const org = semanas[copOrigen];
+  if (!org) return toast('Elige la semana de origen');
+  if (!copDestinos.length) return toast('Elige a qué semana(s) copiarla');
+  const plan = calCopiaPlan();
+  if (!plan.agregar && !plan.quitar) return toast('Esas semanas ya están igual que la de origen');
+  if (copReemplazar && plan.quitar &&
+    !confirm('Se van a quitar ' + plan.quitar + ' turnos de las semanas destino y dejar la copia. ¿Continuar?')) return;
+  // se lee el origen ANTES de tocar nada, por si algo se traslapa
+  const patron = org.map(f => calTurnosDe(isoLocal(f), calSuc).map(t => ({ pid: t.personalId, ini: t.ini, fin: t.fin })));
   let n = 0;
-  semanas.forEach(sem => {
-    if (sem === origen) return;
-    sem.forEach((f, i) => {
+  copDestinos.forEach(di => {
+    const dst = semanas[di]; if (!dst) return;
+    dst.forEach((f, i) => {
       if (f.getMonth() !== m - 1) return;
       const iso = isoLocal(f);
-      calTurnosDe(isoLocal(origen[i]), calSuc).forEach(t => {
-        if (db.calendario.some(x => !x.del && x.fecha === iso && x.sucursalId === calSuc &&
-          x.personalId === t.personalId && x.ini === t.ini && x.fin === t.fin)) return;
+      if (copReemplazar) calTurnosDe(iso, calSuc).forEach(t => { t.del = true; t.ts = Date.now(); });
+      patron[i].forEach(t => {
+        if (!copReemplazar && db.calendario.some(x => !x.del && x.fecha === iso && x.sucursalId === calSuc &&
+          x.personalId === t.pid && x.ini === t.ini && x.fin === t.fin)) return;
         db.calendario.push({
           id: uid(), ts: Date.now(), fecha: iso, sucursalId: calSuc,
-          personalId: t.personalId, ini: t.ini, fin: t.fin
+          personalId: t.pid, ini: t.ini, fin: t.fin
         });
         n++;
       });
     });
   });
-  if (!n) return toast('Las demás semanas ya tienen ese patrón');
-  guardarDB(); renderCalendario();
-  toast('🔁 ' + n + ' turnos repetidos en el mes');
-}
-/* copia la última semana con turnos a la siguiente vacía: arma el mes en segundos */
-function calCopiarSemana() {
-  const semanas = semanasDelMes(calMes);
-  let origen = -1, destino = -1;
-  semanas.forEach((sem, i) => {
-    const con = sem.some(f => calTurnosDe(isoLocal(f), calSuc).length);
-    if (con) origen = i;
-    else if (origen >= 0 && destino < 0) destino = i;
-  });
-  if (origen < 0) return toast('Primero arma una semana para poder copiarla');
-  if (destino < 0) return toast('No hay ninguna semana vacía adelante');
-  let n = 0;
-  semanas[origen].forEach((f, i) => {
-    const dst = semanas[destino][i];
-    if (dst.getMonth() !== Number(calMes.split('-')[1]) - 1) return;
-    calTurnosDe(isoLocal(f), calSuc).forEach(t => {
-      db.calendario.push({
-        id: uid(), ts: Date.now(), fecha: isoLocal(dst), sucursalId: calSuc,
-        personalId: t.personalId, ini: t.ini, fin: t.fin
-      });
-      n++;
-    });
-  });
-  guardarDB(); renderCalendario();
-  toast('📋 ' + n + ' turnos copiados a la semana del ' + fmtFecha(isoLocal(semanas[destino][0])));
+  guardarDB(); cerrarModal(); renderCalendario();
+  toast('📋 ' + n + ' turnos copiados a ' + copDestinos.length + ' semana' + (copDestinos.length === 1 ? '' : 's'));
 }
 function calVaciarMes() {
   const del = db.calendario.filter(x => !x.del && x.fecha.startsWith(calMes) && x.sucursalId === calSuc);
