@@ -127,7 +127,7 @@ function mezclar(a, b) {
   });
   db.catTs = Math.max(a.catTs || 0, b.catTs || 0);
 
-  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario'].forEach(function (k) {
+  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario', 'gastos'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
     var baseLista = (base[k] || []).map(function (x) {
@@ -322,4 +322,39 @@ function activarRespaldoAutomatico() {
     if (t.getHandlerFunction() === 'respaldoNocturno') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('respaldoNocturno').timeBased().everyDays(1).atHour(23).create();
+}
+
+/* ----------------------------------------------------------------
+   AVISO DE CIERRE FALTANTE
+   Revisa si alguna sucursal no mando su cierre del dia y avisa por
+   correo (y WhatsApp si esta configurado). Corre solo, sin que nadie
+   tenga que abrir la app: ese era justo el punto.
+   Ejecuta activarAvisoDeCierre() UNA VEZ para programarlo.
+---------------------------------------------------------------- */
+function fechaHoyMX() {
+  return Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+}
+function revisarCierresDelDia() {
+  var db = leerDB();
+  if (!db || !db.sucursales) return;
+  var hoy = fechaHoyMX();
+  var cierres = (db.cierres || []).filter(function (c) { return !c.del && c.fecha === hoy; });
+  var faltan = (db.sucursales || []).filter(function (s) {
+    if (!s.activa || s.del) return false;
+    return !cierres.some(function (c) { return c.sucursalId === s.id; });
+  });
+  if (!faltan.length) return;   // todo cerrado: no se molesta a nadie
+  var nombres = faltan.map(function (s) { return s.nombre; }).join(', ');
+  var cuerpo = 'Ya paso la hora de corte y estas sucursales NO han enviado su cierre de hoy (' + hoy + '):\n\n' +
+    faltan.map(function (s) { return '- ' + s.nombre; }).join('\n') +
+    '\n\nSin cierre no quedan registradas las ventas del dia ni el checklist verificable.' +
+    '\nEntra a El Ojo Maestro > Direccion > Hoy para verlo.';
+  accionNotificar('Falta el cierre de ' + nombres, cuerpo);
+}
+function activarAvisoDeCierre() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'revisarCierresDelDia') ScriptApp.deleteTrigger(t);
+  });
+  // 23:30 hora del servidor: despues del cierre normal y antes del respaldo
+  ScriptApp.newTrigger('revisarCierresDelDia').timeBased().everyDays(1).atHour(23).nearMinute(30).create();
 }

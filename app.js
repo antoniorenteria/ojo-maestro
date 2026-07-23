@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.5';
+const VERSION = '2.6';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -346,9 +346,19 @@ function seedDB() {
     ],
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
-    calendario: [],
+    calendario: [], gastos: [],
   };
 }
+/* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
+const CAT_GASTO = [
+  ['insumos', '🥩 Insumos y mercancía'],
+  ['limpieza', '🧽 Limpieza'],
+  ['manten', '🔧 Mantenimiento'],
+  ['servicios', '💡 Servicios (luz, agua, gas, internet)'],
+  ['empaque', '📦 Empaque y desechables'],
+  ['otros', '📌 Otros']
+];
+const nombreCat = c => (CAT_GASTO.find(x => x[0] === c) || ['', c])[1];
 /* productos que se cuentan por pieza desde v1.5 (antes iban por paquete) */
 const A_PIEZA = ['Tapa Plana', 'Tapa domo', 'Vaso Soufflé c/tapa'];
 function migrarDB() {
@@ -358,6 +368,7 @@ function migrarDB() {
   if (!db.revisiones) db.revisiones = [];
   if (!db.preparaciones) db.preparaciones = [];
   if (!db.calendario) db.calendario = [];
+  if (!db.gastos) db.gastos = [];
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
@@ -623,7 +634,7 @@ async function llamarBackend(payload) {
    Dirección. Para volver a activar alguno, pon su valor en true. */
 const NOTIFICAR_CORREO = {
   entrada: true, salida: true, cierre: true, inventario: true, revision: true,
-  evidencia: false, observacion: false
+  evidencia: false, observacion: false, gasto: false
 };
 function notificar(asunto, cuerpo, tipo) {
   // todo queda SIEMPRE en la bitácora local y en la hoja de registros
@@ -733,6 +744,7 @@ function renderPantalla(id) {
   if (id === 'scr-asis') renderAsistencia();
   if (id === 'scr-prep') renderPreparaciones();
   if (id === 'scr-proto') renderProtocolos();
+  if (id === 'scr-gastos') renderGastos();
   if (id === 'scr-cal') renderCalendario();
   if (id === 'scr-dir') renderDireccion();
 }
@@ -1553,6 +1565,69 @@ function verificarRegistro(rid, fecha, sid) {
   guardarDB(); renderRevision();
 }
 /* notas y observaciones de los colaboradores (se muestra en Supervisión y Dirección) */
+/* ═══════════ GASTOS Y COMPRAS ═══════════
+   Sin esto solo se veía lo que entra. Con esto Dirección ve lo que queda:
+   utilidad = ventas − gastos. Se captura desde la sucursal, en el momento,
+   que es cuando se tiene el ticket en la mano. */
+const gastosVivos = () => db.gastos.filter(g => !g.del);
+const gastosDe = (desde, hasta, sid) => gastosVivos().filter(g =>
+  g.fecha >= desde && g.fecha <= hasta && (!sid || g.sucursalId === sid));
+
+function irGastos() { ir('scr-gastos'); }
+function renderGastos() {
+  opcionesPersonal($('gas-persona'), true);
+  if (!$('gas-persona').value) opcionesPersonal($('gas-persona'), false);
+  if (!$('gas-cat').options.length)
+    $('gas-cat').innerHTML = CAT_GASTO.map(([v, n]) => '<option value="' + v + '">' + n + '</option>').join('');
+  const hoy = hoyISO();
+  const delDia = gastosDe(hoy, hoy, sucursalActual);
+  const mes = gastosDe(hoy.slice(0, 8) + '01', hoy, sucursalActual);
+  const totDia = delDia.reduce((a, g) => a + g.monto, 0);
+  const totMes = mes.reduce((a, g) => a + g.monto, 0);
+  $('gas-resumen').innerHTML =
+    '<div class="stat rojo"><div class="v">' + fmt$(totDia) + '</div><div class="l">gastado hoy</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(totMes) + '</div><div class="l">en lo que va del mes</div></div>' +
+    '<div class="stat"><div class="v">' + delDia.length + '</div><div class="l">movimientos de hoy</div></div>';
+  $('gas-lista').innerHTML = delDia.length
+    ? delDia.map(g => '<div class="item-linea">' + avatarPersona(g.personalId) +
+      '<div class="grow"><b>' + fmt$(g.monto) + '</b> — ' + esc(g.concepto) +
+      '<div class="mini muted">' + esc(nombreCat(g.categoria)) + ' · ' + fmtHora(g.ts) +
+      (g.nota ? ' · ' + esc(g.nota) : '') + '</div></div>' +
+      '<button class="btn s mini" onclick="borrarGasto(\'' + g.id + '\')">🗑️</button></div>').join('')
+    : '<p class="muted mini">Aún no hay gastos capturados hoy.</p>';
+}
+function registrarGasto() {
+  const monto = Number($('gas-monto').value);
+  if (!monto || monto <= 0) return toast('Captura cuánto se gastó 💸');
+  const concepto = $('gas-concepto').value.trim();
+  if (!concepto) return toast('¿En qué se gastó?');
+  const p = per($('gas-persona').value);
+  if (!p) return toast('Indica quién lo compró 👤');
+  // mismo criterio que en propinas: casi siempre es doble toque, no dos compras
+  const repe = gastosVivos().find(g => g.monto === monto && g.concepto === concepto &&
+    g.sucursalId === sucursalActual && Date.now() - g.ts < 120000);
+  if (repe && !confirm('Hace un momento ya registraste ' + fmt$(monto) + ' de "' + concepto +
+    '".\n¿Es otro gasto distinto?')) return;
+  db.gastos.unshift({
+    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
+    personalId: p.id, categoria: $('gas-cat').value, concepto, monto,
+    nota: $('gas-nota').value.trim()
+  });
+  guardarDB();
+  notificar('💸 Gasto — ' + (suc(sucursalActual)?.nombre || '') + ' · ' + fmt$(monto),
+    p.nombre + ' registró un gasto de ' + fmt$(monto) + ' en ' + (suc(sucursalActual)?.nombre || '') +
+    '\nConcepto: ' + concepto + '\nCategoría: ' + nombreCat($('gas-cat').value), 'gasto');
+  $('gas-monto').value = ''; $('gas-concepto').value = ''; $('gas-nota').value = '';
+  renderGastos();
+  toast('💸 Gasto de ' + fmt$(monto) + ' registrado');
+}
+function borrarGasto(id) {
+  const g = gastosVivos().find(x => x.id === id); if (!g) return;
+  if (!confirm('¿Quitar el gasto de ' + fmt$(g.monto) + ' (' + g.concepto + ')?')) return;
+  g.del = true; g.ts = Date.now();
+  guardarDB(); renderGastos(); toast('🗑️ Gasto quitado');
+}
+
 /* ═══════════ TAREAS A TODOIST ═══════════
    Se usa el enlace de "añadir tarea" de Todoist (todoist.com/add). Abre la app
    del teléfono con la tarea ya escrita y solo hay que confirmar.
@@ -2640,6 +2715,7 @@ function renderDireccion() {
   if (tabDir === 'hoy') c.innerHTML = dirHoy();
   if (tabDir === 'mes') c.innerHTML = dirMes();
   if (tabDir === 'semana') c.innerHTML = dirSemana();
+  if (tabDir === 'gastos') c.innerHTML = dirGastos();
   if (tabDir === 'nomina') c.innerHTML = dirNomina();
   if (tabDir === 'inv') c.innerHTML = dirInventarios();
   if (tabDir === 'evid') c.innerHTML = dirEvidencias();
@@ -2653,7 +2729,10 @@ function dirHoy() {
   const abiertos = turnosAbiertos();
   const tareasHoy = db.tareas.filter(x => x.fecha === hoy && x.done).length;
   const propHoyTot = propinasDe(hoy).reduce((a, x) => a + x.monto, 0);
-  let html = '<div class="grid c4">' +
+  /* ⚠️ Lo primero que se ve: qué sucursal no ha cerrado ya pasada la hora.
+     Antes esto solo se notaba si a alguien se le ocurría revisar. */
+  let html = tarjetaSinCerrar();
+  html += '<div class="grid c4">' +
     '<div class="stat verde"><div class="v">' + fmt$(ventasHoy) + '</div><div class="l">ventas de hoy</div></div>' +
     '<div class="stat"><div class="v">' + abiertos.length + '</div><div class="l">en turno ahora</div></div>' +
     '<div class="stat"><div class="v">' + tareasHoy + '</div><div class="l">tareas hechas hoy</div></div>' +
@@ -2762,6 +2841,115 @@ function exportarMesCSV() {
     c.ventas, c.caja, (c.hechos ?? '') + '/' + totalCierre(c), '"' + (c.novedades || '').replace(/"/g, "'") + '"'].join(',') + '\n');
   descargar('cierres-' + mesVista + '.csv', csv);
   toast('⬇️ CSV del mes descargado');
+}
+
+/* ---------- alerta de sucursal sin cerrar ----------
+   Se calcula igual aquí y en el backend: pasada la hora de corte, cualquier
+   sucursal activa sin cierre del día es una alerta. */
+function sucursalesSinCerrar(fecha) {
+  const f = fecha || hoyISO();
+  return db.sucursales.filter(s => s.activa && !s.del && !cierreDelDia(f, s.id));
+}
+function tarjetaSinCerrar() {
+  const corte = Number(db.config.horaCierre || 23);
+  const ahora = new Date();
+  const hoy = hoyISO();
+  const faltan = sucursalesSinCerrar(hoy);
+  if (!faltan.length) {
+    return '<div class="card"><div class="fila" style="align-items:center">' +
+      '<span class="badge ok">✅ al día</span>' +
+      '<span class="mini muted">Las dos sucursales ya enviaron su cierre de hoy.</span></div></div>';
+  }
+  const vencido = ahora.getHours() >= corte;
+  if (!vencido) {
+    return '<div class="card"><div class="fila" style="align-items:center">' +
+      '<span class="badge aviso">⏳ pendiente</span>' +
+      '<span class="mini muted">Falta el cierre de ' + faltan.map(s => esc(s.nombre)).join(' y ') +
+      '. Se espera antes de las ' + corte + ':00.</span></div></div>';
+  }
+  return '<div class="card amarilla"><div class="encabezado-seccion">' +
+    '<h3 style="margin:0;color:var(--alerta)">⛔ Sin cerrar pasada la hora</h3>' +
+    '<span class="badge comprar">' + faltan.length + '</span></div>' +
+    '<p class="mini">Ya pasaron las <b>' + corte + ':00</b> y ' +
+    (faltan.length > 1 ? 'estas sucursales no han enviado su cierre' : 'esta sucursal no ha enviado su cierre') +
+    ': <b>' + faltan.map(s => esc(s.nombre)).join(', ') + '</b>.</p>' +
+    '<p class="mini muted">Sin cierre no hay ventas del día ni checklist verificable. ' +
+    'Márcalo hoy mismo o quedará el hueco en el mes.</p>' +
+    '<div class="fila" style="margin-top:10px">' +
+    faltan.map(s => '<a class="btn s mini" target="_blank" href="' +
+      linkWhatsApp('👁️ *El Ojo Maestro*\nRecordatorio: falta enviar el cierre de hoy en ' + s.nombre +
+        ' (' + fmtFecha(hoy) + '). Por favor cárgalo antes de irte.') + '">📲 Recordar a ' + esc(s.nombre) + '</a>').join('') +
+    btnTarea('Revisar cierre faltante: ' + faltan.map(s => s.nombre).join(', '),
+      'El ' + fmtFecha(hoy) + ' no llegó el cierre de ' + faltan.map(s => s.nombre).join(', ') + '.') +
+    '</div></div>';
+}
+
+/* --- GASTOS DEL MES: lo que sale, y lo que de verdad queda --- */
+function dirGastos() {
+  const [y, m] = mesVista.split('-').map(Number);
+  const desde = mesVista + '-01', hasta = mesVista + '-31';
+  const gastos = gastosDe(desde, hasta);
+  const ventas = cierresVivos().filter(c => c.fecha.startsWith(mesVista)).reduce((a, c) => a + c.ventas, 0);
+  const total = gastos.reduce((a, g) => a + g.monto, 0);
+  const utilidad = ventas - total;
+  const margen = ventas ? Math.round(utilidad / ventas * 100) : 0;
+  let html = '<div class="encabezado-seccion"><h2 style="margin:0">💸 ' + MESES[m - 1] + ' ' + y + '</h2>' +
+    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarMes(-1)">←</button>' +
+    '<button class="btn s mini" onclick="cambiarMes(1)">→</button>' +
+    '<button class="btn s mini" onclick="exportarGastosCSV()">⬇️ CSV</button></div></div>';
+  html += '<div class="grid c3">' +
+    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas del mes</div></div>' +
+    '<div class="stat rojo"><div class="v">' + fmt$(total) + '</div><div class="l">gastos del mes</div></div>' +
+    '<div class="stat' + (utilidad >= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(utilidad) +
+    '</div><div class="l">queda ' + (ventas ? '· ' + margen + '%' : '') + '</div></div></div>';
+  html += '<p class="mini muted">«Queda» es ventas menos gastos capturados. No incluye la nómina: ' +
+    'ésa la ves en Pago semanal y en Nómina.</p>';
+  // por categoría
+  const porCat = {};
+  gastos.forEach(g => { porCat[g.categoria] = (porCat[g.categoria] || 0) + g.monto; });
+  const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+  html += '<div class="card"><h3>En qué se fue</h3>' + (cats.length
+    ? cats.map(([c, v]) => '<div class="item-linea"><div class="grow"><b>' + esc(nombreCat(c)) + '</b>' +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.round(v / total * 100) + '%"></i></div></div>' +
+      '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b>' +
+      '<div class="mini muted">' + Math.round(v / total * 100) + '%</div></div></div>').join('')
+    : '<p class="muted mini">Sin gastos capturados este mes.</p>') + '</div>';
+  // por sucursal
+  const porSuc = db.sucursales.filter(s => s.activa && !s.del).map(s => {
+    const gs = gastos.filter(g => g.sucursalId === s.id).reduce((a, g) => a + g.monto, 0);
+    const vs = cierresVivos().filter(c => c.fecha.startsWith(mesVista) && c.sucursalId === s.id).reduce((a, c) => a + c.ventas, 0);
+    return { s, gs, vs };
+  });
+  html += '<div class="card"><h3>Por sucursal</h3><div class="tabla-wrap"><table>' +
+    '<tr><th>Sucursal</th><th class="num">Ventas</th><th class="num">Gastos</th><th class="num">Queda</th></tr>' +
+    porSuc.map(x => '<tr><td>' + esc(x.s.nombre) + '</td><td class="num">' + fmt$(x.vs) + '</td>' +
+      '<td class="num">' + fmt$(x.gs) + '</td><td class="num"><b class="amar">' + fmt$(x.vs - x.gs) + '</b></td></tr>').join('') +
+    '</table></div></div>';
+  // detalle
+  html += '<div class="card"><h3>Detalle de gastos</h3><div class="tabla-wrap"><table>' +
+    '<tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>Concepto</th><th>Categoría</th><th class="num">Monto</th><th></th></tr>' +
+    (gastos.map(g => '<tr><td>' + fmtFecha(g.fecha) + '</td><td>' + esc(suc(g.sucursalId)?.nombre || '') + '</td><td>' +
+      puntoPersona(g.personalId) + esc(per(g.personalId)?.nombre || '—') + '</td><td>' + esc(g.concepto) +
+      '</td><td class="mini">' + esc(nombreCat(g.categoria)) + '</td><td class="num">' + fmt$(g.monto) +
+      '</td><td><button class="btn s mini" onclick="borrarGastoDir(\'' + g.id + '\')">🗑️</button></td></tr>').join('')
+      || '<tr><td colspan="7" class="muted">Sin gastos este mes.</td></tr>') +
+    '</table></div></div>';
+  return html;
+}
+function borrarGastoDir(id) {
+  const g = gastosVivos().find(x => x.id === id); if (!g) return;
+  if (!confirm('¿Quitar el gasto de ' + fmt$(g.monto) + ' (' + g.concepto + ')?')) return;
+  g.del = true; g.ts = Date.now();
+  guardarDB(); renderDireccion(); toast('🗑️ Gasto quitado');
+}
+function exportarGastosCSV() {
+  const gastos = gastosDe(mesVista + '-01', mesVista + '-31');
+  let csv = 'Fecha,Sucursal,Quien,Concepto,Categoria,Monto,Nota\n';
+  gastos.forEach(g => csv += [g.fecha, suc(g.sucursalId)?.nombre || '', per(g.personalId)?.nombre || '',
+    '"' + g.concepto.replace(/"/g, "'") + '"', nombreCat(g.categoria), g.monto,
+    '"' + (g.nota || '').replace(/"/g, "'") + '"'].join(',') + '\n');
+  descargar('gastos-' + mesVista + '.csv', csv);
+  toast('⬇️ CSV de gastos descargado');
 }
 
 /* --- SEMANA: cuánto se le paga a cada quien el domingo ---
@@ -3033,6 +3221,10 @@ function dirAdmin() {
     '<label>Correo de notificaciones</label><input id="cfg-email" value="' + esc(c.emailTo) + '">' +
     '<label>WhatsApp de avisos (con lada país, ej. 52771…)</label><input id="cfg-wa" value="' + esc(c.whatsapp) + '">' +
     '<label>URL del backend (Google Apps Script)</label><input id="cfg-url" value="' + esc(c.scriptUrl) + '" placeholder="https://script.google.com/macros/s/…/exec">' +
+    '<label>Hora límite para enviar el cierre</label>' +
+    '<input id="cfg-hcierre" type="number" min="12" max="23" value="' + (c.horaCierre || 23) + '">' +
+    '<p class="mini muted">Pasada esa hora, la sucursal que no haya cerrado sale marcada en Hoy ' +
+    'y el backend manda el aviso por correo.</p>' +
     '<label>Proyecto de Todoist (opcional)</label><input id="cfg-todoist" value="' + esc(c.todoistProyecto || '') +
     '" placeholder="Ej. Ciclope — sin espacios">' +
     '<p class="mini muted">Las tareas que crees desde Supervisión y Dirección caen en ese proyecto. ' +
@@ -3208,6 +3400,7 @@ function guardarConfig() {
     emailTo: $('cfg-email').value.trim(),
     whatsapp: $('cfg-wa').value.replace(/\D/g, ''),
     todoistProyecto: ($('cfg-todoist') ? $('cfg-todoist').value : '').trim(),
+    horaCierre: Math.min(23, Math.max(12, Number($('cfg-hcierre') ? $('cfg-hcierre').value : 23) || 23)),
   };
   // marca de tiempo POR CAMPO: solo lo que realmente cambió viaja como "nuevo"
   Object.keys(nuevos).forEach(k => {

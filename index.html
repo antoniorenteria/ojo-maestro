@@ -479,6 +479,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Recetario</span><div class="d">Gramajes y montaje de cada producto</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
       <div class="menu-item" onclick="irCalendario()"><span class="em" style="--tint:#60A5FA">📅</span><span class="t">Calendario</span><div class="d">Turnos del mes por sucursal</div></div>
+      <div class="menu-item" onclick="irGastos()"><span class="em" style="--tint:#F87171">💸</span><span class="t">Gastos y compras</span><div class="d">Lo que sale de la caja</div></div>
     </div>
   </section>
 
@@ -618,6 +619,32 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     <div id="proto-lista" style="margin-top:14px"></div>
   </section>
 
+  <!-- ══════════ GASTOS ══════════ -->
+  <section class="screen" id="scr-gastos">
+    <div class="topbar"><button class="btn s mini" onclick="ir('scr-suc')">← Volver</button>
+      <div><div class="tit amar" style="font-weight:700">💸 Gastos y compras</div><div class="sub">Lo que sale de la caja</div></div>
+      <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
+    <div class="grid c3" id="gas-resumen"></div>
+    <div class="card">
+      <h3>Registrar un gasto</h3>
+      <p class="mini muted">Captúralo al momento, con el ticket en la mano. Así Dirección ve lo que
+        de verdad queda y no solo lo que entra.</p>
+      <div class="fila">
+        <div style="flex:1"><label>¿Cuánto?</label>
+          <input id="gas-monto" type="number" inputmode="decimal" placeholder="0.00"></div>
+        <div style="flex:1"><label>¿Quién compró?</label><select id="gas-persona"></select></div>
+      </div>
+      <label style="margin-top:10px">¿En qué?</label>
+      <input id="gas-concepto" placeholder="Ej. 3 bolsas de papa recta">
+      <label style="margin-top:10px">Categoría</label>
+      <select id="gas-cat"></select>
+      <label style="margin-top:10px">Nota (opcional)</label>
+      <input id="gas-nota" placeholder="Proveedor, factura, quién autorizó…">
+      <button class="btn p gigante" style="margin-top:14px" onclick="registrarGasto()">💸 Registrar gasto</button>
+    </div>
+    <div class="card"><h3>Gastos de hoy</h3><div id="gas-lista"></div></div>
+  </section>
+
   <!-- ══════════ CALENDARIO ══════════ -->
   <section class="screen" id="scr-cal">
     <div class="topbar"><button class="btn s mini" onclick="calVolver()">← Volver</button>
@@ -642,6 +669,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
       <button data-t="semana" onclick="dirTab('semana')">💵 Pago semanal</button>
       <button data-t="mes" onclick="dirTab('mes')">📅 Cierre de mes</button>
+      <button data-t="gastos" onclick="dirTab('gastos')">💸 Gastos</button>
       <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
       <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>
       <button data-t="evid" onclick="dirTab('evid')">📸 Evidencias</button>
