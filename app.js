@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1436,7 +1436,6 @@ function guardarRevision(fecha, sid, pct) {
    los dispositivos y se manda por WhatsApp como PNG.
    El PDF de referencia vive en SU PROPIA llave de localStorage — nunca dentro
    de db — porque pesa cientos de KB y haría lento cada guardado y cada sync. */
-const CAL_PDF_KEY = 'ojo_cal_pdf';
 const CAL_DIAS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 let calMes = mesISO(), calSuc = null, calEdit = false;
 
@@ -1551,8 +1550,8 @@ function renderCalendario() {
       '<button class="' + (x.id === calSuc ? 'on' : '') + '" onclick="calCambiaSuc(\'' + x.id + '\')">🏬 ' +
       esc(x.nombre) + '</button>').join('') + '</div>' : '') +
     (calEdit ? '<p class="mini" style="color:var(--amarillo);margin:0 0 10px">✏️ Modo edición: toca un día para asignar turnos.</p>' : '');
-  // rejilla del mes
-  html += '<div class="cal-grid">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  // rejilla del mes, sobre papel claro con cualquier tema
+  html += '<div class="cal-papel"><div class="cal-grid">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
   semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
     const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
     const ts = fuera ? [] : calTurnosDe(iso, calSuc);
@@ -1567,7 +1566,7 @@ function renderCalendario() {
         '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
       '</div>';
   }));
-  html += '</div>';
+  html += '</div></div>';
   // leyenda
   const gente = personasDelMes();
   if (gente.length) html += '<div class="cal-leyenda">' + gente.map(p =>
@@ -1582,18 +1581,6 @@ function renderCalendario() {
     '<button class="btn s mini" onclick="calCopiarMes()">📅 Copiar calendario a otro mes</button>' +
     '<button class="btn s mini" onclick="calVaciarMes()">🗑️ Vaciar el mes</button></div>';
   html += '</div>';
-  // PDF de referencia
-  const hayPdf = !!localStorage.getItem(CAL_PDF_KEY);
-  html += '<div class="card"><h3>📄 Calendario en PDF (referencia)</h3>' +
-    '<p class="mini muted">' + (hayPdf
-      ? 'Tienes un PDF guardado en <b>este dispositivo</b>. Ábrelo para consultarlo o súbelo de nuevo para reemplazarlo.'
-      : 'Opcional: sube el PDF que armas aparte para tenerlo a la mano. Se guarda solo en este dispositivo (no se sincroniza porque pesa mucho).') + '</p>' +
-    '<div class="fila" style="margin-top:10px">' +
-    (hayPdf ? '<button class="btn p" onclick="calPdfVer()">👁️ Ver PDF</button>' : '') +
-    '<label class="btn s" style="cursor:pointer;margin:0">' + (hayPdf ? '🔄 Sustituir' : '⬆️ Subir PDF') +
-    '<input type="file" accept="application/pdf,.pdf" style="display:none" onchange="calPdfGuardar(this)"></label>' +
-    (hayPdf ? '<button class="btn s" onclick="calPdfQuitar()">🗑️</button>' : '') +
-    '</div></div>';
   $('cal-contenido').innerHTML = html;
 }
 
@@ -1746,7 +1733,7 @@ function pintarCopiarDia() {
   const [, m] = calMes.split('-').map(Number);
   const plan = copiaDiaPlan();
   // rejilla del mes: se tocan los días donde pegar
-  let grid = '<div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  let grid = '<div class="cal-papel"><div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
   semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
     const iso = isoLocal(f), fuera = f.getMonth() !== m - 1, esOrigen = iso === diaOrigen;
     const marcado = diaDestinos.includes(iso);
@@ -1762,7 +1749,7 @@ function pintarCopiarDia() {
           '"><b class="nom">' + esc(calNombre(t.pid)) + '</b> ' + hCorta(t.ini) + '-' + hCorta(t.fin) + '</div>').join(''))) +
       '</div>';
   }));
-  grid += '</div>';
+  grid += '</div></div>';
   const cont = $('modal-gen-cuerpo'); const sc = cont ? cont.scrollTop : 0;
   abrirModal('<h3>📋 Copiar el día ' + fmtFecha(diaOrigen) + '</h3>' +
     '<p class="mini muted">Se copia esta configuración:</p>' +
@@ -1885,7 +1872,7 @@ function rapVistaPrevia(nuevos) {
   const [, m] = calMes.split('-').map(Number);
   const porFecha = {};
   nuevos.forEach(n => { (porFecha[n.fecha] = porFecha[n.fecha] || []).push(n); });
-  let h = '<div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
+  let h = '<div class="cal-papel"><div class="cal-grid cal-mini">' + CAL_DIAS.map(d => '<div class="cal-h">' + d + '</div>').join('');
   semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
     const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
     h += '<div class="cal-d' + (fuera ? ' fuera' : '') + '"><div class="n">' + f.getDate() + '</div>' +
@@ -1898,7 +1885,7 @@ function rapVistaPrevia(nuevos) {
           '<b class="nom">' + esc(calNombre(t.pid)) + '</b> ' + hCorta(t.ini) + '-' + hCorta(t.fin) + '</div>').join('')) +
       '</div>';
   }));
-  return h + '</div>';
+  return h + '</div></div>';
 }
 function bloqueRegla(rg, i, gente) {
   const horas = []; for (let h = 8; h <= 23; h++) horas.push(h);
@@ -2248,47 +2235,50 @@ async function calendarioPNG() {
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const c = cv.getContext('2d');
-  c.fillStyle = '#0D0015'; c.fillRect(0, 0, W, H);
-  c.textAlign = 'center'; c.fillStyle = '#FFD523';
+  /* la imagen sale en claro igual que el calendario en pantalla: es lo que se
+     manda por WhatsApp y así los colores de cada quien resaltan */
+  c.fillStyle = '#FFFFFF'; c.fillRect(0, 0, W, H);
+  c.textAlign = 'center'; c.fillStyle = '#111114';
   c.font = '700 46px Poppins, system-ui, sans-serif';
   c.fillText('CALENDARIO ' + (s?.nombre || '').toUpperCase(), W / 2, 80);
-  c.fillStyle = '#F5F0FF'; c.font = '600 34px Poppins, system-ui, sans-serif';
+  c.fillStyle = '#5B21B6'; c.font = '600 34px Poppins, system-ui, sans-serif';
   c.fillText(MESES[m - 1].toUpperCase() + ' ' + y, W / 2, 130);
-  c.fillStyle = '#9B87B8'; c.font = '600 20px Poppins, system-ui, sans-serif';
+  c.fillStyle = '#5C5C66'; c.font = '700 20px Poppins, system-ui, sans-serif';
   ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO']
     .forEach((d, i) => c.fillText(d, x0 + celW * i + celW / 2, y0 - 20));
   semanas.forEach((sem, r) => sem.forEach((f, i) => {
     const x = x0 + celW * i, yy = y0 + celH * r, fuera = f.getMonth() !== m - 1;
-    c.fillStyle = fuera ? '#0A0011' : '#160026';
+    c.fillStyle = fuera ? '#FAFAFC' : '#F4F4F8';
     c.fillRect(x + 3, yy + 3, celW - 6, celH - 6);
-    c.strokeStyle = 'rgba(147,51,234,.35)'; c.lineWidth = 2;
+    c.strokeStyle = '#E4E4EA'; c.lineWidth = 2;
     c.strokeRect(x + 3, yy + 3, celW - 6, celH - 6);
     c.textAlign = 'left';
-    c.fillStyle = fuera ? '#4B3A63' : '#F5F0FF';
-    c.font = '700 25px Poppins, system-ui, sans-serif';
+    c.fillStyle = fuera ? '#B4B4BE' : '#111114';
+    c.font = '800 25px Poppins, system-ui, sans-serif';
     c.fillText(String(f.getDate()), x + 16, yy + 36);
     if (fuera) return;
     const lista = calTurnosDe(isoLocal(f), calSuc);
     lista.slice(0, 4).forEach((t, k) => {
       const ty = yy + 62 + k * 25;
+      // bloque de color ancho: es lo que identifica a la persona
       c.fillStyle = colorPersona(t.personalId);
-      c.fillRect(x + 14, ty - 12, 7, 16);
-      c.fillStyle = '#F5F0FF'; c.font = '600 18px Poppins, system-ui, sans-serif';
-      c.fillText(calNombre(t.personalId) + '  ' + rangoCorto(t), x + 29, ty + 2);
+      c.fillRect(x + 12, ty - 15, 16, 21);
+      c.fillStyle = '#111114'; c.font = '600 18px Poppins, system-ui, sans-serif';
+      c.fillText(calNombre(t.personalId) + '  ' + rangoCorto(t), x + 36, ty + 2);
     });
     if (lista.length > 4) {
-      c.fillStyle = '#9B87B8'; c.font = '400 15px Poppins, system-ui, sans-serif';
-      c.fillText('+' + (lista.length - 4) + ' más', x + 29, yy + 62 + 4 * 25);
+      c.fillStyle = '#5C5C66'; c.font = '400 15px Poppins, system-ui, sans-serif';
+      c.fillText('+' + (lista.length - 4) + ' más', x + 36, yy + 62 + 4 * 25);
     }
   }));
   c.textAlign = 'left'; c.font = '600 21px Poppins, system-ui, sans-serif';
   let lx = x0;
   gente.forEach(p => {
-    c.fillStyle = colorPersona(p.id); c.fillRect(lx, legY - 15, 17, 17);
-    c.fillStyle = '#F5F0FF'; c.fillText(p.nombre, lx + 26, legY);
+    c.fillStyle = colorPersona(p.id); c.fillRect(lx, legY - 17, 22, 22);
+    c.fillStyle = '#111114'; c.fillText(p.nombre, lx + 32, legY);
     lx += 52 + c.measureText(p.nombre).width;
   });
-  c.font = '400 18px Poppins, system-ui, sans-serif'; c.fillStyle = '#9B87B8';
+  c.font = '400 18px Poppins, system-ui, sans-serif'; c.fillStyle = '#5C5C66';
   c.fillText('El Anillo del Cíclope · El Ojo Maestro · actualizado el ' + fmtFecha(hoyISO()), x0, legY + 48);
   const nombre = 'Calendario-' + (s?.nombre || 'sucursal').replace(/\s+/g, '-') + '-' + calMes + '.png';
   cv.toBlob(async blob => {
@@ -2307,39 +2297,6 @@ async function calendarioPNG() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     toast('⬇️ ' + nombre);
   }, 'image/png');
-}
-
-/* ---------- PDF de referencia (solo en este dispositivo) ---------- */
-function calPdfGuardar(input) {
-  const f = input.files && input.files[0]; if (!f) return;
-  if (!/pdf$/i.test(f.type) && !/\.pdf$/i.test(f.name)) return toast('Tiene que ser un archivo PDF 📄');
-  if (f.size > 4 * 1024 * 1024) return toast('El PDF pesa más de 4 MB — expórtalo más ligero');
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      localStorage.setItem(CAL_PDF_KEY, r.result);
-      toast('📄 PDF guardado en este dispositivo');
-      renderCalendario();
-    } catch (e) { toast('⚠️ No cupo en la memoria del dispositivo'); }
-  };
-  r.readAsDataURL(f);
-  input.value = '';
-}
-function calPdfVer() {
-  const d = localStorage.getItem(CAL_PDF_KEY); if (!d) return;
-  // data: URL → blob: Safari de iPhone no abre PDFs desde data:
-  try {
-    const b64 = d.split(',')[1], bin = atob(b64), arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  } catch (e) { toast('⚠️ No se pudo abrir el PDF'); }
-}
-function calPdfQuitar() {
-  if (!confirm('¿Quitar el PDF guardado en este dispositivo?')) return;
-  localStorage.removeItem(CAL_PDF_KEY);
-  renderCalendario(); toast('🗑️ PDF quitado');
 }
 
 /* ═══════════ TEMA CLARO / OSCURO ═══════════ */
@@ -3018,6 +2975,8 @@ setInterval(() => {
   }
   initTema();
   cargarDB();
+  // v2.3: se quitó el PDF de referencia del calendario; se libera su espacio
+  try { localStorage.removeItem('ojo_cal_pdf'); } catch (e) { }
   // enlace de instalación: #cfg=<base64> configura el backend automáticamente
   if (location.hash.startsWith('#cfg=')) {
     try {
