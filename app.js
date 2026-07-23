@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.1';
+const VERSION = '2.2';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -2351,7 +2351,10 @@ function toggleTema() {
   toast(claro ? '🌌 Modo oscuro — la noche cósmica de Cyclos' : '☀️ Modo claro');
 }
 function initTema() {
-  if (localStorage.getItem('ojo_tema') === 'claro') document.documentElement.dataset.tema = 'claro';
+  /* claro por defecto (es el que pidió Toño); el toggle 🌓 sigue mandando y
+     lo que elija cada dispositivo se respeta */
+  if (localStorage.getItem('ojo_tema') === 'oscuro') delete document.documentElement.dataset.tema;
+  else document.documentElement.dataset.tema = 'claro';
   aplicarLogo();
 }
 /* en tema claro va el logotipo negro; en oscuro el amarillo de siempre */

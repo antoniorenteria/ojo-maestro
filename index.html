@@ -222,8 +222,21 @@ input,select,textarea{background:#0F0722;border-color:var(--borde)}
 /* barra superior fija */
 .topbar{position:sticky;top:0;z-index:44;background:var(--velo);backdrop-filter:blur(14px);
   margin:0 -16px 4px;padding:12px 16px;border-bottom:1px solid var(--borde-suave)}
+/* ── respiro para la barra de estado del iPhone ──
+   La app corre a pantalla completa (viewport-fit=cover + status-bar
+   translucent), así que sin esto la fila de Volver / mes / tema queda pegada
+   al notch. La barra superior arranca en el borde real de la pantalla y mete
+   el inset en su propio relleno, para que su fondo tape la franja del notch. */
+.screen{padding-top:calc(18px + env(safe-area-inset-top, 0px))}
+.topbar{margin-top:calc(-18px - env(safe-area-inset-top, 0px));
+  padding-top:calc(30px + env(safe-area-inset-top, 0px));padding-bottom:12px}
+@supports not (padding: env(safe-area-inset-top)) {
+  .screen{padding-top:18px}
+  .topbar{margin-top:-18px;padding-top:30px}
+}
 /* botón flotante */
-.fab{position:fixed;right:16px;bottom:20px;z-index:46;width:auto;padding:16px 22px;border-radius:99px;
+.fab{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom, 0px));z-index:46;
+  width:auto;padding:16px 22px;border-radius:99px;
   box-shadow:0 12px 34px rgba(0,0,0,.55),0 0 0 1.5px rgba(255,213,35,.35)}
 /* barra de progreso */
 .barra{height:12px;border-radius:99px;background:var(--fondo-4);overflow:hidden;border:1px solid var(--borde-suave)}
@@ -363,7 +376,10 @@ html[data-tema="claro"] .avatar{color:#111114}
   outline:1px dashed var(--amarillo);outline-offset:-1px}
 html[data-tema="claro"] .rap-regla{background:#FAFAFB;border-color:var(--borde-suave)}
 html[data-tema="claro"] .cal-t.nuevo{background:#FFF6D6;outline-color:#B8860B}
-html[data-tema="claro"] .cal-d{background:#FFFFFF;border-color:var(--borde)}
+/* la celda va gris muy claro sobre la tarjeta blanca: si fuera blanca también,
+   la rejilla del mes desaparecería */
+html[data-tema="claro"] .cal-d{background:#F5F5F8;border-color:#E2E2E8}
+html[data-tema="claro"] .cal-mini .cal-d{background:#FAFAFC}
 html[data-tema="claro"] .cal-d.hoy{border-color:#B8860B;box-shadow:0 0 0 2px #B8860B inset}
 html[data-tema="claro"] .cal-d.origen{border-color:#B8860B;box-shadow:0 0 0 2px #B8860B inset}
 html[data-tema="claro"] .cal-d.elegido{box-shadow:0 0 0 2px #15803D inset}
