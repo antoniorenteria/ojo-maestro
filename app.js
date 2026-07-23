@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -115,7 +115,31 @@ function evidenciaDeRegistro(rid, fecha, sid) {
   fecha = fecha || hoyISO(); sid = sid || sucursalActual;
   return db.evidencias.find(e => e.regId === rid && e.fecha === fecha && e.sucursalId === sid);
 }
-const cierreDelDia = (fecha, sid) => db.cierres.find(c => c.fecha === (fecha || hoyISO()) && c.sucursalId === (sid || sucursalActual));
+/* ---------- candados contra registros duplicados ----------
+   Un cierre, un turno y una evidencia llevan id DETERMINISTA (armado con la
+   fecha, la sucursal y a quién pertenecen). Así, aunque la acción se dispare
+   dos veces —doble toque, red lenta, dos dispositivos a la vez— siempre es el
+   MISMO registro: al mezclar en el servidor se une por id en vez de duplicar.
+   Era lo que infló las ventas del 22/07: cada toque creaba un cierre nuevo. */
+const idCierre = (fecha, sid) => ['cie', fecha, sid].join('|');
+const idTurno = (fecha, sid, pid) => ['tur', fecha, sid, pid].join('|');
+const idEvid = (fecha, sid, rid) => ['ev', fecha, sid, rid].join('|');
+const idRevision = (fecha, sid) => ['rev', fecha, sid].join('|');
+
+/* Mientras una acción está en curso ignora los toques siguientes. El bug real
+   era éste: guardarCierre esperaba a que subieran las fotos y, en esa espera,
+   cada toque extra arrancaba otra ejecución que también pasaba la validación. */
+const enCurso = {};
+async function unaVez(clave, fn) {
+  if (enCurso[clave]) return toast('⏳ Ya se está guardando, espera un momento…');
+  enCurso[clave] = true;
+  document.body.classList.add('ocupado');
+  try { return await fn(); }
+  finally { delete enCurso[clave]; document.body.classList.remove('ocupado'); }
+}
+
+const cierresVivos = () => db.cierres.filter(c => !c.del);
+const cierreDelDia = (fecha, sid) => cierresVivos().find(c => c.fecha === (fecha || hoyISO()) && c.sucursalId === (sid || sucursalActual));
 
 /* Las preparaciones se marcan como acciones del checklist; aquí solo se consulta
    el recetario (ver RECETAS más abajo). */
@@ -400,6 +424,70 @@ function recuperarConfig() {
   });
   return rescate;
 }
+/* ---------- mantenimiento diario ----------
+   Corre al abrir la app. La idea es que ningún olvido de ayer se arrastre ni
+   quede a merced de que alguien se acuerde de cerrar algo a mano. */
+function mantenimientoDiario() {
+  const hoy = hoyISO();
+  // una vez al día basta: si no, cada apertura repetiría los avisos en bitácora
+  if (db.mantDia === hoy) return { cambios: false, cerrados: 0, quitados: 0, dudosos: 0 };
+  db.mantDia = hoy;
+  let cambios = true, cerrados = 0;
+  /* 1) Turnos de días anteriores que quedaron sin salida: se cierran solos con
+     las horas base del turno y quedan marcados, para que Nómina no arrastre
+     turnos abiertos eternamente ni haya que cerrarlos a mano. */
+  db.turnos.forEach(t => {
+    if (t.salida || t.fecha >= hoy || !per(t.personalId)) return;
+    t.salida = t.entrada + (db.config.baseHoras || 6) * 3600000;
+    t.ajuste = Number(t.ajuste || 0);
+    t.autoCierre = true;
+    t.motivoAjuste = (t.motivoAjuste ? t.motivoAjuste + ' · ' : '') + 'Cierre automático (no se registró la salida)';
+    const c = calcularPago(t); t.horas = c.horas; t.pago = c.pago; t.ts = Date.now();
+    cerrados++; cambios = true;
+  });
+  if (cerrados) {
+    db.eventos.unshift({
+      id: uid(), ts: Date.now(), asunto: '🕐 Cierre automático de turnos',
+      cuerpo: 'Se cerraron solos ' + cerrados + ' turno(s) de días anteriores que quedaron sin salida. ' +
+        'Revísalos en Dirección → Nómina por si hay que ajustar la hora.'
+    });
+  }
+  /* 2) Cierres duplicados del mismo día y sucursal. Solo se consolidan los que
+     traen EXACTAMENTE los mismos montos (son el rastro del doble toque); si
+     los montos difieren se dejan tal cual, porque ahí sí hay que decidir. */
+  const porDia = {};
+  cierresVivos().forEach(c => {
+    const k = c.fecha + '|' + c.sucursalId;
+    (porDia[k] = porDia[k] || []).push(c);
+  });
+  let quitados = 0, dudosos = 0;
+  Object.keys(porDia).forEach(k => {
+    const lista = porDia[k];
+    if (lista.length < 2) return;
+    const montos = new Set(lista.map(c => c.ventas + '|' + c.caja));
+    if (montos.size > 1) { dudosos++; return; }        // montos distintos: no se toca
+    lista.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const fijo = idCierre(lista[0].fecha, lista[0].sucursalId);
+    const queda = lista.find(c => c.id === fijo) || lista[0];
+    lista.forEach(c => { if (c !== queda) { c.del = true; c.ts = Date.now(); quitados++; } });
+    cambios = true;
+  });
+  if (quitados) {
+    db.eventos.unshift({
+      id: uid(), ts: Date.now(), asunto: '🧹 Se consolidaron cierres duplicados',
+      cuerpo: 'Se quitaron ' + quitados + ' cierre(s) repetidos con montos idénticos, dejando uno por día y ' +
+        'sucursal. Venían del error de doble envío; las ventas del mes ya quedan correctas.'
+    });
+  }
+  if (dudosos) {
+    db.eventos.unshift({
+      id: uid(), ts: Date.now(), asunto: '⚠️ Cierres repetidos con montos distintos',
+      cuerpo: dudosos + ' día(s) tienen más de un cierre con montos diferentes. No se tocaron: ' +
+        'revísalos en Dirección → Cierre de mes y deja el correcto.'
+    });
+  }
+  return { cambios, cerrados, quitados, dudosos };
+}
 function cargarDB() {
   let cargada = false;
   try {
@@ -410,7 +498,10 @@ function cargarDB() {
   const migro = cargada ? migrarDB() : false;
   const rescato = recuperarConfig();
   if (rescato) toast('🔌 Conexión del dispositivo recuperada');
-  if (!cargada || migro || rescato) guardarDB(false);
+  const m = cargada ? mantenimientoDiario() : { cambios: false };
+  if (!cargada || migro || rescato || m.cambios) guardarDB(false);
+  if (m.quitados) toast('🧹 Se consolidaron ' + m.quitados + ' cierres duplicados', 5000);
+  if (m.cerrados) toast('🕐 Se cerraron solos ' + m.cerrados + ' turno(s) de días pasados', 5000);
   recordarConfig();
 }
 function tocarCatalogos() { db.catTs = Date.now(); }
@@ -859,7 +950,8 @@ function pintarAjuste() {
     (asisAjuste ? '<div class="mini muted">' + (extra >= 0 ? '+' : '−') + fmt$(Math.abs(extra)) + ' sobre el turno</div>' : '');
   $('asis-pago-prev').textContent = fmt$(Math.max(0, (p.pagoTurno || 0) + extra));
 }
-function accionAsistencia() {
+function accionAsistencia() { return unaVez('asistencia', marcarAsistencia); }
+function marcarAsistencia() {
   const pid = $('asis-persona').value;
   const p = per(pid);
   if (!p) return toast('Selecciona a la persona');
@@ -868,8 +960,14 @@ function accionAsistencia() {
   if (!abierto) {
     // ---- ENTRADA ----
     if (turnosAbiertos().some(t => t.personalId === pid)) return toast('⚠️ ' + p.nombre + ' ya tiene un turno abierto en otra sucursal');
+    /* Un turno por persona y por día. Sin este candado, una segunda entrada
+       el mismo día PAGA EL DÍA DOS VECES, porque el pago es por turno. */
+    const yaHoy = db.turnos.find(t => t.fecha === hoyISO() && t.personalId === pid);
+    if (yaHoy) return toast('⚠️ ' + p.nombre + ' ya registró su día en ' +
+      (suc(yaHoy.sucursalId)?.nombre || '') + '. Si hubo un cambio, Dirección lo ajusta en Nómina.');
     const t = {
-      id: uid(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: pid,
+      id: idTurno(hoyISO(), sucursalActual, pid),   // id fijo: no se duplica
+      fecha: hoyISO(), sucursalId: sucursalActual, personalId: pid,
       tipo: $('asis-turno').value, entrada: Date.now(), salida: null, ajuste: 0
     };
     db.turnos.unshift(t); guardarDB();
@@ -904,13 +1002,57 @@ function accionAsistencia() {
 let cierreBorrador = { ventas: '', caja: '' };
 let cierreFotos = { 'r-ventas': '', 'r-caja': '' };
 let regPendiente = null;   // id del registro que está capturando foto
+
+/* Una evidencia por registro, por día y por sucursal: si vuelven a tomar la
+   foto, reemplaza la anterior en vez de acumular otra fila. */
+function guardarEvidenciaUnica(datos) {
+  const id = idEvid(datos.fecha, datos.sucursalId, datos.regId);
+  const i = db.evidencias.findIndex(e => e.id === id);
+  const reg = Object.assign({ id, ts: Date.now() }, datos);
+  if (i >= 0) db.evidencias[i] = reg; else db.evidencias.unshift(reg);
+  return reg;
+}
+
+/* ---------- borrador del cierre ----------
+   Los montos se guardan solitos mientras se capturan, por día y sucursal. Si
+   alguien sale a medias, al volver siguen ahí: no hay que "guardar" aparte,
+   el único botón que manda algo es el de cerrar el día. */
+const BORRADOR_KEY = 'ojo_borrador_cierre';
+function leerBorradores() {
+  try { return JSON.parse(localStorage.getItem(BORRADOR_KEY) || '{}'); } catch (e) { return {}; }
+}
+function guardarBorradorCierre() {
+  if (!sucursalActual) return;
+  const todos = leerBorradores();
+  todos[hoyISO() + '|' + sucursalActual] = {
+    ventas: cierreBorrador.ventas, caja: cierreBorrador.caja,
+    obs: ($('chk-obs') ? $('chk-obs').value : ''), ts: Date.now()
+  };
+  // solo se conservan los de los últimos días
+  Object.keys(todos).forEach(k => { if (k.split('|')[0] < hoyISO()) delete todos[k]; });
+  try { localStorage.setItem(BORRADOR_KEY, JSON.stringify(todos)); } catch (e) { }
+}
+function cargarBorradorCierre() {
+  const b = leerBorradores()[hoyISO() + '|' + sucursalActual];
+  cierreBorrador = { ventas: b ? (b.ventas ?? '') : '', caja: b ? (b.caja ?? '') : '' };
+  if ($('chk-obs')) $('chk-obs').value = b ? (b.obs || '') : '';
+  return !!b;
+}
+function borrarBorradorCierre(fecha, sid) {
+  const todos = leerBorradores();
+  delete todos[fecha + '|' + sid];
+  try { localStorage.setItem(BORRADOR_KEY, JSON.stringify(todos)); } catch (e) { }
+  cierreBorrador = { ventas: '', caja: '' };
+  cierreFotos = { 'r-ventas': '', 'r-caja': '' };
+}
 function irChecklist() {
   opcionesPersonal($('chk-persona'), true);
   if (!$('chk-persona').value) opcionesPersonal($('chk-persona'), false);
-  $('chk-obs').value = '';
-  cierreBorrador = { ventas: '', caja: '' };
   cierreFotos = { 'r-ventas': '', 'r-caja': '' };
   ir('scr-chk');
+  // se recupera lo que se haya dejado a medias hoy en esta sucursal
+  if (cargarBorradorCierre() && !cierreDelDia()) toast('📝 Se recuperó lo que llevabas capturado');
+  renderChecklist();
 }
 function renderChecklist() {
   renderResumenChk();
@@ -983,7 +1125,7 @@ function filaDinero(r, cie) {
     (foto ? '🔄' : '📷') + '</button>' +
     '<div class="reg-dinero">' +
     '<input id="chk-' + r.dinero + '" type="number" inputmode="decimal" placeholder="' + r.ph + '" value="' +
-    esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;renderResumenChk()">' +
+    esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;guardarBorradorCierre();renderResumenChk()">' +
     '</div></div>';
 }
 
@@ -1005,12 +1147,9 @@ function archivoRegistro(input) {
     const p = per($('chk-persona').value);
     toast('⬆️ Subiendo evidencia…');
     const fotoFinal = await subirFotoDrive(dataUrl, { tipo: r.tipo, sucursal: s.nombre, fecha: hoyISO() });
-    const previa = evidenciaDeRegistro(rid);
-    if (previa) db.evidencias = db.evidencias.filter(e => e.id !== previa.id);
-    db.evidencias.unshift({
-      id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
-      personalId: p?.id || '', tipo: r.tipo, regId: rid,
-      nota: r.n, foto: fotoFinal
+    guardarEvidenciaUnica({
+      fecha: hoyISO(), sucursalId: sucursalActual, personalId: p?.id || '',
+      tipo: r.tipo, regId: rid, nota: r.n, foto: fotoFinal
     });
     podarFotos(false); guardarDB();
     notificar('📸 ' + r.n + ' — ' + s.nombre,
@@ -1161,6 +1300,13 @@ function registrarPropina() {
   if (!monto || monto <= 0) return toast('Captura el monto de la propina 💳');
   const p = per($('prop-persona').value);
   if (!p) return toast('Selecciona a quién le tocó');
+  /* Aquí sí puede haber varias propinas al día, así que en vez de id fijo se
+     avisa si acaban de registrar el mismo monto a la misma persona: casi
+     siempre es un doble toque, no dos propinas idénticas seguidas. */
+  const repe = db.propinas.find(x => x.personalId === p.id && x.monto === monto &&
+    x.sucursalId === sucursalActual && Date.now() - x.ts < 120000);
+  if (repe && !confirm('Hace un momento ya registraste ' + fmt$(monto) + ' para ' + p.nombre +
+    '.\n¿Es otra propina distinta?')) return;
   db.propinas.unshift({
     id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
     personalId: p.id, monto, nota: $('prop-nota').value.trim()
@@ -1200,7 +1346,8 @@ function verFoto(id) {
     '<button class="btn s" onclick="cerrarModal()">Cerrar</button>');
 }
 /* ═══════════ CIERRE DE TURNO (desde la casilla del checklist) ═══════════ */
-async function guardarCierre() {
+function guardarCierre() { return unaVez('cierre', cerrarElDia); }
+async function cerrarElDia() {
   if (cierreDelDia()) return toast('El cierre de hoy ya fue enviado ✅');
   if (cierreBorrador.ventas === '') return toast('Captura las ventas del cierre 💵');
   if (cierreBorrador.caja === '') return toast('Captura la caja de dinero 🧾');
@@ -1209,6 +1356,14 @@ async function guardarCierre() {
   const p = per($('chk-persona').value);
   if (!p) return toast('Indica quién está cerrando 👤');
   const s = suc(sucursalActual);
+  const fecha = hoyISO();
+  // el dinero se confirma a la vista: es el dato del que cuelga todo lo demás
+  const faltan = REGISTROS.filter(r => !registroListo(r)).length;
+  if (!confirm('Vas a cerrar el día en ' + s.nombre + ':\n\n' +
+    'Ventas: ' + fmt$(ventas) + '\nCaja de dinero: ' + fmt$(caja) +
+    '\nResponsable: ' + p.nombre +
+    (faltan ? '\n\n⚠️ Quedan ' + faltan + ' registro(s) sin evidencia.' : '') +
+    '\n\nSe envía UNA sola vez al día. ¿Los montos están bien?')) return;
   // el avance del cierre son las acciones del día
   const acts = tareasDelDia();
   const hechos = acts.filter(t => tareaHecha(t)).length;
@@ -1218,19 +1373,25 @@ async function guardarCierre() {
   for (const rid of ['r-ventas', 'r-caja']) {
     if (!cierreFotos[rid]) continue;
     const r = REGISTROS.find(x => x.id === rid);
-    fotos[rid] = await subirFotoDrive(cierreFotos[rid], { tipo: 'cierre', sucursal: s.nombre, fecha: hoyISO() });
-    db.evidencias.unshift({
-      id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual, personalId: p.id,
+    fotos[rid] = await subirFotoDrive(cierreFotos[rid], { tipo: 'cierre', sucursal: s.nombre, fecha });
+    guardarEvidenciaUnica({
+      fecha, sucursalId: sucursalActual, personalId: p.id,
       tipo: 'cierre', regId: rid, nota: r.n, foto: fotos[rid]
     });
   }
+  // se vuelve a revisar DESPUÉS de subir las fotos: en esa espera pudo entrar
+  // otro cierre (otro dispositivo, o esta misma pantalla abierta dos veces)
+  if (cierreDelDia()) { renderChecklist(); return toast('El cierre de hoy ya estaba enviado ✅'); }
   const reg = {
-    id: uid(), fecha: hoyISO(), ts: Date.now(), tsFoto: Date.now(), sucursalId: sucursalActual,
+    id: idCierre(fecha, sucursalActual),      // id fijo: un cierre por día y sucursal
+    fecha, ts: Date.now(), tsFoto: Date.now(), sucursalId: sucursalActual,
     personalId: p.id, ventas, caja, items, hechos, total: acts.length,
     foto: fotos['r-ventas'] || fotos['r-caja'] || '',
     novedades: ($('chk-obs').value || '').trim()
   };
-  db.cierres.unshift(reg);
+  const yaEsta = db.cierres.findIndex(c => c.id === reg.id);
+  if (yaEsta >= 0) db.cierres[yaEsta] = reg; else db.cierres.unshift(reg);
+  borrarBorradorCierre(fecha, sucursalActual);
   const fotoFinal = reg.foto;
   podarFotos(false); guardarDB();
   const propHoy = propinasDe(reg.fecha, sucursalActual);
@@ -1336,7 +1497,7 @@ function renderRevision() {
   // notas y observaciones del equipo
   html += cardObservaciones(fecha, sid);
   // cierre del día
-  const cie = db.cierres.find(c => c.fecha === fecha && c.sucursalId === sid);
+  const cie = cierresVivos().find(c => c.fecha === fecha && c.sucursalId === sid);
   html += '<div class="card"><h3>🌙 Cierre del día</h3>' + (cie
     ? '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(cie.ventas) + '</div><div class="l">ventas cierre</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(cie.caja) + '</div><div class="l">caja de dinero</div></div>' +
@@ -1387,7 +1548,7 @@ function verificarRegistro(rid, fecha, sid) {
 /* notas y observaciones de los colaboradores (se muestra en Supervisión y Dirección) */
 function cardObservaciones(fecha, sid) {
   const todas = db.checklists.filter(x => x.tipo === 'observacion' && (!sid || x.sucursalId === sid))
-    .concat(db.cierres.filter(c => c.novedades && (!sid || c.sucursalId === sid))
+    .concat(cierresVivos().filter(c => c.novedades && (!sid || c.sucursalId === sid))
       .map(c => ({ id: 'cie-' + c.id, fecha: c.fecha, ts: c.ts, sucursalId: c.sucursalId, personalId: c.personalId, novedades: '🌙 (cierre) ' + c.novedades })))
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   const delDia = fecha ? todas.filter(x => x.fecha === fecha) : [];
@@ -1416,8 +1577,12 @@ function verificarTarea(tid, fecha, sid) {
 function guardarRevision(fecha, sid, pct) {
   const comentario = $('rev-comentario').value.trim();
   const s = suc(sid);
+  // una revisión por día y sucursal: si se reenvía, actualiza la misma
+  const idRev = idRevision(fecha, sid);
+  const previa = db.revisiones.findIndex(r => r.id === idRev);
+  if (previa >= 0) db.revisiones.splice(previa, 1);
   db.revisiones.unshift({
-    id: uid(), ts: Date.now(), fecha, sucursalId: sid, pct,
+    id: idRev, ts: Date.now(), fecha, sucursalId: sid, pct,
     veredicto: revVeredicto, comentario
   });
   db.revisiones = db.revisiones.slice(0, 200);
@@ -2346,7 +2511,7 @@ function renderDireccion() {
 /* --- HOY --- */
 function dirHoy() {
   const hoy = hoyISO();
-  const ventasHoy = db.cierres.filter(x => x.fecha === hoy).reduce((a, x) => a + x.ventas, 0);
+  const ventasHoy = cierresVivos().filter(x => x.fecha === hoy).reduce((a, x) => a + x.ventas, 0);
   const abiertos = turnosAbiertos();
   const tareasHoy = db.tareas.filter(x => x.fecha === hoy && x.done).length;
   const propHoyTot = propinasDe(hoy).reduce((a, x) => a + x.monto, 0);
@@ -2358,7 +2523,7 @@ function dirHoy() {
   db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
     const enTurno = turnosAbiertos(s.id);
     const falt = faltantes(s.id);
-    const cierresHoy = db.cierres.filter(x => x.fecha === hoy && x.sucursalId === s.id);
+    const cierresHoy = cierresVivos().filter(x => x.fecha === hoy && x.sucursalId === s.id);
     const a = avanceDia(hoy, s.id);
     const revS = db.revisiones.find(r => r.sucursalId === s.id);
     html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏬 ' + esc(s.nombre) + '</h3>' +
@@ -2394,7 +2559,7 @@ function dirHoy() {
 let mesVista = mesISO();
 function dirMes() {
   const [y, m] = mesVista.split('-').map(Number);
-  const cierres = db.cierres.filter(c => c.fecha.startsWith(mesVista));
+  const cierres = cierresVivos().filter(c => c.fecha.startsWith(mesVista));
   const total = cierres.reduce((a, c) => a + c.ventas, 0);
   const porSuc = {};
   db.sucursales.forEach(s => porSuc[s.id] = cierres.filter(c => c.sucursalId === s.id).reduce((a, c) => a + c.ventas, 0));
@@ -2419,12 +2584,28 @@ function dirMes() {
   });
   html += '</table></div></div>';
   // detalle de cierres
-  html += '<div class="card"><h3>Detalle de cierres</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th>Checklist</th><th>Novedades</th></tr>' +
-    (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' + esc(per(c.personalId)?.nombre || '—') +
+  html += '<div class="card"><h3>Detalle de cierres</h3>' +
+    '<p class="mini muted">Si algún día quedó con un cierre de más o con un monto equivocado, quítalo aquí ' +
+    'y las ventas del mes se recalculan solas.</p>' +
+    '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th>Checklist</th><th>Novedades</th><th></th></tr>' +
+    (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' +
+      puntoPersona(c.personalId) + esc(per(c.personalId)?.nombre || '—') +
       '</td><td class="num">' + fmt$(c.ventas) + '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + totalCierre(c) +
-      '</td><td class="mini">' + esc(c.novedades || '') + '</td></tr>').join('') || '<tr><td colspan="7" class="muted">Sin cierres.</td></tr>') +
+      '</td><td class="mini">' + esc(c.novedades || '') +
+      '</td><td><button class="btn s mini" onclick="borrarCierre(\'' + c.id + '\')">🗑️</button></td></tr>').join('')
+      || '<tr><td colspan="8" class="muted">Sin cierres.</td></tr>') +
     '</table></div></div>';
   return html;
+}
+/* quitar un cierre equivocado: se marca, no se borra, para que la baja también
+   viaje a los demás dispositivos */
+function borrarCierre(id) {
+  const c = db.cierres.find(x => x.id === id); if (!c) return;
+  if (!confirm('¿Quitar el cierre del ' + fmtFecha(c.fecha) + ' en ' + (suc(c.sucursalId)?.nombre || '') +
+    ' por ' + fmt$(c.ventas) + '?\n\nLas ventas del mes se recalculan sin él.')) return;
+  c.del = true; c.ts = Date.now();
+  guardarDB(); renderDireccion();
+  toast('🗑️ Cierre quitado · ventas del mes actualizadas');
 }
 function cambiarMes(d) {
   let [y, m] = mesVista.split('-').map(Number);
@@ -2433,7 +2614,7 @@ function cambiarMes(d) {
   renderDireccion();
 }
 function exportarMesCSV() {
-  const cierres = db.cierres.filter(c => c.fecha.startsWith(mesVista));
+  const cierres = cierresVivos().filter(c => c.fecha.startsWith(mesVista));
   let csv = 'Fecha,Sucursal,Responsable,VentasNetas,DineroCaja,Checklist,Novedades\n';
   cierres.forEach(c => csv += [c.fecha, suc(c.sucursalId)?.nombre || '', per(c.personalId)?.nombre || '',
     c.ventas, c.caja, (c.hechos ?? '') + '/' + totalCierre(c), '"' + (c.novedades || '').replace(/"/g, "'") + '"'].join(',') + '\n');

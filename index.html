@@ -357,6 +357,10 @@ html[data-tema="claro"] .avatar{color:#111114}
   .cal-t .nom{display:none}
   .cal-grid{gap:3px}
 }
+/* mientras se guarda algo, la pantalla no acepta más toques: es el candado
+   visible contra el doble envío */
+body.ocupado{cursor:progress}
+body.ocupado .btn{pointer-events:none;opacity:.55}
 /* punto de color antes del nombre: identifica al colaborador de un vistazo
    en las tablas, sin cambiar su estructura */
 .pt-per{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:8px;
@@ -537,7 +541,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     </div>
     <div class="card">
       <label>🗒️ Observaciones del día</label>
-      <textarea id="chk-obs" placeholder="Faltantes, incidencias, pendientes para el siguiente turno…"></textarea>
+      <textarea id="chk-obs" oninput="guardarBorradorCierre()" placeholder="Faltantes, incidencias, pendientes para el siguiente turno…"></textarea>
       <div style="margin-top:12px"><button class="btn s" onclick="enviarObservacion()">📨 Enviar observación a Dirección</button></div>
     </div>
     <input type="file" id="chk-file" accept="image/*" capture="environment" hidden onchange="archivoRegistro(this)">
