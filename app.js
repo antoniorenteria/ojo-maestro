@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.9';
+const VERSION = '3.0';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -687,7 +687,8 @@ function estadoStock(sid, p) {
   const s = stockDe(sid)[p.id]; const c = s ? s.c : 0;
   return c <= 0 ? 'agotado' : (c < p.minimo ? 'comprar' : 'ok');
 }
-function faltantes(sid) { return db.productos.filter(p => !p.del && estadoStock(sid, p) !== 'ok'); }
+/* los apagados no cuentan como faltantes: no se están manejando ahora */
+function faltantes(sid) { return db.productos.filter(p => !p.del && p.apagado !== true && estadoStock(sid, p) !== 'ok'); }
 function prodFoto(p) { return p.foto || (window.CICLOPE_FOTOS && CICLOPE_FOTOS[p.nombre]) || ''; }
 function miniProd(p, lado = 46) {
   const f = prodFoto(p);
@@ -1282,8 +1283,9 @@ function renderInventario() {
     '<button class="' + (invCat === k ? 'on' : '') + '" onclick="invCat=\'' + k + '\';renderInventario()">' + v + '</button>').join('');
   const q = ($('inv-buscar').value || '').toLowerCase();
   const st = stockDe(sucursalActual);
+  // los productos "apagados" no se listan (siguen existiendo, se pueden encender)
   const lista = db.productos
-    .filter(p => !p.del && (invCat === 'TODOS' || p.cat === invCat) && p.nombre.toLowerCase().includes(q))
+    .filter(p => !p.del && p.apagado !== true && (invCat === 'TODOS' || p.cat === invCat) && p.nombre.toLowerCase().includes(q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
   $('inv-lista').innerHTML = lista.map(p => {
     const s = st[p.id] || { c: 0 }; const est = estadoStock(sucursalActual, p);
@@ -1559,10 +1561,8 @@ function renderRevision() {
           : '<span class="vv no" style="flex-shrink:0">PENDIENTE</span>') +
         '</div>';
     }).join('') + '</div>';
-  // otras evidencias sueltas del día
-  const evs = db.evidencias.filter(e => e.fecha === fecha && e.sucursalId === sid && !e.regId);
-  if (evs.length) html += '<div class="card"><h3>📎 Otras evidencias (' + evs.length + ')</h3>' +
-    '<div class="galeria">' + evs.map(e => tarjetaEvidencia(e)).join('') + '</div></div>';
+  // galería de evidencias (antes vivía en Dirección; la revisa Supervisión)
+  html += cardEvidencias(fecha, sid);
   // quién debía entrar hoy y quién realmente marcó
   html += cardProgramadoVsReal(fecha, sid);
   // notas y observaciones del equipo
@@ -2837,13 +2837,13 @@ function renderDireccion() {
   if (!esAdmin) return salirASucursales();
   pintarRed();
   const c = $('dir-contenido');
+  // pestañas viejas que ya se fusionaron o se movieron a Supervisión
+  if (['mes', 'semana', 'gastos'].includes(tabDir)) tabDir = tabDir === 'semana' ? 'nomina' : 'finanzas';
+  if (tabDir === 'evid') tabDir = 'hoy';
   if (tabDir === 'hoy') c.innerHTML = dirHoy();
-  if (tabDir === 'mes') c.innerHTML = dirMes();
-  if (tabDir === 'semana') c.innerHTML = dirSemana();
-  if (tabDir === 'gastos') c.innerHTML = dirGastos();
+  if (tabDir === 'finanzas') c.innerHTML = dirFinanzas();
   if (tabDir === 'nomina') c.innerHTML = dirNomina();
   if (tabDir === 'inv') c.innerHTML = dirInventarios();
-  if (tabDir === 'evid') c.innerHTML = dirEvidencias();
   if (tabDir === 'admin') c.innerHTML = dirAdmin();
 }
 
@@ -2903,47 +2903,143 @@ function dirHoy() {
 
 /* --- MES --- */
 let mesVista = mesISO();
-function dirMes() {
+/* ═══════════ FINANZAS ═══════════
+   Una sola vista con lo que entra, lo que sale y lo que queda, comparado
+   contra el mes anterior. Antes esto estaba partido en "Cierre de mes" y
+   "Gastos", y había que sumar de cabeza para saber cómo iba el negocio. */
+const ventasDeMes = mes => cierresVivos().filter(c => c.fecha.startsWith(mes)).reduce((a, c) => a + c.ventas, 0);
+const gastosDeMes = mes => gastosDe(mes + '-01', mes + '-31').reduce((a, g) => a + g.monto, 0);
+function variacion(hoy, antes) {
+  if (!antes) return null;
+  return Math.round((hoy - antes) / antes * 100);
+}
+function pintaVar(pct, invertido) {
+  if (pct === null) return '<span class="mini muted">sin mes previo</span>';
+  const bueno = invertido ? pct <= 0 : pct >= 0;
+  return '<span class="mini" style="color:var(--' + (bueno ? 'ok' : 'alerta') + ')">' +
+    (pct > 0 ? '▲ +' : pct < 0 ? '▼ ' : '= ') + pct + '%</span>';
+}
+function dirFinanzas() {
   const [y, m] = mesVista.split('-').map(Number);
+  const mesAnt = mesMas(mesVista, -1);
   const cierres = cierresVivos().filter(c => c.fecha.startsWith(mesVista));
-  const total = cierres.reduce((a, c) => a + c.ventas, 0);
-  const porSuc = {};
-  db.sucursales.forEach(s => porSuc[s.id] = cierres.filter(c => c.sucursalId === s.id).reduce((a, c) => a + c.ventas, 0));
+  const gastos = gastosDe(mesVista + '-01', mesVista + '-31');
+  const ventas = ventasDeMes(mesVista), gasto = gastosDeMes(mesVista);
+  const queda = ventas - gasto, margen = ventas ? Math.round(queda / ventas * 100) : 0;
+  const vAnt = ventasDeMes(mesAnt), gAnt = gastosDeMes(mesAnt), qAnt = vAnt - gAnt;
+  const sucs = db.sucursales.filter(s => s.activa && !s.del);
+
+  let html = '<div class="encabezado-seccion"><h2 style="margin:0">📊 ' + MESES[m - 1] + ' ' + y + '</h2>' +
+    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarMes(-1)">←</button>' +
+    '<button class="btn s mini" onclick="cambiarMes(1)">→</button>' +
+    '<button class="btn s mini" onclick="exportarMesCSV()">⬇️ Ventas</button>' +
+    '<button class="btn s mini" onclick="exportarGastosCSV()">⬇️ Gastos</button></div></div>';
+
+  // ── el titular: entra, sale, queda, comparado con el mes pasado ──
+  html += '<div class="grid c3">' +
+    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">entró · ventas</div>' +
+    '<div style="margin-top:4px">' + pintaVar(variacion(ventas, vAnt)) + '</div></div>' +
+    '<div class="stat rojo"><div class="v">' + fmt$(gasto) + '</div><div class="l">salió · gastos</div>' +
+    '<div style="margin-top:4px">' + pintaVar(variacion(gasto, gAnt), true) + '</div></div>' +
+    '<div class="stat' + (queda >= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(queda) + '</div>' +
+    '<div class="l">queda · ' + margen + '%</div>' +
+    '<div style="margin-top:4px">' + pintaVar(variacion(queda, qAnt)) + '</div></div></div>';
+  html += '<p class="mini muted">Comparado con ' + nombreMes(mesAnt) + ' (ventas ' + fmt$(vAnt) +
+    ' · gastos ' + fmt$(gAnt) + '). «Queda» no incluye la nómina: ésa la ves en 💰 Nómina.</p>';
+
+  // ── por sucursal: quién carga el negocio ──
+  html += '<div class="card"><h3>Por sucursal</h3><div class="tabla-wrap"><table>' +
+    '<tr><th>Sucursal</th><th class="num">Ventas</th><th class="num">Gastos</th><th class="num">Queda</th><th class="num">Margen</th></tr>' +
+    sucs.map(s => {
+      const v = cierres.filter(c => c.sucursalId === s.id).reduce((a, c) => a + c.ventas, 0);
+      const g = gastos.filter(x => x.sucursalId === s.id).reduce((a, x) => a + x.monto, 0);
+      const q = v - g;
+      return '<tr><td>' + esc(s.nombre) + '</td><td class="num">' + fmt$(v) + '</td>' +
+        '<td class="num">' + fmt$(g) + '</td><td class="num"><b class="amar">' + fmt$(q) + '</b></td>' +
+        '<td class="num">' + (v ? Math.round(q / v * 100) + '%' : '—') + '</td></tr>';
+    }).join('') +
+    '<tr><td><b>TOTAL</b></td><td class="num"><b>' + fmt$(ventas) + '</b></td><td class="num"><b>' + fmt$(gasto) +
+    '</b></td><td class="num"><b class="amar">' + fmt$(queda) + '</b></td><td class="num"><b>' + margen + '%</b></td></tr>' +
+    '</table></div></div>';
+
+  // ── histórico: los últimos 6 meses de un vistazo ──
+  const hist = [];
+  for (let i = 5; i >= 0; i--) {
+    const mm = mesMas(mesVista, -i);
+    hist.push({ mes: mm, v: ventasDeMes(mm), g: gastosDeMes(mm) });
+  }
+  const tope = Math.max(...hist.map(h => h.v), 1);
+  html += '<div class="card"><h3>Últimos 6 meses</h3>' +
+    hist.map(h => '<div class="item-linea" style="cursor:pointer" onclick="mesVista=\'' + h.mes + '\';renderDireccion()">' +
+      '<div class="grow"><div class="fila" style="justify-content:space-between"><b>' + nombreMes(h.mes) + '</b>' +
+      '<span class="mini">' + fmt$(h.v) + ' · queda <b class="amar">' + fmt$(h.v - h.g) + '</b></span></div>' +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.round(h.v / tope * 100) + '%"></i></div></div></div>').join('') +
+    '<p class="mini muted" style="margin-top:8px">Toca un mes para verlo a detalle.</p></div>';
+
+  // ── ventas día por día ──
   const dias = {};
   cierres.forEach(c => { dias[c.fecha] = dias[c.fecha] || {}; dias[c.fecha][c.sucursalId] = (dias[c.fecha][c.sucursalId] || 0) + c.ventas; });
-  const nomMes = MESES[m - 1] + ' ' + y;
-  let html = '<div class="encabezado-seccion"><h2 style="margin:0">📅 ' + nomMes + '</h2><div class="fila" style="flex:0">' +
-    '<button class="btn s mini" onclick="cambiarMes(-1)">←</button>' +
-    '<button class="btn s mini" onclick="cambiarMes(1)">→</button>' +
-    '<button class="btn s mini" onclick="exportarMesCSV()">⬇️ CSV</button></div></div>';
-  html += '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(total) + '</div><div class="l">ventas del mes</div></div>' +
-    db.sucursales.filter(s => s.activa && !s.del).map(s => '<div class="stat"><div class="v">' + fmt$(porSuc[s.id] || 0) + '</div><div class="l">' + esc(s.nombre) + '</div></div>').join('') + '</div>';
-  const fechas = Object.keys(dias).sort().reverse();
-  html += '<div class="card"><h3>Cierres por día</h3><div class="tabla-wrap"><table><tr><th>Fecha</th>' +
-    db.sucursales.filter(s => s.activa && !s.del).map(s => '<th class="num">' + esc(s.nombre) + '</th>').join('') + '<th class="num">Total día</th></tr>';
-  if (!fechas.length) html += '<tr><td colspan="9" class="muted">Aún no hay cierres este mes.</td></tr>';
-  fechas.forEach(f => {
-    const tot = Object.values(dias[f]).reduce((a, b) => a + b, 0);
-    html += '<tr><td>' + fmtFecha(f) + '</td>' + db.sucursales.filter(s => s.activa && !s.del).map(s =>
-      '<td class="num">' + (dias[f][s.id] ? fmt$(dias[f][s.id]) : '—') + '</td>').join('') +
-      '<td class="num"><b class="amar">' + fmt$(tot) + '</b></td></tr>';
-  });
-  html += '</table></div></div>';
-  // detalle de cierres
-  html += '<div class="card"><h3>Detalle de cierres</h3>' +
-    '<p class="mini muted">Si algún día quedó con un cierre de más o con un monto equivocado, quítalo aquí ' +
-    'y las ventas del mes se recalculan solas.</p>' +
-    '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th>Checklist</th><th>Novedades</th><th></th></tr>' +
-    (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' +
-      puntoPersona(c.personalId) + esc(per(c.personalId)?.nombre || '—') +
-      '</td><td class="num">' + fmt$(c.ventas) + (c.pos ? ' <span title="Efectivo ' + fmt$(c.pos.efectivo) + ' · Tarjeta ' + fmt$(c.pos.tarjeta) + '">📮</span>' : '') +
-      '</td><td class="num">' + fmt$(c.caja) + '</td><td>' + (c.hechos ?? '—') + '/' + totalCierre(c) +
-      '</td><td class="mini">' + esc(c.novedades || '') +
-      '</td><td><button class="btn s mini" onclick="borrarCierre(\'' + c.id + '\')">🗑️</button></td></tr>').join('')
-      || '<tr><td colspan="8" class="muted">Sin cierres.</td></tr>') +
+  const gastosPorDia = {};
+  gastos.forEach(g => { gastosPorDia[g.fecha] = (gastosPorDia[g.fecha] || 0) + g.monto; });
+  const fechas = [...new Set(Object.keys(dias).concat(Object.keys(gastosPorDia)))].sort().reverse();
+  html += '<div class="card"><h3>Día por día</h3><div class="tabla-wrap"><table><tr><th>Fecha</th>' +
+    sucs.map(s => '<th class="num">' + esc(s.nombre) + '</th>').join('') +
+    '<th class="num">Ventas</th><th class="num">Gastos</th><th class="num">Queda</th></tr>' +
+    (fechas.length ? fechas.map(f => {
+      const tot = Object.values(dias[f] || {}).reduce((a, b) => a + b, 0);
+      const gd = gastosPorDia[f] || 0;
+      return '<tr><td>' + fmtFecha(f) + '</td>' +
+        sucs.map(s => '<td class="num">' + ((dias[f] || {})[s.id] ? fmt$(dias[f][s.id]) : '—') + '</td>').join('') +
+        '<td class="num">' + fmt$(tot) + '</td><td class="num">' + (gd ? fmt$(gd) : '—') + '</td>' +
+        '<td class="num"><b class="amar">' + fmt$(tot - gd) + '</b></td></tr>';
+    }).join('') : '<tr><td colspan="9" class="muted">Aún no hay movimientos este mes.</td></tr>') +
     '</table></div></div>';
+
+  // ── en qué se va el dinero ──
+  const porCat = {};
+  gastos.forEach(g => { porCat[g.categoria] = (porCat[g.categoria] || 0) + g.monto; });
+  const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+  html += '<div class="card"><h3>En qué se fue</h3>' + (cats.length
+    ? cats.map(([c, v]) => '<div class="item-linea"><div class="grow"><b>' + esc(nombreCat(c)) + '</b>' +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.round(v / gasto * 100) + '%"></i></div></div>' +
+      '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b>' +
+      '<div class="mini muted">' + Math.round(v / gasto * 100) + '%</div></div></div>').join('')
+    : '<p class="muted mini">Sin gastos capturados este mes.</p>') + '</div>';
+
+  // ── detalle de gastos, con buscador ──
+  const q = (gastoBuscarDir || '').trim().toLowerCase();
+  const filtrados = q ? gastos.filter(g => (g.concepto + ' ' + (g.nota || '') + ' ' + (per(g.personalId)?.nombre || '') + ' ' + nombreCat(g.categoria)).toLowerCase().includes(q)) : gastos;
+  html += '<div class="card"><h3>Detalle de gastos</h3>' +
+    '<input id="gas-buscar-dir" placeholder="🔍 Buscar en concepto, nota, quién o categoría…" value="' + esc(gastoBuscarDir || '') +
+    '" oninput="gastoBuscarDir=this.value;renderDireccion();setTimeout(()=>{var b=$(\'gas-buscar-dir\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin-bottom:8px">' +
+    '<div class="tabla-wrap"><table>' +
+    '<tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>Concepto</th><th>Categoría</th><th class="num">Monto</th><th></th></tr>' +
+    (filtrados.map(g => '<tr><td>' + fmtFecha(g.fecha) + '</td><td>' + esc(suc(g.sucursalId)?.nombre || '') + '</td><td>' +
+      puntoPersona(g.personalId) + esc(per(g.personalId)?.nombre || '—') + '</td><td>' + esc(g.concepto) +
+      (g.foto ? ' <span title="Ticket" onclick="verFoto2(\'' + esc(fotoURL(g.foto)) + '\')" style="cursor:pointer">📎</span>' : '') +
+      '</td><td class="mini">' + esc(nombreCat(g.categoria)) + '</td><td class="num">' + fmt$(g.monto) +
+      '</td><td><button class="btn s mini" onclick="borrarGastoDir(\'' + g.id + '\')">🗑️</button></td></tr>').join('')
+      || '<tr><td colspan="7" class="muted">' + (q ? 'Nada coincide con «' + esc(q) + '».' : 'Sin gastos este mes.') + '</td></tr>') +
+    '</table></div></div>';
+
+  // ── corrección de cierres: replegado, solo cuando hace falta ──
+  html += '<div class="card"><h3>🛠️ Corregir cierres</h3>' +
+    '<p class="mini muted">Solo si un día quedó con un cierre de más o un monto equivocado. ' +
+    'Al quitarlo, las ventas se recalculan solas.</p>' +
+    '<button class="btn s mini" onclick="verCorreccionCierres=!verCorreccionCierres;renderDireccion()">' +
+    (verCorreccionCierres ? 'Ocultar' : 'Mostrar los ' + cierres.length + ' cierres del mes') + '</button>' +
+    (verCorreccionCierres ? '<div class="tabla-wrap" style="margin-top:10px"><table>' +
+      '<tr><th>Fecha</th><th>Sucursal</th><th>Responsable</th><th class="num">Ventas</th><th class="num">Caja</th><th></th></tr>' +
+      (cierres.map(c => '<tr><td>' + fmtFecha(c.fecha) + '</td><td>' + esc(suc(c.sucursalId)?.nombre || '') + '</td><td>' +
+        puntoPersona(c.personalId) + esc(per(c.personalId)?.nombre || '—') +
+        '</td><td class="num">' + fmt$(c.ventas) + (c.pos ? ' <span title="Efectivo ' + fmt$(c.pos.efectivo) + ' · Tarjeta ' + fmt$(c.pos.tarjeta) + '">📮</span>' : '') +
+        '</td><td class="num">' + fmt$(c.caja) +
+        '</td><td><button class="btn s mini" onclick="borrarCierre(\'' + c.id + '\')">🗑️</button></td></tr>').join('')
+        || '<tr><td colspan="6" class="muted">Sin cierres.</td></tr>') + '</table></div>' : '') +
+    '</div>';
   return html;
 }
+let verCorreccionCierres = false;
 /* quitar un cierre equivocado: se marca, no se borra, para que la baja también
    viaje a los demás dispositivos */
 function borrarCierre(id) {
@@ -3010,64 +3106,6 @@ function tarjetaSinCerrar() {
     '</div></div>';
 }
 
-/* --- GASTOS DEL MES: lo que sale, y lo que de verdad queda --- */
-function dirGastos() {
-  const [y, m] = mesVista.split('-').map(Number);
-  const desde = mesVista + '-01', hasta = mesVista + '-31';
-  const gastos = gastosDe(desde, hasta);
-  const ventas = cierresVivos().filter(c => c.fecha.startsWith(mesVista)).reduce((a, c) => a + c.ventas, 0);
-  const total = gastos.reduce((a, g) => a + g.monto, 0);
-  const utilidad = ventas - total;
-  const margen = ventas ? Math.round(utilidad / ventas * 100) : 0;
-  let html = '<div class="encabezado-seccion"><h2 style="margin:0">💸 ' + MESES[m - 1] + ' ' + y + '</h2>' +
-    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarMes(-1)">←</button>' +
-    '<button class="btn s mini" onclick="cambiarMes(1)">→</button>' +
-    '<button class="btn s mini" onclick="exportarGastosCSV()">⬇️ CSV</button></div></div>';
-  html += '<div class="grid c3">' +
-    '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas del mes</div></div>' +
-    '<div class="stat rojo"><div class="v">' + fmt$(total) + '</div><div class="l">gastos del mes</div></div>' +
-    '<div class="stat' + (utilidad >= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(utilidad) +
-    '</div><div class="l">queda ' + (ventas ? '· ' + margen + '%' : '') + '</div></div></div>';
-  html += '<p class="mini muted">«Queda» es ventas menos gastos capturados. No incluye la nómina: ' +
-    'ésa la ves en Pago semanal y en Nómina.</p>';
-  // por categoría
-  const porCat = {};
-  gastos.forEach(g => { porCat[g.categoria] = (porCat[g.categoria] || 0) + g.monto; });
-  const cats = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
-  html += '<div class="card"><h3>En qué se fue</h3>' + (cats.length
-    ? cats.map(([c, v]) => '<div class="item-linea"><div class="grow"><b>' + esc(nombreCat(c)) + '</b>' +
-      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.round(v / total * 100) + '%"></i></div></div>' +
-      '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b>' +
-      '<div class="mini muted">' + Math.round(v / total * 100) + '%</div></div></div>').join('')
-    : '<p class="muted mini">Sin gastos capturados este mes.</p>') + '</div>';
-  // por sucursal
-  const porSuc = db.sucursales.filter(s => s.activa && !s.del).map(s => {
-    const gs = gastos.filter(g => g.sucursalId === s.id).reduce((a, g) => a + g.monto, 0);
-    const vs = cierresVivos().filter(c => c.fecha.startsWith(mesVista) && c.sucursalId === s.id).reduce((a, c) => a + c.ventas, 0);
-    return { s, gs, vs };
-  });
-  html += '<div class="card"><h3>Por sucursal</h3><div class="tabla-wrap"><table>' +
-    '<tr><th>Sucursal</th><th class="num">Ventas</th><th class="num">Gastos</th><th class="num">Queda</th></tr>' +
-    porSuc.map(x => '<tr><td>' + esc(x.s.nombre) + '</td><td class="num">' + fmt$(x.vs) + '</td>' +
-      '<td class="num">' + fmt$(x.gs) + '</td><td class="num"><b class="amar">' + fmt$(x.vs - x.gs) + '</b></td></tr>').join('') +
-    '</table></div></div>';
-  // detalle
-  const q = (gastoBuscarDir || '').trim().toLowerCase();
-  const filtrados = q ? gastos.filter(g => (g.concepto + ' ' + (g.nota || '') + ' ' + (per(g.personalId)?.nombre || '') + ' ' + nombreCat(g.categoria)).toLowerCase().includes(q)) : gastos;
-  html += '<div class="card"><h3>Detalle de gastos</h3>' +
-    '<input id="gas-buscar-dir" placeholder="🔍 Buscar en concepto, nota, quién o categoría…" value="' + esc(gastoBuscarDir || '') +
-    '" oninput="gastoBuscarDir=this.value;renderDireccion();setTimeout(()=>{var b=$(\'gas-buscar-dir\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin-bottom:8px">' +
-    '<div class="tabla-wrap"><table>' +
-    '<tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>Concepto</th><th>Categoría</th><th class="num">Monto</th><th></th></tr>' +
-    (filtrados.map(g => '<tr><td>' + fmtFecha(g.fecha) + '</td><td>' + esc(suc(g.sucursalId)?.nombre || '') + '</td><td>' +
-      puntoPersona(g.personalId) + esc(per(g.personalId)?.nombre || '—') + '</td><td>' + esc(g.concepto) +
-      (g.foto ? ' <span title="Con foto del ticket" onclick="verFoto2(\'' + esc(fotoURL(g.foto)) + '\')" style="cursor:pointer">📎</span>' : '') +
-      '</td><td class="mini">' + esc(nombreCat(g.categoria)) + '</td><td class="num">' + fmt$(g.monto) +
-      '</td><td><button class="btn s mini" onclick="borrarGastoDir(\'' + g.id + '\')">🗑️</button></td></tr>').join('')
-      || '<tr><td colspan="7" class="muted">' + (q ? 'Nada coincide con «' + esc(q) + '».' : 'Sin gastos este mes.') + '</td></tr>') +
-    '</table></div></div>';
-  return html;
-}
 let gastoBuscarDir = '';
 function borrarGastoDir(id) {
   const g = gastosVivos().find(x => x.id === id); if (!g) return;
@@ -3109,7 +3147,7 @@ function cambiarSemana(d) {
   semanaRef = isoLocal(new Date(y, m - 1, x + d * 7));
   renderDireccion();
 }
-function dirSemana() {
+function dirPagoSemana() {
   const { ini, fin } = rangoSemana(semanaRef);
   const enRango = f => f >= ini && f <= fin;
   const turnos = db.turnos.filter(t => t.salida && enRango(t.fecha));
@@ -3197,11 +3235,15 @@ function dirNomina() {
   const totalNomina = Object.values(porPersona).reduce((a, x) => a + x.pago, 0);
   const totalProp = propMes.reduce((a, x) => a + x.monto, 0);
   const [y, m] = nominaMes.split('-').map(Number);
-  let html = '<div class="encabezado-seccion"><h2 style="margin:0">💰 Nómina · ' + MESES[m - 1] + ' ' + y + '</h2>' +
+  /* Arriba lo urgente: lo que se paga este domingo. Abajo el mes completo.
+     Antes eran dos pestañas separadas y había que saltar entre ellas. */
+  let html = dirPagoSemana();
+  html += '<div class="sep"></div>';
+  html += '<div class="encabezado-seccion"><h2 style="margin:0">📆 El mes · ' + MESES[m - 1] + ' ' + y + '</h2>' +
     '<div class="fila" style="flex:0"><button class="btn s mini" onclick="cambiarNominaMes(-1)">←</button>' +
     '<button class="btn s mini" onclick="cambiarNominaMes(1)">→</button>' +
     '<button class="btn s mini" onclick="exportarNominaCSV()">⬇️ CSV</button></div></div>';
-  html += '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(totalNomina + totalProp) + '</div><div class="l">total a pagar</div></div>' +
+  html += '<div class="grid c3"><div class="stat verde"><div class="v">' + fmt$(totalNomina + totalProp) + '</div><div class="l">nómina del mes</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(totalProp) + '</div><div class="l">💳 propinas por retribuir</div></div>' +
     '<div class="stat"><div class="v">' + turnos.length + '</div><div class="l">turnos cerrados</div></div></div>';
   html += '<div class="card"><div class="tabla-wrap"><table><tr><th>Colaborador</th><th class="num">Turnos</th><th class="num">Horas</th><th class="num">Sueldo</th><th class="num">💳 Propinas</th><th class="num">A pagar</th></tr>' +
@@ -3220,8 +3262,12 @@ function dirNomina() {
         '</td><td>' + esc(suc(x.sucursalId)?.nombre || '') + '</td><td class="num">' + fmt$(x.monto) + '</td><td class="mini">' + esc(x.nota || '') +
         '</td><td><button class="btn s mini" onclick="borrarPropina(\'' + x.id + '\')">🗑️</button></td></tr>').join('') + '</table></div>'
       : '<p class="muted mini">Sin propinas digitales este mes.</p>') + '</div>';
-  // detalle
-  html += '<div class="card"><h3>Detalle de turnos</h3><div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Turno</th><th>Entrada</th><th>Salida</th><th class="num">En piso</th><th>Ajuste</th><th class="num">Pago</th><th></th></tr>' +
+  // detalle de turnos: se despliega solo cuando hace falta corregir algo
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">Detalle de turnos</h3>' +
+    '<button class="btn s mini" onclick="verDetalleTurnos=!verDetalleTurnos;renderDireccion()">' +
+    (verDetalleTurnos ? 'Ocultar' : 'Ver ' + turnos.length + ' turnos') + '</button></div>' +
+    (!verDetalleTurnos ? '<p class="mini muted">Ábrelo solo si hay que corregir la hora de algún turno.</p></div>' :
+    '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Colaborador</th><th>Sucursal</th><th>Turno</th><th>Entrada</th><th>Salida</th><th class="num">En piso</th><th>Ajuste</th><th class="num">Pago</th><th></th></tr>' +
     (turnos.map(t => {
       const c = calcularPago(t);
       return '<tr><td>' + fmtFecha(t.fecha) + '</td><td>' + puntoPersona(t.personalId) +
@@ -3231,9 +3277,10 @@ function dirNomina() {
         (t.motivoAjuste ? '<div class="mini muted">' + esc(t.motivoAjuste) + '</div>' : '') +
         '</td><td class="num">' + fmt$(c.pago) + '</td>' +
         '<td><button class="btn s mini" onclick="modalAjuste(\'' + t.id + '\')">✏️</button></td></tr>';
-    }).join('') || '<tr><td colspan="10" class="muted">Sin registros.</td></tr>') + '</table></div></div>';
+    }).join('') || '<tr><td colspan="10" class="muted">Sin registros.</td></tr>') + '</table></div></div>') ;
   return html;
 }
+let verDetalleTurnos = false;
 /* Dirección corrige el ajuste de tiempo capturado en piso */
 let ajusteTmp = 0;
 function modalAjuste(tid) {
@@ -3309,17 +3356,24 @@ function dirInventarios() {
   return html;
 }
 
-/* --- EVIDENCIAS (vista dirección) --- */
-function dirEvidencias() {
-  let html = '';
-  db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
-    const lista = db.evidencias.filter(e => e.sucursalId === s.id).slice(0, 12);
-    html += '<div class="card"><h3>🏬 ' + esc(s.nombre) + '</h3>' +
-      (lista.length ? '<div class="galeria">' + lista.map(e => tarjetaEvidencia(e)).join('') + '</div>'
-        : '<p class="muted mini">Sin evidencias.</p>') + '</div>';
-  });
-  return html;
+/* --- EVIDENCIAS ---
+   Vive en Supervisión, que es quien las revisa. Muestra las del día que se
+   está revisando y, plegado, el histórico reciente de esa sucursal. */
+function cardEvidencias(fecha, sid) {
+  const delDia = db.evidencias.filter(e => e.sucursalId === sid && e.fecha === fecha);
+  const antes = db.evidencias.filter(e => e.sucursalId === sid && e.fecha !== fecha).slice(0, 12);
+  return '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📸 Evidencias del día</h3>' +
+    '<span class="badge ' + (delDia.length ? 'ok' : 'aviso') + '">' + delDia.length + '</span></div>' +
+    (delDia.length ? '<div class="galeria">' + delDia.map(e => tarjetaEvidencia(e)).join('') + '</div>'
+      : '<p class="muted mini">Sin evidencias este día.</p>') +
+    (antes.length ? '<div class="sep"></div>' +
+      '<button class="btn s mini" onclick="verEvidHist=!verEvidHist;renderRevision()">' +
+      (verEvidHist ? 'Ocultar anteriores' : '📚 Ver ' + antes.length + ' anteriores') + '</button>' +
+      (verEvidHist ? '<div class="galeria" style="margin-top:10px">' + antes.map(e => tarjetaEvidencia(e)).join('') + '</div>' : '')
+      : '') +
+    '</div>';
 }
+let verEvidHist = false;
 
 /* --- ADMINISTRAR --- */
 function dirAdmin() {
@@ -3386,12 +3440,30 @@ function dirAdmin() {
 }
 function listaProdAdmin(q) {
   q = q.toLowerCase();
-  return db.productos.filter(p => !p.del && p.nombre.toLowerCase().includes(q)).sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p =>
-    '<div class="item-linea">' + miniProd(p, 38) + '<div class="grow"><b style="font-size:.88rem">' + esc(p.nombre) + '</b>' +
-    '<div class="mini muted">' + esc(p.unidad) + ' · mín ' + p.minimo + ' · ' + (CATS[p.cat] || '') + '</div></div>' +
-    '<button class="btn s mini" onclick="modalProducto(\'' + p.id + '\')">✏️</button></div>').join('');
+  const lista = db.productos.filter(p => !p.del && p.nombre.toLowerCase().includes(q))
+    .sort((a, b) => (a.apagado ? 1 : 0) - (b.apagado ? 1 : 0) || a.nombre.localeCompare(b.nombre));
+  const apagados = lista.filter(p => p.apagado).length;
+  return (apagados ? '<p class="mini muted">' + apagados + ' producto(s) apagados: no aparecen en el inventario ' +
+    'ni cuentan como faltantes, pero siguen aquí para encenderlos cuando vuelvas a manejarlos.</p>' : '') +
+    lista.map(p =>
+      '<div class="item-linea"' + (p.apagado ? ' style="opacity:.5"' : '') + '>' + miniProd(p, 38) +
+      '<div class="grow"><b style="font-size:.88rem">' + esc(p.nombre) + '</b>' +
+      (p.apagado ? ' <span class="badge aviso">apagado</span>' : '') +
+      '<div class="mini muted">' + esc(p.unidad) + ' · mín ' + p.minimo + ' · ' + (CATS[p.cat] || '') + '</div></div>' +
+      '<button class="btn s mini" title="' + (p.apagado ? 'Encender' : 'Apagar') + '" ' +
+      'onclick="alternarProducto(\'' + p.id + '\')">' + (p.apagado ? '🔌' : '⏻') + '</button>' +
+      '<button class="btn s mini" onclick="modalProducto(\'' + p.id + '\')">✏️</button></div>').join('');
 }
 function filtrarProdAdmin(q) { $('prod-admin-lista').innerHTML = listaProdAdmin(q); }
+/* Apagar un producto lo saca del inventario sin borrarlo: cuando se vuelva a
+   manejar, se enciende y conserva su unidad, mínimo y categoría. */
+function alternarProducto(id) {
+  const p = prod(id); if (!p) return;
+  p.apagado = !p.apagado; p.t = Date.now();
+  tocarCatalogos(); guardarDB(); renderDireccion();
+  toast(p.apagado ? '⏻ ' + p.nombre + ' apagado · ya no aparece en el inventario'
+    : '🔌 ' + p.nombre + ' encendido · vuelve al inventario');
+}
 
 function modalSucursal(id) {
   const s = id ? suc(id) : null;
