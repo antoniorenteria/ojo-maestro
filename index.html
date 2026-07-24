@@ -473,7 +473,8 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <p class="muted" style="letter-spacing:3px;text-transform:uppercase;font-size:.72rem">Centro de operaciones · Universo Cíclope</p>
       <div style="max-width:420px;margin:34px auto 0" id="portada-sucursales"></div>
       <div style="max-width:420px;margin:14px auto 0">
-        <button class="btn s" style="width:100%" onclick="irCalendario()"><span class="ico">📅</span> Calendario</button>
+        <button class="btn s" style="width:100%;margin-bottom:10px" onclick="irCalendario()"><span class="ico">📅</span> Calendario</button>
+        <button class="btn s" style="width:100%" onclick="pedirPinEscandallo()"><span class="ico">📐</span> Escandallo</button>
       </div>
       <div style="max-width:420px;margin:10px auto 0;display:grid;gap:10px;grid-template-columns:1fr 1fr">
         <button class="btn s" onclick="pedirPinSupervision()"><span class="ico">🔍</span> Supervisión</button>
@@ -699,6 +700,20 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div><div class="tit amar" style="font-weight:700">📅 Calendario</div><div class="sub">Turnos del mes</div></div>
       <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
     <div id="cal-contenido"></div>
+  </section>
+
+  <!-- ══════════ ESCANDALLO ══════════ -->
+  <section class="screen" id="scr-esc">
+    <div class="topbar">
+      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+      <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
+        <div class="tit amar" style="font-weight:700">📐 Escandallo</div><div class="sub">Costeo de recetas ▾</div></div>
+      <div class="grow"></div><button class="btn s mini" onclick="toggleTema()">🌓</button></div>
+    <div class="tabs" id="esc-tabs">
+      <button data-t="menu" class="on" onclick="escTabIr('menu')">🍔 Menú y costos</button>
+      <button data-t="insumos" onclick="escTabIr('insumos')">🥩 Insumos</button>
+    </div>
+    <div id="esc-contenido"></div>
   </section>
 
   <!-- ══════════ DIRECCIÓN ══════════ -->

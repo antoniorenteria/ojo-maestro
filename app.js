@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.0';
+const VERSION = '3.1';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -347,8 +347,89 @@ function seedDB() {
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
     calendario: [], gastos: [],
+    insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: 0, precio: i[5], t: 0 })),
+    recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
 }
+/* ═══════════ ESCANDALLO (costeo de recetas) ═══════════
+   Datos de la hoja "INSUMOS 2026": [nombre, proveedor, marca, cantidad de la
+   presentación, unidad, precio]. El precio unitario se calcula: precio/cant.
+   El envío se captura aparte (en la hoja venía en 0). */
+const SEED_INSUMOS = [
+  ['Bidón BBQ', 'Carnemart', 'We love kitchen', 3700, 'g', 184],
+  ['Bidón Buffalo', "Sams' Club", 'Original', 3700, 'g', 190],
+  ['Bolsa de plástico', 'Central de Abastos', '', 100, 'pza', 70],
+  ['Boneless', 'Carnemart', 'Freskecito', 2500, 'g', 320],
+  ['Carne de Arrachera', 'Carnemart', 'Sonora', 8, 'pza', 121.90],
+  ['Catsup', 'Carnemart', 'Bachi', 20000, 'g', 490],
+  ['Chocolate líquido', 'Mercado Libre', 'Hersheys', 2600, 'g', 250],
+  ['Dedos de queso', 'City Club', '', 35, 'pza', 269],
+  ['Empaque 7x7', 'Desechables', '', 50, 'pza', 214],
+  ['Hamburguesero negro 6x6', 'Desechables', '', 100, 'pza', 125],
+  ['Habanero Jaguar', 'Mercado Libre', '', 3800, 'ml', 299],
+  ['Mayonesa', 'Carnemart', 'Culinaire', 3000, 'g', 175.90],
+  ['Papas a la francesa 3/8', 'Don Salvador', '', 13200, 'g', 803],
+  ['Pimienta negra', '', '', 500, 'g', 145],
+  ['Limón Pimienta', 'Mercado Libre', 'Mi Granero', 680, 'g', 165],
+  ['Popote desechable', 'Mercado Libre', '', 2000, 'pza', 580],
+  ['Queso nachos', 'Carnemart', 'Del Rancho', 1000, 'g', 27.70],
+  ['Sal de ajo', 'Tiendas 3B', '', 125, 'g', 15],
+  ['Tocino en trozos', 'Carnemart', '', 420, 'g', 105],
+  ['Tucán mango', 'Central', 'Agnez Alimentos', 1890, 'ml', 160],
+  ['Aceite', 'Tiendas 3B', 'Biosol', 845, 'g', 34.50],
+  ['Bolsa de hielos', 'City Club', '', 5000, 'g', 28],
+  ['Harina de trigo', 'Tiendas 3B', '', 20000, 'g', 290],
+  ['Helado de chocolate', 'City Club', '', 4700, 'ml', 196],
+  ['Helado de fresa', 'City Club', '', 4700, 'ml', 196],
+  ['Helado de vainilla', 'City Club', '', 4700, 'ml', 196],
+  ['Huevo', 'Tiendas 3B', '', 12, 'pza', 35.50],
+  ['Lactibu', 'Tiendas 3B', 'Lactibu', 1000, 'ml', 15],
+  ['Mantequilla Margarina', "Sams' Club", 'Members Mark', 1000, 'g', 67],
+  ['Media Crema', 'Tiendas 3B', 'Alpura', 250, 'g', 10],
+  ['Mostaza', 'Tiendas 3B', '', 260, 'g', 17.50],
+  ['Queso gouda', 'Zorro', 'Saucito', 3000, 'g', 335],
+  ['Servilletas', 'Tiendas 3B', 'Cloudy', 400, 'pza', 20],
+  ['Cocoa', 'Cravioto', 'La Suiza', 400, 'g', 82.94],
+  ['Galleta oreo', 'Cravioto', 'Oreo', 1000, 'g', 116.69],
+  ['Tapa Domo', 'Cravioto', 'Reyma', 80, 'pza', 123],
+  ['Vaso y Tapa soufle', 'Mercado Libre', 'Primo', 1200, 'pza', 935],
+  // insumos que aparecen en las recetas pero no en la hoja principal:
+  ['Papel grado alimenticio', '', '', 2000, 'pza', 1100],
+  ['Jalapeños', '', '', 80, 'g', 2],
+  ['Masa Crepiburger', '', '', 10, 'pza', 33.77],
+  ['Gas', '', '', 10000, 'ml', 240],
+  ['Sticker', '', '', 500, 'pza', 320],
+  ['Lechuga Italiana', '', '', 300, 'g', 20],
+  ['Papa Curly', '', '', 10600, 'g', 947],
+  ['Papa Gajo', '', '', 13200, 'g', 954],
+  ['Leche Carnation', '', '', 1000, 'ml', 39],
+  ['Vaso malteada 16 onz', '', '', 80, 'pza', 137.40],
+  ['Crema batida', '', '', 1275, 'ml', 265],
+  ['Leche deslactosada', '', '', 1000, 'ml', 20],
+  ['Aderezo Ranch', '', '', 3400, 'g', 265],
+];
+/* Recetas de ejemplo tomadas de tu hoja (Minotauro normal y Lodo del Pantano).
+   Cada ingrediente es [nombre del insumo, cantidad usada en la receta]. Las
+   demás recetas se agregan desde la app o se cargan aparte. */
+const SEED_RECETAS = [
+  {
+    nombre: 'Minotauro', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16,
+    ing: [
+      ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+      ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+      ['Masa Crepiburger', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+      ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15]
+    ]
+  },
+  {
+    nombre: 'Lodo del Pantano', categoria: 'Malteadas', porciones: 1, precio: 75, iva: 0,
+    ing: [
+      ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+      ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 20], ['Popote desechable', 1],
+      ['Crema batida', 45], ['Cocoa', 10], ['Leche deslactosada', 120]
+    ]
+  }
+];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
   ['insumos', '🥩 Insumos y mercancía'],
@@ -372,6 +453,17 @@ function migrarDB() {
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
+  // v3.1: escandallo. Siembra insumos y recetas en instalaciones existentes,
+  // sin pisar lo que ya tengan (une por id).
+  if (!db.insumos) db.insumos = [];
+  if (!db.recetas) db.recetas = [];
+  if (!db.escandalloSembrado) {
+    const idsI = new Set(db.insumos.map(x => x.id));
+    SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: 0, precio: i[5], t: 0 }); });
+    const idsR = new Set(db.recetas.map(x => x.id));
+    SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
+    db.escandalloSembrado = true; limpio = true;
+  }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
      Se sube la marca t de cada producto para que el cambio gane en el merge
@@ -734,7 +826,7 @@ function ir(id) {
   window.scrollTo(0, 0);
   renderPantalla(id);
 }
-function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; ir('scr-portada'); }
+function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; ir('scr-portada'); }
 function renderPantalla(id) {
   if (id === 'scr-portada') renderPortada();
   if (id === 'scr-suc') renderSucursal();
@@ -747,6 +839,7 @@ function renderPantalla(id) {
   if (id === 'scr-proto') renderProtocolos();
   if (id === 'scr-gastos') renderGastos();
   if (id === 'scr-cal') renderCalendario();
+  if (id === 'scr-esc') renderEscandallo();
   if (id === 'scr-dir') renderDireccion();
 }
 /* menú del título: saltar entre sucursales y paneles sin volver al inicio */
@@ -758,6 +851,7 @@ function menuNavegacion() {
       (s.id === sucursalActual ? ' · aquí estás' : '') + '</button>').join('') +
     '<div class="sep"></div>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();irCalendario()">📅 Calendario</button>' +
+    '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinEscandallo()">📐 Escandallo</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinSupervision()">🔍 Supervisión</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinAdmin()">👁️ Dirección</button>' +
     '<button class="btn s" onclick="cerrarModal();salirASucursales()">🏠 Pantalla de inicio</button>');
@@ -2800,6 +2894,257 @@ async function calendarioPNG() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     toast('⬇️ ' + nombre);
   }, 'image/png');
+}
+
+/* ═══════════ ESCANDALLO (costeo de recetas) ═══════════
+   Insumos (materia prima con su precio) → recetas (cuánto de cada insumo lleva
+   un producto) → costo, margen y utilidad. Mismo cálculo que la hoja de Toño. */
+const insumo = id => db.insumos.find(x => x.id === id);
+const insumosVivos = () => db.insumos.filter(x => !x.del);
+const recetasVivas = () => db.recetas.filter(x => !x.del);
+/* precio por unidad de presentación: (precio + envío) / cantidad */
+function precioUnitInsumo(ins) {
+  if (!ins || !ins.cant) return 0;
+  return (Number(ins.precio || 0) + Number(ins.envio || 0)) / Number(ins.cant);
+}
+function costoIngrediente(ing) {
+  const ins = insumo(ing.insumoId);
+  return precioUnitInsumo(ins) * Number(ing.c || 0);
+}
+/* todos los números de una receta, calculados en vivo */
+function calcReceta(r) {
+  const costo = (r.ing || []).reduce((a, ing) => a + costoIngrediente(ing), 0);
+  const porciones = Number(r.porciones) || 1;
+  const costoUnit = costo / porciones;
+  const precio = Number(r.precio || 0);
+  const iva = Number(r.iva || 0) / 100;
+  const utilidad = precio - costoUnit;
+  return {
+    costo, costoUnit, precio, iva,
+    utilidad,
+    pctUtil: precio ? utilidad / precio * 100 : 0,   // utilidad sobre precio (food cost inverso)
+    pctCosto: precio ? costoUnit / precio * 100 : 0,  // % que representa el costo
+    pctGanancia: costoUnit ? utilidad / costoUnit * 100 : 0, // markup sobre costo
+    pventaIva: precio * (1 + iva)
+  };
+}
+const fmtPct = n => (Math.round(n * 10) / 10).toLocaleString('es-MX') + '%';
+
+let escTab = 'menu', escCatAbierta = {}, insumoBuscar = '', recetaEditId = null;
+function pedirPinEscandallo() {
+  abrirPin('PIN de Escandallo', pin => {
+    if (pin === db.config.adminPin || pin === '0616') { esEscandallo = true; ir('scr-esc'); }
+    else toast('⛔ PIN incorrecto');
+  });
+}
+let esEscandallo = false;
+function renderEscandallo() {
+  if (!esEscandallo) return salirASucursales();
+  document.querySelectorAll('#esc-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === escTab));
+  const c = $('esc-contenido');
+  c.innerHTML = escTab === 'insumos' ? escInsumos() : escMenu();
+}
+function escTabIr(t) { escTab = t; renderEscandallo(); }
+
+/* --- vista MENÚ: precios finales por categoría --- */
+function escMenu() {
+  const recetas = recetasVivas();
+  const cats = {};
+  recetas.forEach(r => { (cats[r.categoria || 'Sin categoría'] = cats[r.categoria || 'Sin categoría'] || []).push(r); });
+  const nombresCat = Object.keys(cats).sort();
+  // resumen global
+  const activos = recetas.filter(r => r.activo !== false);
+  const margenProm = activos.length ? Math.round(activos.reduce((a, r) => a + calcReceta(r).pctUtil, 0) / activos.length) : 0;
+  let html = '<div class="grid c3">' +
+    '<div class="stat"><div class="v">' + recetas.length + '</div><div class="l">productos</div></div>' +
+    '<div class="stat"><div class="v">' + insumosVivos().length + '</div><div class="l">insumos</div></div>' +
+    '<div class="stat verde"><div class="v">' + margenProm + '%</div><div class="l">utilidad promedio</div></div></div>';
+  html += '<button class="btn p gigante" onclick="editarReceta()">➕ Nuevo producto</button>';
+  if (!recetas.length) return html + '<p class="muted centrado" style="margin-top:20px">Aún no hay productos. Crea el primero.</p>';
+
+  nombresCat.forEach(cat => {
+    const lista = cats[cat].slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const abierta = escCatAbierta[cat] !== false;   // abiertas por defecto
+    html += '<div class="card"><div class="encabezado-seccion" style="cursor:pointer" onclick="escCatAbierta[\'' + cat.replace(/'/g, "\\'") + '\']=' + abierta + '===true?false:true;renderEscandallo()">' +
+      '<h3 style="margin:0">' + esc(cat) + '</h3><span class="badge mor">' + lista.length + ' ' + (abierta ? '▾' : '▸') + '</span></div>' +
+      (abierta ? '<div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">% Costo</th><th class="num">Utilidad</th><th class="num">% Util.</th><th></th></tr>' +
+        lista.map(r => {
+          const k = calcReceta(r);
+          const alerta = k.pctCosto > 55;   // costo alto: se marca
+          return '<tr' + (r.activo === false ? ' style="opacity:.45"' : '') + '><td><b>' + esc(r.nombre) + '</b>' +
+            (r.activo === false ? ' <span class="badge aviso">apagado</span>' : '') + '</td>' +
+            '<td class="num">' + fmt$(k.precio) + '</td>' +
+            '<td class="num">' + fmt$(k.costoUnit) + '</td>' +
+            '<td class="num"' + (alerta ? ' style="color:var(--alerta)"' : '') + '>' + fmtPct(k.pctCosto) + '</td>' +
+            '<td class="num"><b class="amar">' + fmt$(k.utilidad) + '</b></td>' +
+            '<td class="num">' + fmtPct(k.pctUtil) + '</td>' +
+            '<td><button class="btn s mini" onclick="editarReceta(\'' + r.id + '\')">✏️</button></td></tr>';
+        }).join('') + '</table></div>' : '') + '</div>';
+  });
+  return html;
+}
+
+/* --- editar / crear una receta (producto) --- */
+function editarReceta(id) {
+  recetaEditId = id;
+  const r = id ? recetasVivas().find(x => x.id === id) : { nombre: '', categoria: '', porciones: 1, precio: 0, iva: 16, ing: [], activo: true };
+  recetaBorrador = JSON.parse(JSON.stringify(r));
+  pintarReceta();
+}
+let recetaBorrador = null;
+function pintarReceta() {
+  const r = recetaBorrador, k = calcReceta(r);
+  const cats = [...new Set(recetasVivas().map(x => x.categoria).filter(Boolean))];
+  let html = '<h3>' + (recetaEditId ? '✏️ Editar producto' : '➕ Nuevo producto') + '</h3>' +
+    '<label>Nombre</label><input id="rec-nombre" value="' + esc(r.nombre) + '" oninput="recetaBorrador.nombre=this.value">' +
+    '<label style="margin-top:10px">Categoría</label>' +
+    '<input id="rec-cat" list="rec-cats" value="' + esc(r.categoria || '') + '" oninput="recetaBorrador.categoria=this.value" placeholder="Ej. Crepiburgers">' +
+    '<datalist id="rec-cats">' + cats.map(c => '<option value="' + esc(c) + '">').join('') + '</datalist>' +
+    '<div class="fila" style="margin-top:10px">' +
+    '<div style="flex:1"><label>Precio de venta</label><input type="number" inputmode="decimal" value="' + r.precio + '" oninput="recetaBorrador.precio=Number(this.value);pintarResultReceta()"></div>' +
+    '<div style="flex:1"><label>IVA %</label><input type="number" value="' + r.iva + '" oninput="recetaBorrador.iva=Number(this.value);pintarResultReceta()"></div>' +
+    '<div style="flex:1"><label>Porciones</label><input type="number" value="' + r.porciones + '" oninput="recetaBorrador.porciones=Number(this.value)||1;pintarResultReceta()"></div></div>';
+  // resultados en vivo
+  html += '<div id="rec-result"></div>';
+  // ingredientes
+  html += '<label style="margin-top:12px">Ingredientes</label><div id="rec-ing"></div>' +
+    '<button class="btn s" style="margin-top:8px" onclick="recAgregarIng()">➕ Agregar ingrediente</button>';
+  html += '<div class="sep"></div>' +
+    '<button class="btn p gigante" onclick="guardarReceta()">💾 Guardar producto</button>';
+  if (recetaEditId) html += '<div class="fila" style="margin-top:8px">' +
+    '<button class="btn s" onclick="recetaBorrador.activo=!recetaBorrador.activo;guardarReceta()">' +
+    (r.activo === false ? '🔌 Encender' : '⏻ Apagar') + '</button>' +
+    '<button class="btn peligro" onclick="borrarReceta(\'' + recetaEditId + '\')">🗑️ Eliminar</button></div>';
+  html += '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>';
+  abrirModal(html);
+  pintarIngredientes();
+  pintarResultReceta();
+}
+function pintarResultReceta() {
+  const box = $('rec-result'); if (!box) return;
+  const k = calcReceta(recetaBorrador);
+  const alerta = k.pctCosto > 55;
+  box.innerHTML = '<div class="card' + (alerta ? ' amarilla' : '') + '" style="margin:12px 0 0">' +
+    '<div class="grid c3">' +
+    '<div class="stat"><div class="v">' + fmt$(k.costoUnit) + '</div><div class="l">costo</div></div>' +
+    '<div class="stat verde"><div class="v">' + fmt$(k.utilidad) + '</div><div class="l">utilidad</div></div>' +
+    '<div class="stat"><div class="v">' + fmtPct(k.pctUtil) + '</div><div class="l">% utilidad</div></div></div>' +
+    '<div class="fila mini muted" style="flex-wrap:wrap;gap:8px 16px;margin-top:8px">' +
+    '<span>% costo: <b class="amar">' + fmtPct(k.pctCosto) + '</b></span>' +
+    '<span>% ganancia: <b class="amar">' + fmtPct(k.pctGanancia) + '</b></span>' +
+    '<span>P. venta + IVA: <b class="amar">' + fmt$(k.pventaIva) + '</b></span></div>' +
+    (alerta ? '<p class="mini" style="color:var(--alerta);margin:8px 0 0">⚠️ El costo se lleva más del 55% del precio. Revisa la receta o el precio.</p>' : '') +
+    '</div>';
+}
+function pintarIngredientes() {
+  const box = $('rec-ing'); if (!box) return;
+  const r = recetaBorrador;
+  if (!r.ing.length) { box.innerHTML = '<p class="muted mini">Sin ingredientes todavía.</p>'; return; }
+  const ops = insumosVivos().slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  box.innerHTML = r.ing.map((ing, i) => {
+    const ins = insumo(ing.insumoId);
+    const costo = costoIngrediente(ing);
+    return '<div class="item-linea" style="gap:6px">' +
+      '<select style="flex:2;margin:0" onchange="recetaBorrador.ing[' + i + '].insumoId=this.value;pintarIngredientes();pintarResultReceta()">' +
+      '<option value="">— insumo —</option>' +
+      ops.map(o => '<option value="' + o.id + '"' + (o.id === ing.insumoId ? ' selected' : '') + '>' + esc(o.nombre) + '</option>').join('') + '</select>' +
+      '<input type="number" inputmode="decimal" style="flex:1;margin:0" value="' + ing.c + '" ' +
+      'oninput="recetaBorrador.ing[' + i + '].c=Number(this.value);pintarIngredientes();pintarResultReceta()">' +
+      '<span class="mini muted" style="flex:0;white-space:nowrap;min-width:52px">' + (ins ? esc(ins.unidad) + ' · ' + fmt$(costo) : '—') + '</span>' +
+      '<button class="btn s mini" onclick="recetaBorrador.ing.splice(' + i + ',1);pintarIngredientes();pintarResultReceta()">🗑️</button></div>';
+  }).join('');
+}
+function recAgregarIng() { recetaBorrador.ing.push({ insumoId: '', c: 0 }); pintarIngredientes(); }
+function guardarReceta() {
+  const r = recetaBorrador;
+  if (!r.nombre.trim()) return toast('Ponle nombre al producto');
+  r.nombre = r.nombre.trim(); r.categoria = (r.categoria || '').trim();
+  r.ing = r.ing.filter(x => x.insumoId && x.c > 0);
+  r.t = Date.now();
+  if (recetaEditId) {
+    const i = db.recetas.findIndex(x => x.id === recetaEditId);
+    if (i >= 0) db.recetas[i] = Object.assign(db.recetas[i], r);
+  } else {
+    let nid = 'rec-' + slug(r.nombre);
+    if (db.recetas.some(x => x.id === nid)) nid = 'rec-' + uid();
+    r.id = nid; db.recetas.unshift(r);
+  }
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast('💾 ' + r.nombre + ' guardado');
+}
+function borrarReceta(id) {
+  const r = recetasVivas().find(x => x.id === id); if (!r) return;
+  if (!confirm('¿Eliminar el producto "' + r.nombre + '" del escandallo?')) return;
+  r.del = true; r.t = Date.now();
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast('🗑️ Producto eliminado');
+}
+
+/* --- vista INSUMOS: materia prima con su precio unitario --- */
+function escInsumos() {
+  const q = insumoBuscar.trim().toLowerCase();
+  const lista = insumosVivos()
+    .filter(i => !q || (i.nombre + ' ' + (i.prov || '') + ' ' + (i.marca || '')).toLowerCase().includes(q))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  let html = '<button class="btn p gigante" onclick="editarInsumo()">➕ Nuevo insumo</button>' +
+    '<input placeholder="🔍 Buscar insumo, proveedor o marca…" value="' + esc(insumoBuscar) + '" ' +
+    'oninput="insumoBuscar=this.value;renderEscandallo();setTimeout(()=>{var b=document.querySelector(\'#esc-contenido input\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin:10px 0">';
+  html += '<div class="card"><div class="tabla-wrap"><table>' +
+    '<tr><th>Insumo</th><th>Prov.</th><th class="num">Present.</th><th class="num">Precio</th><th class="num">$/unidad</th><th></th></tr>' +
+    (lista.map(i => '<tr><td><b>' + esc(i.nombre) + '</b>' + (i.marca ? '<div class="mini muted">' + esc(i.marca) + '</div>' : '') + '</td>' +
+      '<td class="mini">' + esc(i.prov || '—') + '</td>' +
+      '<td class="num mini">' + i.cant + ' ' + esc(i.unidad) + '</td>' +
+      '<td class="num">' + fmt$(Number(i.precio) + Number(i.envio || 0)) + '</td>' +
+      '<td class="num"><b class="amar">$' + (Math.round(precioUnitInsumo(i) * 10000) / 10000).toLocaleString('es-MX', { minimumFractionDigits: 4 }) + '</b></td>' +
+      '<td><button class="btn s mini" onclick="editarInsumo(\'' + i.id + '\')">✏️</button></td></tr>').join('')
+      || '<tr><td colspan="6" class="muted">' + (q ? 'Nada coincide.' : 'Sin insumos.') + '</td></tr>') +
+    '</table></div></div>';
+  return html;
+}
+function editarInsumo(id) {
+  const i = id ? insumosVivos().find(x => x.id === id) : { nombre: '', prov: '', marca: '', cant: 1, unidad: 'g', envio: 0, precio: 0 };
+  const b = JSON.parse(JSON.stringify(i));
+  const calc = () => { const pu = precioUnitInsumo({ precio: Number($('ins-precio').value), envio: Number($('ins-envio').value), cant: Number($('ins-cant').value) }); const e = $('ins-pu'); if (e) e.textContent = '$' + (Math.round(pu * 10000) / 10000).toLocaleString('es-MX', { minimumFractionDigits: 4 }); };
+  abrirModal('<h3>' + (id ? '✏️ Editar insumo' : '➕ Nuevo insumo') + '</h3>' +
+    '<label>Nombre</label><input id="ins-nombre" value="' + esc(b.nombre) + '">' +
+    '<div class="fila"><div style="flex:1"><label>Proveedor</label><input id="ins-prov" value="' + esc(b.prov || '') + '"></div>' +
+    '<div style="flex:1"><label>Marca</label><input id="ins-marca" value="' + esc(b.marca || '') + '"></div></div>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Cantidad presentación</label>' +
+    '<input id="ins-cant" type="number" inputmode="decimal" value="' + b.cant + '" oninput="(' + calc.toString() + ')()"></div>' +
+    '<div style="flex:1"><label>Unidad</label><input id="ins-unidad" value="' + esc(b.unidad) + '" placeholder="g, ml, pza"></div></div>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Precio</label>' +
+    '<input id="ins-precio" type="number" inputmode="decimal" value="' + b.precio + '" oninput="(' + calc.toString() + ')()"></div>' +
+    '<div style="flex:1"><label>Envío</label><input id="ins-envio" type="number" inputmode="decimal" value="' + (b.envio || 0) + '" oninput="(' + calc.toString() + ')()"></div></div>' +
+    '<p class="mini muted" style="margin-top:10px">Precio por unidad: <b class="amar" id="ins-pu">$0.0000</b> · es lo que se usa para costear las recetas.</p>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarInsumo(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (id ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarInsumo(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function guardarInsumo(id) {
+  const nombre = $('ins-nombre').value.trim();
+  if (!nombre) return toast('Ponle nombre al insumo');
+  const datos = {
+    nombre, prov: $('ins-prov').value.trim(), marca: $('ins-marca').value.trim(),
+    cant: Number($('ins-cant').value) || 1, unidad: $('ins-unidad').value.trim() || 'u',
+    precio: Number($('ins-precio').value) || 0, envio: Number($('ins-envio').value) || 0, t: Date.now()
+  };
+  if (id) { const i = insumo(id); Object.assign(i, datos); }
+  else {
+    let nid = 'ins-' + slug(nombre);
+    if (db.insumos.some(x => x.id === nid)) nid = 'ins-' + uid();
+    db.insumos.unshift(Object.assign({ id: nid }, datos));
+  }
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast('💾 Insumo guardado');
+}
+function borrarInsumo(id) {
+  const usada = recetasVivas().find(r => (r.ing || []).some(x => x.insumoId === id));
+  if (usada) return toast('No se puede: lo usa la receta "' + usada.nombre + '". Quítalo de ahí primero.');
+  const i = insumo(id); if (!i) return;
+  if (!confirm('¿Eliminar el insumo "' + i.nombre + '"?')) return;
+  i.del = true; i.t = Date.now();
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast('🗑️ Insumo eliminado');
 }
 
 /* ═══════════ TEMA CLARO / OSCURO ═══════════ */
