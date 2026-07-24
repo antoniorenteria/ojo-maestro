@@ -230,6 +230,14 @@ input,select,textarea{background:#0F0722;border-color:var(--borde)}
 /* barra superior fija */
 .topbar{position:sticky;top:0;z-index:44;background:var(--velo);backdrop-filter:blur(14px);
   margin:0 -16px 4px;padding:12px 16px;border-bottom:1px solid var(--borde-suave)}
+/* ── Dirección: encabezado (barra + tabs) FIJO al hacer scroll ──
+   Así el menú de Hoy/Nómina/Inventario/… se queda arriba y no hay que subir
+   para cambiar de sección. La topbar interna deja de ser sticky por sí sola;
+   manda el contenedor. */
+.dir-fijo{position:sticky;top:0;z-index:44;background:var(--velo);backdrop-filter:blur(14px);
+  margin:0 -16px 8px;padding:0 16px;border-bottom:1px solid var(--borde-suave)}
+.dir-fijo .topbar{position:static;margin:0;padding:12px 0 6px;border-bottom:none;background:none;backdrop-filter:none}
+.dir-fijo .tabs{margin:0;padding:2px 0 10px}
 /* ── respiro para la barra de estado del iPhone ──
    La app corre a pantalla completa (viewport-fit=cover + status-bar
    translucent), así que sin esto la fila de Volver / mes / tema queda pegada
@@ -238,9 +246,26 @@ input,select,textarea{background:#0F0722;border-color:var(--borde)}
 .screen{padding-top:calc(18px + env(safe-area-inset-top, 0px))}
 .topbar{margin-top:calc(-18px - env(safe-area-inset-top, 0px));
   padding-top:calc(30px + env(safe-area-inset-top, 0px));padding-bottom:12px}
+/* en Dirección el que sube hasta el borde y respeta el notch es el wrapper;
+   la topbar interna ya no lo hace (la neutralizamos arriba) */
+.dir-fijo{margin-top:calc(-18px - env(safe-area-inset-top, 0px));
+  padding-top:calc(env(safe-area-inset-top, 0px) + 12px)}
+.dir-fijo .topbar{padding-top:0}
 @supports not (padding: env(safe-area-inset-top)) {
   .screen{padding-top:18px}
   .topbar{margin-top:-18px;padding-top:30px}
+  .dir-fijo{margin-top:-18px;padding-top:12px}
+}
+/* barra compacta en teléfono para que NO envuelva a varias líneas
+   (era lo que se veía "cortado" del lado derecho) */
+@media(max-width:620px){
+  #scr-dir .topbar{gap:8px;flex-wrap:nowrap}
+  #scr-dir .topbar .logo{height:34px}
+  #scr-dir .topbar > div[onclick]{min-width:0}
+  #scr-dir .topbar .tit{font-size:.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #scr-dir .topbar .sub{font-size:.6rem;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #chip-red-dir{padding:6px;flex-shrink:0}
+  #chip-red-dir #chip-red-dir-tx{display:none}
 }
 /* botón flotante */
 .fab{position:fixed;right:16px;bottom:calc(20px + env(safe-area-inset-bottom, 0px));z-index:46;
@@ -540,13 +565,13 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
     <div id="chk-cuadre" style="display:none"></div>
     <!-- ── sección 1 · registros con evidencia ── -->
     <div class="card">
-      <div class="sec-tit"><span class="n">1</span> Con evidencia · foto al finalizar turno</div>
+      <div class="sec-tit"><span class="n">1</span> Checklist cierre de turno</div>
       <div id="chk-registros"></div>
       <p class="mini muted" style="margin:8px 0 0">📷 en cada casilla agrega la foto. Ventas y caja además capturan el monto.</p>
     </div>
     <!-- ── sección 2 · acciones ── -->
     <div class="card">
-      <div class="sec-tit"><span class="n">2</span> Sin evidencia · acciones del día</div>
+      <div class="sec-tit"><span class="n">2</span> Acciones del día</div>
       <div id="chk-items"></div>
     </div>
     <div class="card">
@@ -678,25 +703,27 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
 
   <!-- ══════════ DIRECCIÓN ══════════ -->
   <section class="screen" id="scr-dir">
-    <div class="topbar">
-      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
-      <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
-        <div class="tit amar" style="font-weight:700">👁️ Dirección</div>
-        <div class="sub">El ojo que todo lo ve ▾</div></div>
-      <div class="grow"></div>
-      <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
-      <button class="btn s mini" onclick="toggleTema()">🌓</button>
-      <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
-    </div>
-    <div class="tabs" id="dir-tabs">
-      <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
-      <button data-t="semana" onclick="dirTab('semana')">💵 Pago semanal</button>
-      <button data-t="mes" onclick="dirTab('mes')">📅 Cierre de mes</button>
-      <button data-t="gastos" onclick="dirTab('gastos')">💸 Gastos</button>
-      <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
-      <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>
-      <button data-t="evid" onclick="dirTab('evid')">📸 Evidencias</button>
-      <button data-t="admin" onclick="dirTab('admin')">⚙️ Administrar</button>
+    <div class="dir-fijo">
+      <div class="topbar">
+        <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+        <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
+          <div class="tit amar" style="font-weight:700">👁️ Dirección</div>
+          <div class="sub">El ojo que todo lo ve ▾</div></div>
+        <div class="grow"></div>
+        <button class="btn s mini" title="Crear tarea en Todoist" onclick="abrirTarea('','')">✅</button>
+        <button class="btn s mini" onclick="toggleTema()">🌓</button>
+        <span class="chip" id="chip-red-dir"><span class="dot"></span><span id="chip-red-dir-tx">local</span></span>
+      </div>
+      <div class="tabs" id="dir-tabs">
+        <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
+        <button data-t="semana" onclick="dirTab('semana')">💵 Pago semanal</button>
+        <button data-t="mes" onclick="dirTab('mes')">📅 Cierre de mes</button>
+        <button data-t="gastos" onclick="dirTab('gastos')">💸 Gastos</button>
+        <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
+        <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>
+        <button data-t="evid" onclick="dirTab('evid')">📸 Evidencias</button>
+        <button data-t="admin" onclick="dirTab('admin')">⚙️ Administrar</button>
+      </div>
     </div>
     <div id="dir-contenido"></div>
   </section>

@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '2.8';
+const VERSION = '2.9';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -331,7 +331,7 @@ function seedDB() {
     v: 2, ts: Date.now(), catTs: 0, configTs: {},
     config: {
       adminPin: '2626', supervisorPin: '4040', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
-      whatsapp: '527711232884', baseHoras: 6, nombreNegocio: 'El Anillo del Cíclope'
+      whatsapp: '527711232884', baseHoras: 6, alarmaCierre: '20:50', nombreNegocio: 'El Anillo del Cíclope'
     },
     sucursales: [
       { id: s1, nombre: 'Revolución', direccion: 'Emilio Asiain 119, Revolución, Pachuca', activa: true, t: 0 },
@@ -3358,6 +3358,10 @@ function dirAdmin() {
     '<input id="cfg-hcierre" type="number" min="12" max="23" value="' + (c.horaCierre || 23) + '">' +
     '<p class="mini muted">Pasada esa hora, la sucursal que no haya cerrado sale marcada en Hoy ' +
     'y el backend manda el aviso por correo.</p>' +
+    '<label>⏰ Alarma de cierre (suena en cada dispositivo)</label>' +
+    '<input id="cfg-alarma" type="time" value="' + esc(c.alarmaCierre || '20:50') + '">' +
+    '<p class="mini muted">A esta hora suena una alarma en todos los dispositivos con la app abierta, ' +
+    'para recordar el cierre antes de la salida. Déjalo vacío para apagarla.</p>' +
     '<label>Proyecto de Todoist (opcional)</label><input id="cfg-todoist" value="' + esc(c.todoistProyecto || '') +
     '" placeholder="Ej. Ciclope — sin espacios">' +
     '<p class="mini muted">Las tareas que crees desde Supervisión y Dirección caen en ese proyecto. ' +
@@ -3534,6 +3538,7 @@ function guardarConfig() {
     whatsapp: $('cfg-wa').value.replace(/\D/g, ''),
     todoistProyecto: ($('cfg-todoist') ? $('cfg-todoist').value : '').trim(),
     horaCierre: Math.min(23, Math.max(12, Number($('cfg-hcierre') ? $('cfg-hcierre').value : 23) || 23)),
+    alarmaCierre: ($('cfg-alarma') ? $('cfg-alarma').value : '') || '',
   };
   // marca de tiempo POR CAMPO: solo lo que realmente cambió viaja como "nuevo"
   Object.keys(nuevos).forEach(k => {
@@ -3613,7 +3618,65 @@ function reiniciarDatos() {
 setInterval(() => {
   const r = $('reloj');
   if (r) r.textContent = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  chequearAlarmaCierre();
 }, 1000);
+
+/* ═══════════ ALARMA DE CIERRE ═══════════
+   Suena en CADA dispositivo con la app abierta a la hora configurada (por
+   defecto 20:50, 10 min antes de la salida) para que no se les pase el cierre.
+   Cada dispositivo lleva su propio reloj: no depende del backend. */
+let audioCtx = null;
+function desbloquearAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { }
+}
+/* los navegadores solo dejan sonar tras un gesto del usuario: se desbloquea
+   con el primer toque en cualquier parte de la app */
+document.addEventListener('pointerdown', desbloquearAudio);
+function sonarAlarma() {
+  desbloquearAudio();
+  try {
+    if (audioCtx) {
+      // cinco pitidos de alarma
+      for (let i = 0; i < 5; i++) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'square'; o.frequency.value = i % 2 ? 660 : 990;
+        o.connect(g); g.connect(audioCtx.destination);
+        const s = audioCtx.currentTime + i * 0.45;
+        g.gain.setValueAtTime(0.0001, s);
+        g.gain.exponentialRampToValueAtTime(0.35, s + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, s + 0.38);
+        o.start(s); o.stop(s + 0.4);
+      }
+    }
+  } catch (e) { }
+  try { if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]); } catch (e) { }
+}
+const ALARMA_KEY = 'ojo_alarma_dia';
+function chequearAlarmaCierre() {
+  const hhmm = (db && db.config && db.config.alarmaCierre) || '20:50';
+  if (!/^\d{1,2}:\d{2}$/.test(hhmm)) return;
+  const d = new Date();
+  const ahora = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  const [oh, om] = hhmm.split(':');
+  const objetivo = oh.padStart(2, '0') + ':' + om.padStart(2, '0');
+  if (ahora !== objetivo) return;
+  if (localStorage.getItem(ALARMA_KEY) === hoyISO()) return;   // ya sonó hoy en este dispositivo
+  localStorage.setItem(ALARMA_KEY, hoyISO());
+  sonarAlarma();
+  const sinCerrar = sucursalActual && !cierreDelDia();
+  abrirModal('<h3>⏰ ¡Hora de cerrar!</h3>' +
+    '<p class="mini">Faltan 10 minutos para la salida. Antes de irte, no se te olvide:</p>' +
+    '<div class="item-linea"><div class="avatar">📋</div><div class="grow mini">Cuenta la caja y envía el cierre del turno</div></div>' +
+    '<div class="item-linea"><div class="avatar">💸</div><div class="grow mini">Registra los gastos del día</div></div>' +
+    '<div class="item-linea"><div class="avatar">📸</div><div class="grow mini">Sube las evidencias pendientes</div></div>' +
+    '<button class="btn s" style="margin-top:8px" onclick="sonarAlarma()">🔊 Repetir sonido</button>' +
+    (sucursalActual ? '<button class="btn p gigante" style="margin-top:8px" onclick="cerrarModal();irChecklist()">' +
+      (sinCerrar ? '📋 Ir a cerrar el turno' : '📋 Ir al checklist') + '</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Entendido</button>');
+}
 
 /* ---------- arranque ---------- */
 (function init() {
