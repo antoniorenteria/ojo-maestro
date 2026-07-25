@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.1';
+const VERSION = '3.2';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -347,7 +347,7 @@ function seedDB() {
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
     calendario: [], gastos: [],
-    insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: 0, precio: i[5], t: 0 })),
+    insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
 }
@@ -356,77 +356,90 @@ function seedDB() {
    presentación, unidad, precio]. El precio unitario se calcula: precio/cant.
    El envío se captura aparte (en la hoja venía en 0). */
 const SEED_INSUMOS = [
+  // [nombre, proveedor, marca, cantidad presentación, unidad, precio, envío?]
   ['Bidón BBQ', 'Carnemart', 'We love kitchen', 3700, 'g', 184],
   ['Bidón Buffalo', "Sams' Club", 'Original', 3700, 'g', 190],
-  ['Bolsa de plástico', 'Central de Abastos', '', 100, 'pza', 70],
+  ['Bolsa de plástico', 'Central de abastos', '', 100, 'pza', 70],
   ['Boneless', 'Carnemart', 'Freskecito', 2500, 'g', 320],
-  ['Carne de Arrachera', 'Carnemart', 'Sonora', 8, 'pza', 121.90],
+  ['Carne de Arrachera', 'Carnemart', 'Sonora', 8, 'pza', 121.9],
   ['Catsup', 'Carnemart', 'Bachi', 20000, 'g', 490],
   ['Chocolate líquido', 'Mercado Libre', 'Hersheys', 2600, 'g', 250],
   ['Dedos de queso', 'City Club', '', 35, 'pza', 269],
-  ['Empaque 7x7', 'Desechables', '', 50, 'pza', 214],
-  ['Hamburguesero negro 6x6', 'Desechables', '', 100, 'pza', 125],
-  ['Habanero Jaguar', 'Mercado Libre', '', 3800, 'ml', 299],
-  ['Mayonesa', 'Carnemart', 'Culinaire', 3000, 'g', 175.90],
+  ['Empaque 7x7', 'Desechable Mendoza', '', 50, 'pza', 214],
+  ['Hamburguesero negro 6x6', 'Desechable Mendoza', '', 100, 'pza', 125],
+  ['Habanero Jaguar', 'Mercado libre', '', 3800, 'ml', 299],
+  ['Mayonesa', 'Carnemart', 'Culinaire', 3000, 'g', 175.9],
   ['Papas a la francesa 3/8', 'Don Salvador', '', 13200, 'g', 803],
   ['Pimienta negra', '', '', 500, 'g', 145],
-  ['Limón Pimienta', 'Mercado Libre', 'Mi Granero', 680, 'g', 165],
-  ['Popote desechable', 'Mercado Libre', '', 2000, 'pza', 580],
-  ['Queso nachos', 'Carnemart', 'Del Rancho', 1000, 'g', 27.70],
+  ['Limón Pimienta', 'Mercado libre', 'Mi Granero', 680, 'g', 165],
+  ['Popote desechable', 'Mercado libre', '', 2000, 'pza', 580],
+  ['Queso nachos', 'Carnemart', 'Del Rancho', 1000, 'pza', 27.7],
   ['Sal de ajo', 'Tiendas 3B', '', 125, 'g', 15],
   ['Tocino en trozos', 'Carnemart', '', 420, 'g', 105],
   ['Tucán mango', 'Central', 'Agnez Alimentos', 1890, 'ml', 160],
-  ['Aceite', 'Tiendas 3B', 'Biosol', 845, 'g', 34.50],
-  ['Bolsa de hielos', 'City Club', '', 5000, 'g', 28],
+  ['Aceite', 'Tiendas 3B', 'Biosol', 845, 'g', 34.5],
+  ['Bolsa de hielos', 'City club', '', 5000, 'g', 28],
   ['Harina de trigo', 'Tiendas 3B', '', 20000, 'g', 290],
-  ['Helado de chocolate', 'City Club', '', 4700, 'ml', 196],
-  ['Helado de fresa', 'City Club', '', 4700, 'ml', 196],
-  ['Helado de vainilla', 'City Club', '', 4700, 'ml', 196],
-  ['Huevo', 'Tiendas 3B', '', 12, 'pza', 35.50],
+  ['Helado de chocolate', 'City club', '', 4700, 'ml', 196],
+  ['Helado de fresa', 'City club', '', 4700, 'ml', 196],
+  ['Helado de vainilla', 'City club', '', 4700, 'ml', 196],
+  ['Huevo', 'Tiendas 3B', '', 12, 'pza', 35.5],
   ['Lactibu', 'Tiendas 3B', 'Lactibu', 1000, 'ml', 15],
   ['Mantequilla Margarina', "Sams' Club", 'Members Mark', 1000, 'g', 67],
   ['Media Crema', 'Tiendas 3B', 'Alpura', 250, 'g', 10],
-  ['Mostaza', 'Tiendas 3B', '', 260, 'g', 17.50],
-  ['Queso gouda', 'Zorro', 'Saucito', 3000, 'g', 335],
+  ['Mostaza', 'Tiendas 3B', '', 260, 'g', 17.5],
+  ['Queso gouda', 'Zorro Abarrotero', 'Saucito', 3000, 'g', 335],
   ['Servilletas', 'Tiendas 3B', 'Cloudy', 400, 'pza', 20],
   ['Cocoa', 'Cravioto', 'La Suiza', 400, 'g', 82.94],
   ['Galleta oreo', 'Cravioto', 'Oreo', 1000, 'g', 116.69],
   ['Tapa Domo', 'Cravioto', 'Reyma', 80, 'pza', 123],
   ['Vaso y Tapa soufle', 'Mercado Libre', 'Primo', 1200, 'pza', 935],
-  // insumos que aparecen en las recetas pero no en la hoja principal:
-  ['Papel grado alimenticio', '', '', 2000, 'pza', 1100],
-  ['Jalapeños', '', '', 80, 'g', 2],
-  ['Masa Crepiburger', '', '', 10, 'pza', 33.77],
-  ['Gas', '', '', 10000, 'ml', 240],
-  ['Sticker', '', '', 500, 'pza', 320],
-  ['Lechuga Italiana', '', '', 300, 'g', 20],
-  ['Papa Curly', '', '', 10600, 'g', 947],
-  ['Papa Gajo', '', '', 13200, 'g', 954],
-  ['Leche Carnation', '', '', 1000, 'ml', 39],
-  ['Vaso malteada 16 onz', '', '', 80, 'pza', 137.40],
-  ['Crema batida', '', '', 1275, 'ml', 265],
-  ['Leche deslactosada', '', '', 1000, 'ml', 20],
-  ['Aderezo Ranch', '', '', 3400, 'g', 265],
+  ['Vaso malteada 16 onz', 'Cravioto', 'Reyma', 80, 'pza', 137.4],
+  ['Crema batida', "Sams' Club", 'Reddi Wip', 1275, 'g', 265],
+  ['Boing 250 ml', 'Boing', 'Boing', 162, 'pza', 1190],
+  ['Leche Evaporada Vaca Blanca', 'Tiendas 3B', 'Vaca Blanca', 1000, 'g', 39],
+  ['Refresco 400 ml', "Sams' Club", 'Pepsi', 24, 'pza', 177.5],
+  ['Espadas de plástico', 'Amazon', 'Royal Oasis', 1000, 'pza', 224],
+  ['Vainilla', 'Cravioto', 'Palapa', 4000, 'ml', 131.86],
+  ['Gas', 'Garcigas', '', 10000, 'g', 200, 20],
+  ['Papel grado alimenticio', 'Papel Food', '', 2000, 'pza', 1100],
+  ['Vino blanco', 'Tiendas 3B', 'California', 946, 'ml', 75],
+  ['Boing 500 ml', 'Boing', 'Boing', 144, 'pza', 1685],
+  ['Sticker', 'Javier', '', 500, 'pza', 300],
+  ['Limón', 'Central de Abastos', '', 1000, 'g', 25],
+  ['Queso mozzarela', 'Mercado', '', 250, 'g', 50],
+  ['Jalapeños', 'Central de Abastos', '', 80, 'g', 2],
+  ['Carne al pastor', 'Carnicería Piracantos', '', 1000, 'g', 150],
+  ['Cebolla', 'Mercado', '', 250, 'g', 6],
+  ['Colorante verde', 'Cravioto', 'Deiman', 1000, 'g', 257.68],
+  ['Lechuga Italiana', 'Malek', '', 300, 'g', 20],
+  ['Azúcar estándar', 'Tiendas 3B', '', 2000, 'g', 44],
+  ['Aderezo ranch', 'Custom Culinary', 'Custom Culinary', 3400, 'g', 265],
+  ['Agua', 'Dispensadora', 'Dispensadora', 20000, 'ml', 17],
+  ['Mermelada de fresa', "Sams' Club", 'Members Mark', 1000, 'g', 75],
+  ['Gansito mini', "Sams' Club", 'Marinela', 12, 'pza', 52.5],
+  ['Crema de Avellana', "Sams' Club", 'Members Mark', 1000, 'g', 132],
+  ['Papas Curly', 'Okash', 'McCain', 10600, 'g', 947],
+  ['Papa Gajo', 'Carnemart', 'Ecofrost', 13200, 'g', 954],
+  ['Chocoreta', 'Merced', '', 1000, 'g', 220],
+  ['Helado chocomenta', "Sams' Club", '', 2000, 'g', 200],
+  ['Agua mineral Burst', 'Tiendas 3B', '', 2000, 'ml', 13],
+  // sub-preparaciones que se usan como ingrediente (costo por presentación):
+  ['Masa de crepa', 'El Anillo del Cíclope', '', 10, 'pza', 33.7684],
+  ['Salsa Aliento de Dragón', 'El Anillo del Cíclope', '', 2900, 'g', 190.19],
 ];
-/* Recetas de ejemplo tomadas de tu hoja (Minotauro normal y Lodo del Pantano).
-   Cada ingrediente es [nombre del insumo, cantidad usada en la receta]. Las
-   demás recetas se agregan desde la app o se cargan aparte. */
+/* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
+   Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
+   se cargan por lotes con el mismo detalle de tu hoja. */
 const SEED_RECETAS = [
   {
     nombre: 'Minotauro', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16,
     ing: [
       ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
       ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
-      ['Masa Crepiburger', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
-      ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15]
-    ]
-  },
-  {
-    nombre: 'Lodo del Pantano', categoria: 'Malteadas', porciones: 1, precio: 75, iva: 0,
-    ing: [
-      ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
-      ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 20], ['Popote desechable', 1],
-      ['Crema batida', 45], ['Cocoa', 10], ['Leche deslactosada', 120]
+      ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+      ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+      ['Papas a la francesa 3/8', 80]
     ]
   }
 ];
@@ -453,16 +466,16 @@ function migrarDB() {
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
-  // v3.1: escandallo. Siembra insumos y recetas en instalaciones existentes,
-  // sin pisar lo que ya tengan (une por id).
+  // v3.2: escandallo con la lista COMPLETA de la hoja de Toño. Siembra los
+  // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (!db.escandalloSembrado) {
+  if (db.escandalloSembrado !== 'v2') {
     const idsI = new Set(db.insumos.map(x => x.id));
-    SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: 0, precio: i[5], t: 0 }); });
+    SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = true; limpio = true;
+    db.escandalloSembrado = 'v2'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
@@ -3128,14 +3141,56 @@ function guardarInsumo(id) {
     cant: Number($('ins-cant').value) || 1, unidad: $('ins-unidad').value.trim() || 'u',
     precio: Number($('ins-precio').value) || 0, envio: Number($('ins-envio').value) || 0, t: Date.now()
   };
-  if (id) { const i = insumo(id); Object.assign(i, datos); }
-  else {
+  // ── impacto del cambio: qué recetas usan este insumo y cómo se mueve su costo ──
+  let impacto = null;
+  if (id) {
+    const i = insumo(id);
+    const puAntes = precioUnitInsumo(i);
+    const puDespues = precioUnitInsumo(datos);
+    if (Math.abs(puAntes - puDespues) > 1e-9) {
+      impacto = recetasVivas()
+        .filter(r => (r.ing || []).some(x => x.insumoId === id))
+        .map(r => {
+          const antes = calcReceta(r);
+          // costo nuevo de la receta con el precio ya cambiado (simulado)
+          const usa = (r.ing || []).filter(x => x.insumoId === id).reduce((a, x) => a + x.c, 0);
+          const deltaPorReceta = (puDespues - puAntes) * usa / (Number(r.porciones) || 1);
+          const costoNuevo = antes.costoUnit + deltaPorReceta;
+          const utilNueva = antes.precio - costoNuevo;
+          return {
+            nombre: r.nombre, costoAntes: antes.costoUnit, costoNuevo,
+            utilAntes: antes.utilidad, utilNueva,
+            pctCostoNuevo: antes.precio ? costoNuevo / antes.precio * 100 : 0
+          };
+        }).sort((a, b) => (b.costoNuevo - b.costoAntes) - (a.costoNuevo - a.costoAntes));
+    }
+    Object.assign(i, datos);
+  } else {
     let nid = 'ins-' + slug(nombre);
     if (db.insumos.some(x => x.id === nid)) nid = 'ins-' + uid();
     db.insumos.unshift(Object.assign({ id: nid }, datos));
   }
   tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
-  toast('💾 Insumo guardado');
+  if (impacto && impacto.length) mostrarImpactoInsumo(nombre, impacto);
+  else toast('💾 Insumo guardado');
+}
+/* aviso claro de qué productos se movieron al cambiar el precio de un insumo */
+function mostrarImpactoInsumo(nombreInsumo, impacto) {
+  const alerta = impacto.filter(x => x.pctCostoNuevo > 55);
+  abrirModal('<h3>🔗 ' + impacto.length + ' producto' + (impacto.length === 1 ? '' : 's') + ' se actualizaron</h3>' +
+    '<p class="mini muted">Cambiaste <b>' + esc(nombreInsumo) + '</b>. Estos productos lo usan y su costo se recalculó solo:</p>' +
+    '<div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Costo antes</th><th class="num">Costo ahora</th><th class="num">Utilidad</th></tr>' +
+    impacto.map(x => {
+      const sube = x.costoNuevo > x.costoAntes;
+      return '<tr><td><b>' + esc(x.nombre) + '</b>' + (x.pctCostoNuevo > 55 ? ' <span class="badge comprar">costo ' + Math.round(x.pctCostoNuevo) + '%</span>' : '') + '</td>' +
+        '<td class="num">' + fmt$(x.costoAntes) + '</td>' +
+        '<td class="num" style="color:var(--' + (sube ? 'alerta' : 'ok') + ')">' + fmt$(x.costoNuevo) + '</td>' +
+        '<td class="num"><b class="amar">' + fmt$(x.utilNueva) + '</b></td></tr>';
+    }).join('') + '</table></div>' +
+    (alerta.length ? '<p class="mini" style="color:var(--alerta);margin-top:10px">⚠️ ' + alerta.length +
+      ' quedaron con el costo por encima del 55% del precio: <b>' + alerta.map(x => esc(x.nombre)).join(', ') +
+      '</b>. Conviene revisar su precio de venta.</p>' : '') +
+    '<button class="btn p" style="margin-top:12px" onclick="cerrarModal()">Entendido</button>');
 }
 function borrarInsumo(id) {
   const usada = recetasVivas().find(r => (r.ing || []).some(x => x.insumoId === id));
