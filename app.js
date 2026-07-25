@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.2';
+const VERSION = '3.3';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -427,6 +427,13 @@ const SEED_INSUMOS = [
   // sub-preparaciones que se usan como ingrediente (costo por presentación):
   ['Masa de crepa', 'El Anillo del Cíclope', '', 10, 'pza', 33.7684],
   ['Salsa Aliento de Dragón', 'El Anillo del Cíclope', '', 2900, 'g', 190.19],
+  // insumos de las pociones/malteadas:
+  ['Leche Carnation', '', '', 1000, 'g', 39],
+  ['Leche evaporada', '', '', 1000, 'g', 39],
+  ['Polvo Brillantina', '', '', 7, 'g', 48.72],
+  ['Leche deslactosada', '', '', 1000, 'ml', 20],
+  ['Mazapán', '', '', 30, 'pza', 81.07],
+  ['Colorante verde líquido', '', '', 50, 'g', 20],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -441,7 +448,40 @@ const SEED_RECETAS = [
       ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
       ['Papas a la francesa 3/8', 80]
     ]
-  }
+  },
+  // ── POCIONES (malteadas) — verificadas contra la hoja ──
+  { nombre: 'Lodo del Pantano', categoria: 'Pociones', porciones: 1, precio: 75, iva: 0, ing: [
+    ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 20], ['Popote desechable', 1],
+    ['Crema batida', 45], ['Cocoa', 10] ] },
+  { nombre: 'Baba de Ogro', categoria: 'Pociones', porciones: 1, precio: 75, iva: 0, ing: [
+    ['Helado de vainilla', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Popote desechable', 1], ['Crema batida', 45],
+    ['Vainilla', 20], ['Chocolate líquido', 20] ] },
+  { nombre: 'Materia Gris', categoria: 'Pociones', porciones: 1, precio: 75, iva: 0, ing: [
+    ['Helado de vainilla', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 20], ['Popote desechable', 1],
+    ['Crema batida', 45], ['Galleta oreo', 50] ] },
+  { nombre: 'Sangre de Hada', categoria: 'Pociones', porciones: 1, precio: 75, iva: 0, ing: [
+    ['Helado de fresa', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Popote desechable', 1], ['Crema batida', 45],
+    ['Mermelada de fresa', 60], ['Polvo Brillantina', 0.04] ] },
+  { nombre: 'Gansito Hechizado', categoria: 'Pociones', porciones: 1, precio: 80, iva: 0, ing: [
+    ['Helado de chocolate', 100], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Gansito mini', 1],
+    ['Popote desechable', 1], ['Crema batida', 45], ['Mermelada de fresa', 60], ['Helado de fresa', 45] ] },
+  { nombre: 'Abducción', categoria: 'Pociones', porciones: 1, precio: 80, iva: 0, ing: [
+    ['Helado chocomenta', 135], ['Leche evaporada', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Chocoreta', 10],
+    ['Popote desechable', 1], ['Crema batida', 45] ] },
+  { nombre: 'Sirena Cósmica', categoria: 'Pociones', porciones: 1, precio: 80, iva: 0, ing: [
+    ['Helado de vainilla', 135], ['Leche evaporada', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Crema de Avellana', 40],
+    ['Popote desechable', 1], ['Crema batida', 45], ['Polvo Brillantina', 0.10], ['Colorante verde líquido', 3] ] },
+  { nombre: 'Mazaurio', categoria: 'Pociones', porciones: 1, precio: 80, iva: 0, ing: [
+    ['Helado de vainilla', 45], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Popote desechable', 1],
+    ['Crema batida', 45], ['Mazapán', 1] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -470,12 +510,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v2') {
+  if (db.escandalloSembrado !== 'v3') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v2'; limpio = true;
+    db.escandalloSembrado = 'v3'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
