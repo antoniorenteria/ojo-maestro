@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.3';
+const VERSION = '3.4';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -434,21 +434,12 @@ const SEED_INSUMOS = [
   ['Leche deslactosada', '', '', 1000, 'ml', 20],
   ['Mazapán', '', '', 30, 'pza', 81.07],
   ['Colorante verde líquido', '', '', 50, 'g', 20],
+  ['Hamburguesa de pollo', '', '', 90, 'pza', 870],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
    se cargan por lotes con el mismo detalle de tu hoja. */
 const SEED_RECETAS = [
-  {
-    nombre: 'Minotauro', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16,
-    ing: [
-      ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
-      ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
-      ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
-      ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
-      ['Papas a la francesa 3/8', 80]
-    ]
-  },
   // ── POCIONES (malteadas) — verificadas contra la hoja ──
   { nombre: 'Lodo del Pantano', categoria: 'Pociones', porciones: 1, precio: 75, iva: 0, ing: [
     ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
@@ -482,6 +473,37 @@ const SEED_RECETAS = [
     ['Helado de vainilla', 45], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
     ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Popote desechable', 1],
     ['Crema batida', 45], ['Mazapán', 1] ] },
+  // ── CREPIBURGERS — Minotauro (4 variantes, verificadas) + Dragón y Zombie BBQ base ──
+  { nombre: 'Minotauro', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16, ing: [
+    ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+    ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+    ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+    ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80] ] },
+  { nombre: 'Minotauro + Limón Pimienta', categoria: 'Crepiburgers', porciones: 1, precio: 104, iva: 16, ing: [
+    ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+    ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+    ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+    ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Limón Pimienta', 10], ['Limón', 100] ] },
+  { nombre: 'Minotauro con Papa Curly', categoria: 'Crepiburgers', porciones: 1, precio: 104, iva: 16, ing: [
+    ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+    ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+    ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+    ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas Curly', 100] ] },
+  { nombre: 'Minotauro con Papa Gajo', categoria: 'Crepiburgers', porciones: 1, precio: 104, iva: 16, ing: [
+    ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+    ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+    ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+    ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papa Gajo', 100] ] },
+  { nombre: 'Dragón', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16, ing: [
+    ['Hamburguesa de pollo', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
+    ['Bidón BBQ', 25], ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40],
+    ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
+    ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Papas a la francesa 3/8', 80],
+    ['Aceite', 15], ['Aderezo ranch', 30] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -510,12 +532,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v3') {
+  if (db.escandalloSembrado !== 'v4') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v3'; limpio = true;
+    db.escandalloSembrado = 'v4'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
