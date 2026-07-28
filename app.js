@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.4';
+const VERSION = '3.5';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -399,7 +399,7 @@ const SEED_INSUMOS = [
   ['Boing 250 ml', 'Boing', 'Boing', 162, 'pza', 1190],
   ['Leche Evaporada Vaca Blanca', 'Tiendas 3B', 'Vaca Blanca', 1000, 'g', 39],
   ['Refresco 400 ml', "Sams' Club", 'Pepsi', 24, 'pza', 177.5],
-  ['Espadas de plástico', 'Amazon', 'Royal Oasis', 1000, 'pza', 224],
+  ['Espadas de plástico', 'Amazon', 'Royal Oasis', 1000, 'pza', 224, 20],
   ['Vainilla', 'Cravioto', 'Palapa', 4000, 'ml', 131.86],
   ['Gas', 'Garcigas', '', 10000, 'g', 200, 20],
   ['Papel grado alimenticio', 'Papel Food', '', 2000, 'pza', 1100],
@@ -435,6 +435,7 @@ const SEED_INSUMOS = [
   ['Mazapán', '', '', 30, 'pza', 81.07],
   ['Colorante verde líquido', '', '', 50, 'g', 20],
   ['Hamburguesa de pollo', '', '', 90, 'pza', 870],
+  ['Salsa Dragón', 'El Anillo del Cíclope', '', 2900, 'g', 190.19],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -504,6 +505,58 @@ const SEED_RECETAS = [
     ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
     ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Papas a la francesa 3/8', 80],
     ['Aceite', 15], ['Aderezo ranch', 30] ] },
+  // ── CEREBROS (7 pzas, 14 pzas y 1kg × 4 salsas) — verificadas contra la hoja ──
+  // 7 piezas (empaque hamburguesero)
+  { nombre: 'Cerebros 7 pzas BBQ', categoria: 'Cerebros', porciones: 1, precio: 95, iva: 16, ing: [
+    ['Aceite', 15], ['Aderezo ranch', 50], ['Bolsa de plástico', 1], ['Boneless', 230],
+    ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1], ['Papel grado alimenticio', 0.5],
+    ['Servilletas', 1], ['Vaso y Tapa soufle', 2], ['Bidón BBQ', 100] ] },
+  { nombre: 'Cerebros 7 pzas Limón', categoria: 'Cerebros', porciones: 1, precio: 95, iva: 16, ing: [
+    ['Aceite', 15], ['Aderezo ranch', 50], ['Bolsa de plástico', 1], ['Boneless', 230],
+    ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1], ['Papel grado alimenticio', 0.5],
+    ['Servilletas', 1], ['Vaso y Tapa soufle', 1], ['Limón Pimienta', 10], ['Limón', 100] ] },
+  { nombre: 'Cerebros 7 pzas Buffalo', categoria: 'Cerebros', porciones: 1, precio: 95, iva: 16, ing: [
+    ['Aceite', 15], ['Aderezo ranch', 50], ['Bolsa de plástico', 1], ['Boneless', 230],
+    ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1], ['Papel grado alimenticio', 0.5],
+    ['Servilletas', 1], ['Vaso y Tapa soufle', 2], ['Bidón Buffalo', 100] ] },
+  { nombre: 'Cerebros 7 pzas Habanero', categoria: 'Cerebros', porciones: 1, precio: 95, iva: 16, ing: [
+    ['Aceite', 15], ['Aderezo ranch', 50], ['Bolsa de plástico', 1], ['Boneless', 230],
+    ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1], ['Papel grado alimenticio', 0.5],
+    ['Servilletas', 1], ['Vaso y Tapa soufle', 1], ['Salsa Dragón', 100] ] },
+  // 14 piezas (empaque 7x7)
+  { nombre: 'Cerebros 14 pzas BBQ', categoria: 'Cerebros', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Aceite', 30], ['Aderezo ranch', 100], ['Bolsa de plástico', 1], ['Boneless', 450],
+    ['Empaque 7x7', 1], ['Espadas de plástico', 2], ['Papel grado alimenticio', 0.5], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Servilletas', 1], ['Bidón BBQ', 200] ] },
+  { nombre: 'Cerebros 14 pzas Limón', categoria: 'Cerebros', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Aceite', 30], ['Aderezo ranch', 100], ['Bolsa de plástico', 1], ['Boneless', 450],
+    ['Empaque 7x7', 1], ['Espadas de plástico', 2], ['Papel grado alimenticio', 0.5], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Servilletas', 1], ['Limón Pimienta', 10], ['Limón', 200] ] },
+  { nombre: 'Cerebros 14 pzas Buffalo', categoria: 'Cerebros', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Aceite', 30], ['Aderezo ranch', 100], ['Bolsa de plástico', 1], ['Boneless', 450],
+    ['Empaque 7x7', 1], ['Espadas de plástico', 2], ['Papel grado alimenticio', 0.5], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Servilletas', 1], ['Bidón Buffalo', 200] ] },
+  { nombre: 'Cerebros 14 pzas Habanero', categoria: 'Cerebros', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Aceite', 30], ['Aderezo ranch', 100], ['Bolsa de plástico', 1], ['Boneless', 450],
+    ['Empaque 7x7', 1], ['Espadas de plástico', 2], ['Papel grado alimenticio', 0.5], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Servilletas', 1], ['Salsa Dragón', 200] ] },
+  // 1 kilo
+  { nombre: 'Cerebros 1kg BBQ', categoria: 'Cerebros', porciones: 1, precio: 329, iva: 0, ing: [
+    ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900],
+    ['Empaque 7x7', 2], ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2],
+    ['Vaso y Tapa soufle', 3], ['Servilletas', 1], ['Bidón BBQ', 400] ] },
+  { nombre: 'Cerebros 1kg Limón', categoria: 'Cerebros', porciones: 1, precio: 329, iva: 0, ing: [
+    ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900],
+    ['Empaque 7x7', 2], ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2],
+    ['Vaso y Tapa soufle', 3], ['Servilletas', 1], ['Limón Pimienta', 35], ['Limón', 200] ] },
+  { nombre: 'Cerebros 1kg Buffalo', categoria: 'Cerebros', porciones: 1, precio: 329, iva: 0, ing: [
+    ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900],
+    ['Empaque 7x7', 2], ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2],
+    ['Vaso y Tapa soufle', 3], ['Servilletas', 1], ['Bidón Buffalo', 400] ] },
+  { nombre: 'Cerebros 1kg Habanero', categoria: 'Cerebros', porciones: 1, precio: 329, iva: 0, ing: [
+    ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900],
+    ['Empaque 7x7', 2], ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2],
+    ['Vaso y Tapa soufle', 3], ['Servilletas', 1], ['Salsa Dragón', 400] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -532,12 +585,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v4') {
+  if (db.escandalloSembrado !== 'v5') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v4'; limpio = true;
+    db.escandalloSembrado = 'v5'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
