@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.7';
+const VERSION = '3.8';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -440,6 +440,13 @@ const SEED_INSUMOS = [
   ['Nuez Moscada', '', '', 60, 'g', 95],
   // Salsa del Abismo: sub-preparación (rinde 6 porciones) — se usa como 1 ingrediente en Papas del Abismo.
   ['Salsa del Abismo', 'El Anillo del Cíclope', '', 6, 'pza', 90.74],
+  // insumos de Brebajes:
+  ['Garrafón de agua', 'Dispensadora', '', 20000, 'g', 17],
+  ['Leche evaporada carnation', '', '', 350, 'g', 21],
+  ['Canela 1 barra', '', '', 1, 'pza', 18],
+  ['Leche condensada lechera', 'Tiendas 3B', 'La Lechera', 350, 'g', 35],
+  ['Mega limón', '', '', 1000, 'g', 28],
+  ['Jarabe Glitter', '', '', 1000, 'ml', 110],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -632,6 +639,20 @@ const SEED_RECETAS = [
     ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
     ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
     ['Vaso y Tapa soufle', 1], ['Salsa Dragón', 150] ] },
+  // ── BREBAJES (aguas/limonadas de autor) — verificadas ──
+  { nombre: 'Yeti', categoria: 'Brebajes', porciones: 1, precio: 45, iva: 0, ing: [
+    ['Garrafón de agua', 400], ['Leche evaporada carnation', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Canela 1 barra', 0.2], ['Leche condensada lechera', 70] ] },
+  { nombre: 'Draculín', categoria: 'Brebajes', porciones: 1, precio: 59, iva: 0, ing: [
+    ['Agua mineral Burst', 385], ['Mega limón', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Jarabe Glitter', 100] ] },
+  // Troll = Draculín + frutas congeladas (en la hoja las frutas no traen precio: costo subestimado, revisar).
+  { nombre: 'Troll', categoria: 'Brebajes', porciones: 1, precio: 59, iva: 0, ing: [
+    ['Agua mineral Burst', 385], ['Mega limón', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Jarabe Glitter', 100] ] },
+  { nombre: 'Manzana Verde', categoria: 'Brebajes', porciones: 1, precio: 59, iva: 0, ing: [
+    ['Agua mineral Burst', 480], ['Mega limón', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Jarabe Glitter', 100] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -660,12 +681,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v7') {
+  if (db.escandalloSembrado !== 'v8') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v7'; limpio = true;
+    db.escandalloSembrado = 'v8'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
