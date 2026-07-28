@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.6';
+const VERSION = '3.7';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -592,6 +592,46 @@ const SEED_RECETAS = [
     ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
     ['Papa Gajo', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Sticker', 1],
     ['Vaso y Tapa soufle', 2], ['Catsup', 40], ['Bidón Buffalo', 50], ['Limón Pimienta', 10] ] },
+  // ── PAQUETES — familias Cerebritos y Cíclope (4 salsas, versión Normal), verificadas ──
+  // Cerebritos = boneless 100g + papa recta + queso + dedos + salsa. La salsa da el nombre.
+  { nombre: 'Paquete Cerebritos Líquido B', categoria: 'Paquetes', porciones: 1, precio: 98, iva: 0, ing: [
+    ['Boneless', 100], ['Aceite', 15], ['Papas a la francesa 3/8', 125], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Dedos de queso', 2], ['Bidón BBQ', 100] ] },
+  { nombre: 'Paquete Cerebritos Lava', categoria: 'Paquetes', porciones: 1, precio: 98, iva: 0, ing: [
+    ['Boneless', 100], ['Aceite', 15], ['Papas a la francesa 3/8', 125], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Dedos de queso', 2], ['Bidón Buffalo', 100] ] },
+  { nombre: 'Paquete Cerebritos Veneno', categoria: 'Paquetes', porciones: 1, precio: 95, iva: 0, ing: [
+    ['Boneless', 100], ['Aceite', 15], ['Papas a la francesa 3/8', 125], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Dedos de queso', 2],
+    ['Limón Pimienta', 10], ['Limón', 100] ] },
+  { nombre: 'Paquete Cerebritos A de Dragón', categoria: 'Paquetes', porciones: 1, precio: 95, iva: 0, ing: [
+    ['Boneless', 100], ['Aceite', 15], ['Papas a la francesa 3/8', 125], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Dedos de queso', 2], ['Salsa Dragón', 100] ] },
+  // Cíclope = boneless 240g + papa recta + queso + refresco + salsa (paquete grande individual).
+  { nombre: 'Paquete Cíclope Líquido B', categoria: 'Paquetes', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Boneless', 240], ['Aceite', 15], ['Papas a la francesa 3/8', 135], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
+    ['Vaso y Tapa soufle', 1], ['Bidón BBQ', 150] ] },
+  { nombre: 'Paquete Cíclope Lava', categoria: 'Paquetes', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Boneless', 240], ['Aceite', 15], ['Papas a la francesa 3/8', 135], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
+    ['Vaso y Tapa soufle', 1], ['Bidón Buffalo', 200] ] },
+  { nombre: 'Paquete Cíclope Veneno', categoria: 'Paquetes', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Boneless', 240], ['Aceite', 15], ['Papas a la francesa 3/8', 135], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
+    ['Vaso y Tapa soufle', 1], ['Limón Pimienta', 15], ['Limón', 200] ] },
+  { nombre: 'Paquete Cíclope A de Dragón', categoria: 'Paquetes', porciones: 1, precio: 149, iva: 0, ing: [
+    ['Boneless', 240], ['Aceite', 15], ['Papas a la francesa 3/8', 135], ['Queso nachos', 50],
+    ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
+    ['Vaso y Tapa soufle', 1], ['Salsa Dragón', 150] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -620,12 +660,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v6') {
+  if (db.escandalloSembrado !== 'v7') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v6'; limpio = true;
+    db.escandalloSembrado = 'v7'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
