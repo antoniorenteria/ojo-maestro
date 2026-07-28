@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.8';
+const VERSION = '3.9';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -447,6 +447,10 @@ const SEED_INSUMOS = [
   ['Leche condensada lechera', 'Tiendas 3B', 'La Lechera', 350, 'g', 35],
   ['Mega limón', '', '', 1000, 'g', 28],
   ['Jarabe Glitter', '', '', 1000, 'ml', 110],
+  // insumos de Volcanino:
+  ['Salchicha Jumbo', '', '', 20, 'pza', 157],
+  // OJO: Pan Negro a $10/pza se ve altísimo en la hoja; es el mayor costo del Volcanino. Revisar presentación real.
+  ['Pan Negro', '', '', 1, 'pza', 10],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -653,6 +657,19 @@ const SEED_RECETAS = [
   { nombre: 'Manzana Verde', categoria: 'Brebajes', porciones: 1, precio: 59, iva: 0, ing: [
     ['Agua mineral Burst', 480], ['Mega limón', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
     ['Bolsa de hielos', 175], ['Sticker', 1], ['Jarabe Glitter', 100] ] },
+  // ── VOLCANINO (hot dog cargado) — reconstruidas contra la hoja (columna de ingredientes compartida) ──
+  { nombre: 'Volcanino Líquido B', categoria: 'Volcanino', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 1], ['Pan Negro', 1], ['Aderezo ranch', 50],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80], ['Boneless', 50], ['Bidón BBQ', 35], ['Bidón Buffalo', 25] ] },
+  { nombre: 'Volcanino Lava', categoria: 'Volcanino', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 1], ['Pan Negro', 1], ['Aderezo ranch', 50],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80], ['Boneless', 50], ['Bidón Buffalo', 55] ] },
+  { nombre: 'Volcanino Papatinas', categoria: 'Volcanino', porciones: 1, precio: 75, iva: 16, ing: [
+    ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 1], ['Pan Negro', 1], ['Aderezo ranch', 50],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -681,12 +698,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v8') {
+  if (db.escandalloSembrado !== 'v9') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v8'; limpio = true;
+    db.escandalloSembrado = 'v9'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
