@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.5';
+const VERSION = '3.6';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -436,6 +436,10 @@ const SEED_INSUMOS = [
   ['Colorante verde líquido', '', '', 50, 'g', 20],
   ['Hamburguesa de pollo', '', '', 90, 'pza', 870],
   ['Salsa Dragón', 'El Anillo del Cíclope', '', 2900, 'g', 190.19],
+  // insumos de Snacks:
+  ['Nuez Moscada', '', '', 60, 'g', 95],
+  // Salsa del Abismo: sub-preparación (rinde 6 porciones) — se usa como 1 ingrediente en Papas del Abismo.
+  ['Salsa del Abismo', 'El Anillo del Cíclope', '', 6, 'pza', 90.74],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -557,6 +561,37 @@ const SEED_RECETAS = [
     ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900],
     ['Empaque 7x7', 2], ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2],
     ['Vaso y Tapa soufle', 3], ['Servilletas', 1], ['Salsa Dragón', 400] ] },
+  // ── SNACKS — verificadas contra la hoja ──
+  { nombre: 'Papas Muertas', categoria: 'Snacks', porciones: 1, precio: 70, iva: 16, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papas a la francesa 3/8', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
+    ['Vaso y Tapa soufle', 2], ['Catsup', 50], ['Queso nachos', 50] ] },
+  // Limón Pimienta: la hoja sumaba por error "Nuggets Dinosaurio" ($12.50). Corregida: base + limón + limón pimienta.
+  { nombre: 'Papas Muertas Limón Pimienta', categoria: 'Snacks', porciones: 1, precio: 85, iva: 16, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papas a la francesa 3/8', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
+    ['Vaso y Tapa soufle', 2], ['Catsup', 50], ['Queso nachos', 50], ['Limón', 100], ['Limón Pimienta', 15] ] },
+  { nombre: 'Papas del Abismo', categoria: 'Snacks', porciones: 1, precio: 85, iva: 0, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papas a la francesa 3/8', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
+    ['Vaso y Tapa soufle', 1], ['Salsa del Abismo', 1] ] },
+  { nombre: 'Papas del Abismo Limón Pimienta', categoria: 'Snacks', porciones: 1, precio: 100, iva: 0, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papas a la francesa 3/8', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
+    ['Vaso y Tapa soufle', 1], ['Salsa del Abismo', 1], ['Limón', 100], ['Limón Pimienta', 15] ] },
+  { nombre: 'Dedos Cíclope', categoria: 'Snacks', porciones: 1, precio: 75, iva: 0, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Catsup', 50], ['Dedos de queso', 5],
+    ['Hamburguesero negro 6x6', 1], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
+    ['Vaso y Tapa soufle', 1] ] },
+  // Papas Curly: la hoja usó bolsa de 13,000 g; el app usa INSUMOS (10,600 g). Revisar presentación real.
+  { nombre: 'Papas Curly', categoria: 'Snacks', porciones: 1, precio: 70, iva: 0, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papas Curly', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Catsup', 50] ] },
+  { nombre: 'Papas Gajo hot', categoria: 'Snacks', porciones: 1, precio: 70, iva: 0, ing: [
+    ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
+    ['Papa Gajo', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Sticker', 1],
+    ['Vaso y Tapa soufle', 2], ['Catsup', 40], ['Bidón Buffalo', 50], ['Limón Pimienta', 10] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -585,12 +620,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v5') {
+  if (db.escandalloSembrado !== 'v6') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v5'; limpio = true;
+    db.escandalloSembrado = 'v6'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
