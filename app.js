@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '3.9';
+const VERSION = '4.0';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -419,7 +419,7 @@ const SEED_INSUMOS = [
   ['Mermelada de fresa', "Sams' Club", 'Members Mark', 1000, 'g', 75],
   ['Gansito mini', "Sams' Club", 'Marinela', 12, 'pza', 52.5],
   ['Crema de Avellana', "Sams' Club", 'Members Mark', 1000, 'g', 132],
-  ['Papas Curly', 'Okash', 'McCain', 10600, 'g', 947],
+  ['Papas Curly', 'Okash', 'McCain', 13000, 'g', 947],
   ['Papa Gajo', 'Carnemart', 'Ecofrost', 13200, 'g', 954],
   ['Chocoreta', 'Merced', '', 1000, 'g', 220],
   ['Helado chocomenta', "Sams' Club", '', 2000, 'g', 200],
@@ -449,7 +449,7 @@ const SEED_INSUMOS = [
   ['Jarabe Glitter', '', '', 1000, 'ml', 110],
   // insumos de Volcanino:
   ['Salchicha Jumbo', '', '', 20, 'pza', 157],
-  // OJO: Pan Negro a $10/pza se ve altísimo en la hoja; es el mayor costo del Volcanino. Revisar presentación real.
+  // Pan Negro personalizado (negro) — $10/pza confirmado por Toño.
   ['Pan Negro', '', '', 1, 'pza', 10],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
@@ -520,6 +520,33 @@ const SEED_RECETAS = [
     ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1], ['Lechuga Italiana', 20],
     ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Papas a la francesa 3/8', 80],
     ['Aceite', 15], ['Aderezo ranch', 30] ] },
+  // ── ZOMBIES: misma base de crepiburger, proteína = boneless 80g salseados. Cambia la salsa. ──
+  { nombre: 'Zombie Líquido B', categoria: 'Crepiburgers', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Boneless', 80], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 25],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1],
+    ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Aderezo ranch', 25], ['Bidón BBQ', 50] ] },
+  // Líquido B Hot: BBQ + toque de habanero. Los gramos del picante son estimados — confirmar.
+  { nombre: 'Zombie Líquido B Hot', categoria: 'Crepiburgers', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Boneless', 80], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 25],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1],
+    ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Aderezo ranch', 25], ['Bidón BBQ', 50], ['Habanero Jaguar', 15] ] },
+  { nombre: 'Zombie Veneno', categoria: 'Crepiburgers', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Boneless', 80], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 25],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1],
+    ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Aderezo ranch', 25], ['Limón', 100], ['Limón Pimienta', 10] ] },
+  { nombre: 'Zombie Lava', categoria: 'Crepiburgers', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Boneless', 80], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 25],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1],
+    ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Aderezo ranch', 25], ['Bidón Buffalo', 50] ] },
+  { nombre: 'Zombie Aliento de Dragón', categoria: 'Crepiburgers', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Boneless', 80], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 25],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5], ['Sticker', 1],
+    ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25], ['Aceite', 15],
+    ['Papas a la francesa 3/8', 80], ['Aderezo ranch', 25], ['Salsa Dragón', 50] ] },
   // ── CEREBROS (7 pzas, 14 pzas y 1kg × 4 salsas) — verificadas contra la hoja ──
   // 7 piezas (empaque hamburguesero)
   { nombre: 'Cerebros 7 pzas BBQ', categoria: 'Cerebros', porciones: 1, precio: 95, iva: 16, ing: [
@@ -594,7 +621,6 @@ const SEED_RECETAS = [
     ['Aceite', 15], ['Bolsa de plástico', 1], ['Catsup', 50], ['Dedos de queso', 5],
     ['Hamburguesero negro 6x6', 1], ['Papel grado alimenticio', 0.5], ['Servilletas', 1],
     ['Vaso y Tapa soufle', 1] ] },
-  // Papas Curly: la hoja usó bolsa de 13,000 g; el app usa INSUMOS (10,600 g). Revisar presentación real.
   { nombre: 'Papas Curly', categoria: 'Snacks', porciones: 1, precio: 70, iva: 0, ing: [
     ['Aceite', 15], ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
     ['Papas Curly', 250], ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Sticker', 1],
@@ -670,6 +696,18 @@ const SEED_RECETAS = [
     ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
     ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 1], ['Pan Negro', 1], ['Aderezo ranch', 50],
     ['Aceite', 15], ['Papas a la francesa 3/8', 80] ] },
+  // Veneno: base con boneless 50g, salseados con limón partido + espolvoreada de limón pimienta.
+  { nombre: 'Volcanino Veneno', categoria: 'Volcanino', porciones: 1, precio: 89, iva: 16, ing: [
+    ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 1], ['Pan Negro', 1], ['Aderezo ranch', 50],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80], ['Boneless', 50], ['Limón', 100], ['Limón Pimienta', 10] ] },
+  // Volcaneitor = un Volcanino + cualquier brebaje. Costeado con Volcanino Líquido B + Draculín como ejemplo (el brebaje varía).
+  { nombre: 'Volcaneitor', categoria: 'Volcanino', porciones: 1, precio: 139, iva: 16, ing: [
+    ['Salchicha Jumbo', 1], ['Catsup', 30], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Mayonesa', 35],
+    ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Sticker', 2], ['Pan Negro', 1], ['Aderezo ranch', 50],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80], ['Boneless', 50], ['Bidón BBQ', 35], ['Bidón Buffalo', 25],
+    ['Agua mineral Burst', 385], ['Mega limón', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Jarabe Glitter', 100] ] },
 ];
 /* categorías de gasto: pocas y claras, para que se capture en 10 segundos */
 const CAT_GASTO = [
@@ -698,12 +736,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v9') {
+  if (db.escandalloSembrado !== 'v10') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v9'; limpio = true;
+    db.escandalloSembrado = 'v10'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
