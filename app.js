@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.1';
+const VERSION = '4.2';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -3395,28 +3395,70 @@ function escInsumos() {
   const lista = insumosVivos()
     .filter(i => !q || (i.nombre + ' ' + (i.prov || '') + ' ' + (i.marca || '')).toLowerCase().includes(q))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-  let html = '<button class="btn p gigante" onclick="editarInsumo()">➕ Nuevo insumo</button>' +
-    '<input placeholder="🔍 Buscar insumo, proveedor o marca…" value="' + esc(insumoBuscar) + '" ' +
-    'oninput="insumoBuscar=this.value;renderEscandallo();setTimeout(()=>{var b=document.querySelector(\'#esc-contenido input\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin:10px 0">';
+  // barra fija: agregar + buscar quedan pegados arriba al hacer scroll
+  let html = '<div class="esc-sticky">' +
+    '<button class="btn p gigante" onclick="editarInsumo()">➕ Nuevo insumo</button>' +
+    '<input id="ins-buscar" placeholder="🔍 Buscar insumo, proveedor o marca…" value="' + esc(insumoBuscar) + '" ' +
+    'oninput="insumoBuscar=this.value;renderEscandallo();setTimeout(()=>{var b=document.getElementById(\'ins-buscar\');if(b){b.focus();b.setSelectionRange(b.value.length,b.value.length);}},0)" style="margin-top:8px"></div>';
   html += '<div class="card"><div class="tabla-wrap"><table>' +
     '<tr><th>Insumo</th><th>Prov.</th><th class="num">Present.</th><th class="num">Precio</th><th class="num">$/unidad</th><th></th></tr>' +
-    (lista.map(i => '<tr><td><b>' + esc(i.nombre) + '</b>' + (i.marca ? '<div class="mini muted">' + esc(i.marca) + '</div>' : '') + '</td>' +
-      '<td class="mini">' + esc(i.prov || '—') + '</td>' +
-      '<td class="num mini">' + i.cant + ' ' + esc(i.unidad) + '</td>' +
-      '<td class="num">' + fmt$(Number(i.precio) + Number(i.envio || 0)) + '</td>' +
-      '<td class="num"><b class="amar">$' + (Math.round(precioUnitInsumo(i) * 10000) / 10000).toLocaleString('es-MX', { minimumFractionDigits: 4 }) + '</b></td>' +
-      '<td><button class="btn s mini" onclick="editarInsumo(\'' + i.id + '\')">✏️</button></td></tr>').join('')
+    (lista.map(i => {
+      const apagado = i.activo === false;
+      return '<tr' + (apagado ? ' style="opacity:.45"' : '') + '><td><b>' + esc(i.nombre) + '</b>' +
+        (apagado ? ' <span class="badge aviso">apagado</span>' : '') +
+        (i.marca ? '<div class="mini muted">' + esc(i.marca) + '</div>' : '') + '</td>' +
+        '<td class="mini">' + esc(i.prov || '—') + '</td>' +
+        '<td class="num mini">' + i.cant + ' ' + esc(i.unidad) + '</td>' +
+        // precio editable en línea: cambia el número y al salir del campo se guarda solo
+        '<td class="num"><input class="precio-rapido" type="number" inputmode="decimal" value="' + i.precio + '" ' +
+        'onchange="guardarPrecioRapido(\'' + i.id + '\',this.value)" title="Edita y sal del campo para guardar"></td>' +
+        '<td class="num"><b class="amar">$' + (Math.round(precioUnitInsumo(i) * 10000) / 10000).toLocaleString('es-MX', { minimumFractionDigits: 4 }) + '</b></td>' +
+        '<td style="white-space:nowrap"><button class="btn s mini" title="Duplicar" onclick="duplicarInsumo(\'' + i.id + '\')">⧉</button> ' +
+        '<button class="btn s mini" title="Editar" onclick="editarInsumo(\'' + i.id + '\')">✏️</button></td></tr>';
+    }).join('')
       || '<tr><td colspan="6" class="muted">' + (q ? 'Nada coincide.' : 'Sin insumos.') + '</td></tr>') +
     '</table></div></div>';
   return html;
 }
+/* guardado rápido del precio desde la tabla, con aviso de impacto */
+function guardarPrecioRapido(id, val) {
+  const i = insumo(id); if (!i) return;
+  const nuevo = Number(val);
+  if (!isFinite(nuevo) || nuevo === Number(i.precio)) { renderEscandallo(); return; }
+  const impacto = calcularImpacto(id, precioUnitInsumo(i), precioUnitInsumo({ precio: nuevo, envio: i.envio, cant: i.cant }));
+  i.precio = nuevo; i.t = Date.now();
+  tocarCatalogos(); guardarDB(); renderEscandallo();
+  if (impacto && impacto.length) mostrarImpactoInsumo(i.nombre, impacto);
+  else toast('💾 Precio actualizado');
+}
+/* duplica un insumo (útil para crear uno parecido desde cero) y lo abre para editar */
+function duplicarInsumo(id) {
+  const i = insumo(id); if (!i) return;
+  const copia = JSON.parse(JSON.stringify(i));
+  copia.nombre = i.nombre + ' (copia)'; delete copia.del; copia.activo = true;
+  let nid = 'ins-' + slug(copia.nombre);
+  if (db.insumos.some(x => x.id === nid)) nid = 'ins-' + uid();
+  copia.id = nid; copia.t = Date.now();
+  db.insumos.unshift(copia);
+  tocarCatalogos(); guardarDB(); renderEscandallo();
+  toast('⧉ Duplicado'); editarInsumo(nid);
+}
+function toggleInsumoActivo(id) {
+  const i = insumo(id); if (!i) return;
+  i.activo = i.activo === false; i.t = Date.now();
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast(i.activo === false ? '⏻ Insumo apagado' : '🔌 Insumo encendido');
+}
 function editarInsumo(id) {
   const i = id ? insumosVivos().find(x => x.id === id) : { nombre: '', prov: '', marca: '', cant: 1, unidad: 'g', envio: 0, precio: 0 };
   const b = JSON.parse(JSON.stringify(i));
+  const provs = [...new Set(insumosVivos().map(x => x.prov).filter(Boolean))].sort((a, c) => a.localeCompare(c, 'es'));
   const calc = () => { const pu = precioUnitInsumo({ precio: Number($('ins-precio').value), envio: Number($('ins-envio').value), cant: Number($('ins-cant').value) }); const e = $('ins-pu'); if (e) e.textContent = '$' + (Math.round(pu * 10000) / 10000).toLocaleString('es-MX', { minimumFractionDigits: 4 }); };
   abrirModal('<h3>' + (id ? '✏️ Editar insumo' : '➕ Nuevo insumo') + '</h3>' +
     '<label>Nombre</label><input id="ins-nombre" value="' + esc(b.nombre) + '">' +
-    '<div class="fila"><div style="flex:1"><label>Proveedor</label><input id="ins-prov" value="' + esc(b.prov || '') + '"></div>' +
+    '<div class="fila"><div style="flex:1"><label>Proveedor</label>' +
+    '<input id="ins-prov" list="ins-provs" value="' + esc(b.prov || '') + '" placeholder="Escribe o elige…" autocomplete="off">' +
+    '<datalist id="ins-provs">' + provs.map(p => '<option value="' + esc(p) + '">').join('') + '</datalist></div>' +
     '<div style="flex:1"><label>Marca</label><input id="ins-marca" value="' + esc(b.marca || '') + '"></div></div>' +
     '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Cantidad presentación</label>' +
     '<input id="ins-cant" type="number" inputmode="decimal" value="' + b.cant + '" oninput="(' + calc.toString() + ')()"></div>' +
@@ -3426,8 +3468,12 @@ function editarInsumo(id) {
     '<div style="flex:1"><label>Envío</label><input id="ins-envio" type="number" inputmode="decimal" value="' + (b.envio || 0) + '" oninput="(' + calc.toString() + ')()"></div></div>' +
     '<p class="mini muted" style="margin-top:10px">Precio por unidad: <b class="amar" id="ins-pu">$0.0000</b> · es lo que se usa para costear las recetas.</p>' +
     '<button class="btn p gigante" style="margin-top:12px" onclick="guardarInsumo(\'' + (id || '') + '\')">💾 Guardar</button>' +
-    (id ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarInsumo(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    (id ? '<div class="fila" style="margin-top:8px">' +
+      '<button class="btn s" onclick="duplicarInsumo(\'' + id + '\')">⧉ Duplicar</button>' +
+      '<button class="btn s" onclick="toggleInsumoActivo(\'' + id + '\')">' + (b.activo === false ? '🔌 Encender' : '⏻ Apagar') + '</button>' +
+      '<button class="btn peligro" onclick="borrarInsumo(\'' + id + '\')">🗑️ Eliminar</button></div>' : '') +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+  calc();
 }
 function guardarInsumo(id) {
   const nombre = $('ins-nombre').value.trim();
@@ -3441,25 +3487,7 @@ function guardarInsumo(id) {
   let impacto = null;
   if (id) {
     const i = insumo(id);
-    const puAntes = precioUnitInsumo(i);
-    const puDespues = precioUnitInsumo(datos);
-    if (Math.abs(puAntes - puDespues) > 1e-9) {
-      impacto = recetasVivas()
-        .filter(r => (r.ing || []).some(x => x.insumoId === id))
-        .map(r => {
-          const antes = calcReceta(r);
-          // costo nuevo de la receta con el precio ya cambiado (simulado)
-          const usa = (r.ing || []).filter(x => x.insumoId === id).reduce((a, x) => a + x.c, 0);
-          const deltaPorReceta = (puDespues - puAntes) * usa / (Number(r.porciones) || 1);
-          const costoNuevo = antes.costoUnit + deltaPorReceta;
-          const utilNueva = antes.precio - costoNuevo;
-          return {
-            nombre: r.nombre, costoAntes: antes.costoUnit, costoNuevo,
-            utilAntes: antes.utilidad, utilNueva,
-            pctCostoNuevo: antes.precio ? costoNuevo / antes.precio * 100 : 0
-          };
-        }).sort((a, b) => (b.costoNuevo - b.costoAntes) - (a.costoNuevo - a.costoAntes));
-    }
+    impacto = calcularImpacto(id, precioUnitInsumo(i), precioUnitInsumo(datos));
     Object.assign(i, datos);
   } else {
     let nid = 'ins-' + slug(nombre);
@@ -3469,6 +3497,23 @@ function guardarInsumo(id) {
   tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
   if (impacto && impacto.length) mostrarImpactoInsumo(nombre, impacto);
   else toast('💾 Insumo guardado');
+}
+/* recetas afectadas por un cambio de precio unitario, con su costo/utilidad simulados */
+function calcularImpacto(id, puAntes, puDespues) {
+  if (Math.abs(puAntes - puDespues) <= 1e-9) return null;
+  return recetasVivas()
+    .filter(r => (r.ing || []).some(x => x.insumoId === id))
+    .map(r => {
+      const antes = calcReceta(r);
+      const usa = (r.ing || []).filter(x => x.insumoId === id).reduce((a, x) => a + x.c, 0);
+      const deltaPorReceta = (puDespues - puAntes) * usa / (Number(r.porciones) || 1);
+      const costoNuevo = antes.costoUnit + deltaPorReceta;
+      return {
+        nombre: r.nombre, costoAntes: antes.costoUnit, costoNuevo,
+        utilAntes: antes.utilidad, utilNueva: antes.precio - costoNuevo,
+        pctCostoNuevo: antes.precio ? costoNuevo / antes.precio * 100 : 0
+      };
+    }).sort((a, b) => (b.costoNuevo - b.costoAntes) - (a.costoNuevo - a.costoAntes));
 }
 /* aviso claro de qué productos se movieron al cambiar el precio de un insumo */
 function mostrarImpactoInsumo(nombreInsumo, impacto) {
@@ -3489,13 +3534,38 @@ function mostrarImpactoInsumo(nombreInsumo, impacto) {
     '<button class="btn p" style="margin-top:12px" onclick="cerrarModal()">Entendido</button>');
 }
 function borrarInsumo(id) {
-  const usada = recetasVivas().find(r => (r.ing || []).some(x => x.insumoId === id));
-  if (usada) return toast('No se puede: lo usa la receta "' + usada.nombre + '". Quítalo de ahí primero.');
   const i = insumo(id); if (!i) return;
+  const usadas = recetasVivas().filter(r => (r.ing || []).some(x => x.insumoId === id));
+  if (usadas.length) return borrarInsumoUsado(id, usadas);
   if (!confirm('¿Eliminar el insumo "' + i.nombre + '"?')) return;
   i.del = true; i.t = Date.now();
   tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
   toast('🗑️ Insumo eliminado');
+}
+/* el insumo está en uso: ofrece ir a cada producto o sustituirlo en todos de un jalón */
+function borrarInsumoUsado(id, usadas) {
+  const i = insumo(id);
+  const ops = insumosVivos().filter(x => x.id !== id).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  abrirModal('<h3>🔗 "' + esc(i.nombre) + '" está en uso</h3>' +
+    '<p class="mini muted">Lo usan <b>' + usadas.length + '</b> producto' + (usadas.length === 1 ? '' : 's') + '. Puedes ir a editar cada uno, o sustituirlo en todos por otro insumo:</p>' +
+    '<div class="tabla-wrap"><table><tr><th>Producto</th><th></th></tr>' +
+    usadas.map(r => '<tr><td><b>' + esc(r.nombre) + '</b></td>' +
+      '<td class="num"><button class="btn s mini" onclick="cerrarModal();escTab=\'menu\';editarReceta(\'' + r.id + '\')">Ir a editar ✏️</button></td></tr>').join('') +
+    '</table></div>' +
+    '<label style="margin-top:12px">Sustituir en TODOS por:</label>' +
+    '<select id="ins-sustituto" style="margin-top:6px"><option value="">— elige el insumo sustituto —</option>' +
+    ops.map(o => '<option value="' + o.id + '">' + esc(o.nombre) + '</option>').join('') + '</select>' +
+    '<button class="btn p" style="margin-top:8px" onclick="sustituirInsumo(\'' + id + '\')">🔁 Sustituir y eliminar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function sustituirInsumo(id) {
+  const nuevoId = $('ins-sustituto').value;
+  if (!nuevoId) return toast('Elige primero el insumo sustituto');
+  let n = 0;
+  recetasVivas().forEach(r => { let toco = false; (r.ing || []).forEach(x => { if (x.insumoId === id) { x.insumoId = nuevoId; n++; toco = true; } }); if (toco) r.t = Date.now(); });
+  const i = insumo(id); if (i) { i.del = true; i.t = Date.now(); }
+  tocarCatalogos(); guardarDB(); cerrarModal(); renderEscandallo();
+  toast('🔁 Sustituido en ' + n + ' ingrediente' + (n === 1 ? '' : 's') + ' y eliminado');
 }
 
 /* ═══════════ TEMA CLARO / OSCURO ═══════════ */
