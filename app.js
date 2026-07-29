@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.0';
+const VERSION = '4.1';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -451,6 +451,10 @@ const SEED_INSUMOS = [
   ['Salchicha Jumbo', '', '', 20, 'pza', 157],
   // Pan Negro personalizado (negro) — $10/pza confirmado por Toño.
   ['Pan Negro', '', '', 1, 'pza', 10],
+  // Poción Fantasmora:
+  ['Helado de cheesecake de zarzamora', '', '', 4700, 'g', 199],
+  // Boing 225 ml para paquetes — CONFIRMAR precio/presentación real (placeholder = caja de 250 ml).
+  ['Boing 225 ml', 'Boing', 'Boing', 162, 'pza', 1190],
 ];
 /* Receta Minotauro tomada de tu hoja — verificada: suma exacta $45.19.
    Cada ingrediente es [nombre del insumo, cantidad usada]. Las demás recetas
@@ -489,6 +493,10 @@ const SEED_RECETAS = [
     ['Helado de vainilla', 45], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
     ['Bolsa de hielos', 175], ['Sticker', 1], ['Chocolate líquido', 10], ['Popote desechable', 1],
     ['Crema batida', 45], ['Mazapán', 1] ] },
+  // Fantasmora: misma base de poción, con helado de cheesecake de zarzamora. Precio $80 (asumido — confirmar).
+  { nombre: 'Fantasmora', categoria: 'Pociones', porciones: 1, precio: 80, iva: 0, ing: [
+    ['Helado de cheesecake de zarzamora', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Sticker', 1], ['Popote desechable', 1], ['Crema batida', 45] ] },
   // ── CREPIBURGERS — Minotauro (4 variantes, verificadas) + Dragón y Zombie BBQ base ──
   { nombre: 'Minotauro', categoria: 'Crepiburgers', porciones: 1, precio: 85, iva: 16, ing: [
     ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1],
@@ -669,6 +677,28 @@ const SEED_RECETAS = [
     ['Bolsa de plástico', 1], ['Hamburguesero negro 6x6', 1], ['Espadas de plástico', 1],
     ['Papel grado alimenticio', 0.5], ['Servilletas', 1], ['Catsup', 50], ['Refresco 400 ml', 1],
     ['Vaso y Tapa soufle', 1], ['Salsa Dragón', 150] ] },
+  // Espanto = una crepiburger + una poción clásica (Lodo/Sangre/Baba/Materia). Especial +$15.
+  // Costeado con la poción Lodo del Pantano como ejemplo (la poción clásica varía ~$27-29).
+  { nombre: 'Paquete Espanto Minotauro', categoria: 'Paquetes', porciones: 1, precio: 155, iva: 0, ing: [
+    ['Carne de Arrachera', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Bidón BBQ', 25],
+    ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5],
+    ['Sticker', 2], ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Mostaza', 25],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80],
+    ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Chocolate líquido', 20], ['Popote desechable', 1], ['Crema batida', 45], ['Cocoa', 10] ] },
+  { nombre: 'Paquete Espanto Dragón', categoria: 'Paquetes', porciones: 1, precio: 155, iva: 0, ing: [
+    ['Hamburguesa de pollo', 1], ['Catsup', 25], ['Bolsa de plástico', 1], ['Empaque 7x7', 1], ['Bidón BBQ', 25],
+    ['Mayonesa', 25], ['Papel grado alimenticio', 0.5], ['Jalapeños', 40], ['Masa de crepa', 1], ['Gas', 62.5],
+    ['Sticker', 2], ['Lechuga Italiana', 20], ['Mantequilla Margarina', 20], ['Queso gouda', 45], ['Aderezo ranch', 30],
+    ['Aceite', 15], ['Papas a la francesa 3/8', 80],
+    ['Helado de chocolate', 135], ['Leche Carnation', 120], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
+    ['Bolsa de hielos', 175], ['Chocolate líquido', 20], ['Popote desechable', 1], ['Crema batida', 45], ['Cocoa', 10] ] },
+  // Aquelarre = 1 kg de cerebros (BBQ) + papa colmillo (gajo) 125g + papa enigma (curly) 125g + 3 refrescos + 3 dedos.
+  { nombre: 'Paquete Aquelarre', categoria: 'Paquetes', porciones: 1, precio: 469, iva: 0, ing: [
+    ['Aceite', 60], ['Aderezo ranch', 150], ['Bolsa de plástico', 1], ['Boneless', 900], ['Empaque 7x7', 2],
+    ['Espadas de plástico', 3], ['Papel grado alimenticio', 1], ['Sticker', 2], ['Vaso y Tapa soufle', 3],
+    ['Servilletas', 1], ['Bidón BBQ', 400], ['Papa Gajo', 125], ['Papas Curly', 125], ['Refresco 400 ml', 3],
+    ['Dedos de queso', 3] ] },
   // ── BREBAJES (aguas/limonadas de autor) — verificadas ──
   { nombre: 'Yeti', categoria: 'Brebajes', porciones: 1, precio: 45, iva: 0, ing: [
     ['Garrafón de agua', 400], ['Leche evaporada carnation', 70], ['Tapa Domo', 1], ['Vaso malteada 16 onz', 1],
@@ -736,12 +766,12 @@ function migrarDB() {
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
   if (!db.recetas) db.recetas = [];
-  if (db.escandalloSembrado !== 'v10') {
+  if (db.escandalloSembrado !== 'v11') {
     const idsI = new Set(db.insumos.map(x => x.id));
     SEED_INSUMOS.forEach(i => { const id = 'ins-' + slug(i[0]); if (!idsI.has(id)) db.insumos.push({ id, nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 }); });
     const idsR = new Set(db.recetas.map(x => x.id));
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
-    db.escandalloSembrado = 'v10'; limpio = true;
+    db.escandalloSembrado = 'v11'; limpio = true;
   }
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
