@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.3';
+const VERSION = '4.4';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -15,6 +15,8 @@ const mesISO = () => hoyISO().slice(0, 7);
 const fmt$ = n => '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtHora = ts => new Date(ts).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 const fmtFecha = iso => { const [y, m, d] = iso.split('-'); return d + '/' + m + '/' + y; };
+const MESES_ABR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const fmtFechaCorta = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return Number(d) + ' ' + (MESES_ABR[Number(m) - 1] || m); };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -1083,6 +1085,15 @@ function prepararDrop(dropId, inputId, destino) {
 
 /* ---------- helpers de dominio ---------- */
 const suc = id => db.sucursales.find(s => s.id === id);
+/* edad en años a partir de la fecha de nacimiento (ISO) */
+function edad(fechaNac) {
+  if (!fechaNac) return '';
+  const n = new Date(fechaNac + 'T12:00:00'), h = new Date();
+  let a = h.getFullYear() - n.getFullYear();
+  const m = h.getMonth() - n.getMonth();
+  if (m < 0 || (m === 0 && h.getDate() < n.getDate())) a--;
+  return a >= 0 && a < 120 ? a : '';
+}
 const per = id => db.personal.find(p => p.id === id);
 const prod = id => db.productos.find(p => p.id === id);
 const turnosAbiertos = sid => db.turnos.filter(t => !t.salida && (!sid || t.sucursalId === sid));
@@ -3214,30 +3225,36 @@ async function calendarioPNG() {
    Detrás del PIN 0616. Steph y Toño llevan evaluaciones y seguimiento. */
 const TRIP_EJES = [
   { key: 'servicio', nombre: 'Servicio', emoji: '🛎️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · atención' }, subs: [
-    ['Actitud positiva', 'Saluda, buena cara y buen trato todo el turno; sin quejas.'],
-    ['Explica el menú', 'Describe platillos y recomienda sin dudar.'],
-    ['Responde con seguridad', 'Resuelve dudas del cliente sin depender de otro.'],
-    ['Contacto con el cliente', 'Da seguimiento a las mesas sin que se lo pidan.'] ] },
+    ['Anticipa necesidades', 'Lee lenguaje corporal y no verbal; se adelanta a lo que el cliente va a necesitar.'],
+    ['Explicación proactiva', 'Explica juegos y dinámicas sin que se lo pidan.'],
+    ['Resolución de situaciones', 'Resuelve problemas y equivocaciones en el momento.'],
+    ['Atención online', 'Atiende y procura mensajes y llamadas.'],
+    ['Performance Cíclope', 'Mantiene la temática y el concepto.'] ] },
   { key: 'metodo', nombre: 'Método', emoji: '🧪', capa: { fn: 'irPreparaciones()', txt: 'Recetario' }, subs: [
-    ['Sigue recetas', 'Gramaje y montaje del recetario; sin correcciones.'],
-    ['Orden en estación', 'Su área organizada todo el turno.'],
-    ['Limpieza constante', 'Limpia sobre la marcha, no acumula.'],
-    ['Usa formatos', 'Llena checklist, cierres y evidencias en la app.'] ] },
+    ['Toma de orden', 'Repite la orden, la retira e imprime ticket.'],
+    ['Entrega de orden', 'Presentación y entrega correctas.'],
+    ['Cierre de venta', 'Entrega y cierre del ticket.'],
+    ['Plataformas delivery', 'Lee y entrega sin errores.'],
+    ['Optimización de procesos', 'Preparaciones, atención y ventas.'] ] },
   { key: 'actitud', nombre: 'Actitud', emoji: '⚡', capa: null, subs: [
     ['Apoya al equipo', 'Ayuda sin que se lo pidan cuando hace falta.'],
-    ['Propone mejoras', 'Aportó al menos una idea en la semana.'],
-    ['Energía en turno', 'Mantiene ritmo y disposición todo el turno.'],
-    ['Resuelve solo', 'Toma iniciativa ante problemas.'] ] },
+    ['Energía y disposición', 'Mantiene ritmo y buena disposición todo el turno.'],
+    ['Propone mejoras', 'Aporta ideas para mejorar.'],
+    ['Acepta responsabilidades', 'Asume sus tareas y sus errores sin evadir.'] ] },
   { key: 'resultados', nombre: 'Resultados', emoji: '🎯', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · venta' }, subs: [
     ['Venta adicional', 'Ofrece extras/upselling de forma habitual.'],
     ['Reduce errores', 'Sin errores repetidos ni retrabajos.'],
-    ['Cumple tiempos', 'Los platillos salen en el tiempo esperado.'],
-    ['Cuida producto', 'Sin desperdicio evitable ni mermas por descuido.'] ] },
-  { key: 'tiempo', nombre: 'Tiempo', emoji: '⏱️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · cierre' }, subs: [
-    ['Puntualidad', 'Llegó a tiempo a todos sus turnos (o avisó).'],
-    ['No se distrae', 'Se mantiene en la operación.'],
-    ['Mantiene ritmo', 'Sostiene el ritmo en horas pico.'],
-    ['Cierra correcto', 'Deja el cierre completo y correcto.'] ] },
+    ['Cuida producto', 'Sin desperdicio evitable ni mermas por descuido.'],
+    ['Cuidado de experiencia', 'Procura un ambiente familiar y alineado al concepto.'],
+    ['Cierre correcto', 'Deja el cierre completo y correcto.'] ] },
+  { key: 'desempeno', nombre: 'Desempeño', emoji: '📈', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · cierre y puntualidad' }, subs: [
+    ['Puntualidad', 'Llega a tiempo (o avisa justificando).'],
+    ['Enfoque en la tarea', 'Se mantiene en lo que hace, sin distracciones.'],
+    ['Mantiene ritmo', 'Capacidad de producción continua.'],
+    ['Autonomía', 'Trabaja con mínima supervisión directa.'],
+    ['Organización', 'Ideas, procesos y tiempos ordenados.'],
+    ['Comunicación efectiva', 'Reporta mejoras o problemas en tiempo, con claridad y respeto.'],
+    ['Asimilación de directrices', 'Sigue reglamentos e indicaciones.'] ] },
 ];
 const TRIP_CAPAC = [
   ['Inducción y contexto', ['Filosofía y sistema de la marca', 'Concepto del restaurante', 'Experiencia que se busca', 'Roles y jerarquías', 'Reglas internas (puntualidad, uniforme, higiene)', 'Áreas (cocina, barra, servicio, caja)', 'Flujo de operación', 'Plataformas y formatos', 'Procedimientos de seguridad', 'Datos fiscales', 'Uso de evaluaciones']],
@@ -3274,8 +3291,10 @@ function tripSemanaLabel(k) { const a = new Date(k + 'T12:00:00'), b = new Date(
 const tripEvals = () => (db.tripulacion || []).filter(e => !e.del);
 function tripEvalsDe(cid) { return tripEvals().filter(e => e.colaboradorId === cid).sort((a, b) => a.semana < b.semana ? -1 : 1); }
 function tripUltima(cid) { const e = tripEvalsDe(cid); return e[e.length - 1]; }
-function tripEjeScore(arr) { return (arr || []).filter(Boolean).length * 5; }
-function tripTotal(checks) { return TRIP_EJES.reduce((a, e) => a + tripEjeScore(checks[e.key]), 0); }
+const TRIP_EJE = k => TRIP_EJES.find(e => e.key === k);
+/* cada eje vale /20 sin importar cuántos subcriterios tenga: proporción cumplida × 20 */
+function tripEjeScore(k, arr) { const e = TRIP_EJE(k); if (!e) return 0; const n = e.subs.length; return n ? Math.round((arr || []).filter(Boolean).length / n * 20) : 0; }
+function tripTotal(checks) { return TRIP_EJES.reduce((a, e) => a + tripEjeScore(e.key, checks[e.key] || []), 0); }
 function tripTendencia(cid) { const e = tripEvalsDe(cid); if (e.length < 2) return { a: '→', c: 'var(--muted)' }; const d = e[e.length - 1].total - e[e.length - 2].total; if (d > 2) return { a: '↑', c: 'var(--ok)' }; if (d < -2) return { a: '↓', c: 'var(--alerta)' }; return { a: '→', c: 'var(--muted)' }; }
 function tripListoIncentivo(cid) { const e = tripEvalsDe(cid); return e.length >= 2 && e[e.length - 1].total >= 90 && e[e.length - 2].total >= 90; }
 function tripSpark(cid, w, h) {
@@ -3329,8 +3348,10 @@ function tripRosterHTML() {
 }
 function tripPerfil(id) {
   const p = per(id); if (!p) return; const evs = tripEvalsDe(id), u = evs[evs.length - 1];
+  const ed = edad(p.fechaNacimiento);
   let html = '<div class="fila" style="align-items:center;gap:10px">' + avatarPersona(id, p.nombre) +
-    '<div><h3 style="margin:0">' + esc(p.nombre) + '</h3>' + (p.fechaIngreso ? '<div class="mini muted">Desde ' + fmtFecha(p.fechaIngreso) + '</div>' : '') + '</div></div>';
+    '<div style="min-width:0"><h3 style="margin:0">' + esc(p.nombreCompleto || p.nombre) + '</h3>' +
+    '<div class="mini muted">Apodo: ' + esc(p.nombre) + (p.fechaNacimiento ? ' · 🎂 ' + fmtFechaCorta(p.fechaNacimiento) + (ed !== '' ? ' (' + ed + ' años)' : '') : '') + '</div></div></div>';
   const cap = tripCapacProgreso(id);
   html += '<div class="mini muted" style="margin-top:8px">📚 Capacitación: <b>' + cap.ok + '/' + cap.total + '</b> (' + cap.pct + '%)</div>';
   if (!u) html += '<p class="muted" style="margin-top:12px">Todavía sin evaluaciones.</p>';
@@ -3339,7 +3360,7 @@ function tripPerfil(id) {
     html += '<div class="card" style="margin:12px 0;text-align:center"><div style="font-size:2.3rem;font-weight:800;color:' + b.color + '">' + u.total + '<span style="font-size:1rem;opacity:.6">/100</span></div>' +
       '<div style="color:' + b.color + ';font-weight:700">' + b.emoji + ' ' + b.label + '</div><div class="mini muted">' + tripSemanaLabel(u.semana) + '</div>' +
       '<div style="margin-top:8px">' + tripSpark(id, 210, 42) + '</div></div>';
-    html += TRIP_EJES.map(eje => { const sc = tripEjeScore(u.checks[eje.key]); const bajo = sc < 15; return '<div class="item-linea"><span style="flex:0 0 22px">' + eje.emoji + '</span><div class="grow"><b>' + eje.nombre + '</b>' + (bajo && eje.capa ? '<div class="mini" style="color:var(--alerta)">Reforzar → <a href="#" onclick="event.preventDefault();cerrarModal();' + eje.capa.fn + '">' + esc(eje.capa.txt) + '</a></div>' : '') + '</div><span class="badge"' + (bajo ? ' style="color:var(--alerta)"' : '') + '>' + sc + '/20</span></div>'; }).join('');
+    html += TRIP_EJES.map(eje => { const sc = tripEjeScore(eje.key, u.checks[eje.key]); const bajo = sc < 15; return '<div class="item-linea"><span style="flex:0 0 22px">' + eje.emoji + '</span><div class="grow"><b>' + eje.nombre + '</b>' + (bajo && eje.capa ? '<div class="mini" style="color:var(--alerta)">Reforzar → <a href="#" onclick="event.preventDefault();cerrarModal();' + eje.capa.fn + '">' + esc(eje.capa.txt) + '</a></div>' : '') + '</div><span class="badge"' + (bajo ? ' style="color:var(--alerta)"' : '') + '>' + sc + '/20</span></div>'; }).join('');
     if (u.observacion) html += '<p class="mini muted" style="margin-top:10px">🗒️ ' + esc(u.observacion) + '</p>';
     if (u.foto) html += '<div style="margin-top:8px"><img src="' + fotoURL(u.foto) + '" style="max-width:140px;border-radius:8px" onclick="window.open(this.src)"></div>';
   }
@@ -3387,7 +3408,7 @@ function tripAbrirCaptura(cid) {
   tripBorrador = ex ? JSON.parse(JSON.stringify(ex)) : { colaboradorId: cid, semana: tripCapSemana, sucursalId: (per(cid) && per(cid).sucursal) || '', evaluadorId: tripCapEvaluador, checks: {}, observacion: '', accion: 'Seguimiento', plan: { objetivo: '', acciones: '', fecha: '', estado: 'abierto' }, foto: '' };
   tripBorrador.evaluadorId = tripCapEvaluador;
   if (!tripBorrador.plan) tripBorrador.plan = { objetivo: '', acciones: '', fecha: '', estado: 'abierto' };
-  TRIP_EJES.forEach(e => { if (!tripBorrador.checks[e.key]) tripBorrador.checks[e.key] = [false, false, false, false]; });
+  TRIP_EJES.forEach(e => { if (!Array.isArray(tripBorrador.checks[e.key]) || tripBorrador.checks[e.key].length !== e.subs.length) tripBorrador.checks[e.key] = new Array(e.subs.length).fill(false); });
   tripPintarCaptura();
 }
 function tripPintarCaptura() {
@@ -3418,7 +3439,7 @@ function tripPintarCaptura() {
 function tripPintarTotales() {
   const total = tripTotal(tripBorrador.checks), b = tripBanda(total), box = $('trip-total');
   if (box) box.innerHTML = '<div style="font-size:2rem;font-weight:800;color:' + b.color + '">' + total + '<span style="font-size:.9rem;opacity:.6">/100</span></div><div style="color:' + b.color + ';font-weight:700">' + b.emoji + ' ' + b.label + '</div>';
-  TRIP_EJES.forEach(e => { const el = $('trip-eje-' + e.key); if (el) { const sc = tripEjeScore(tripBorrador.checks[e.key]); el.textContent = sc + '/20'; el.style.color = sc < 15 ? 'var(--alerta)' : ''; } });
+  TRIP_EJES.forEach(e => { const el = $('trip-eje-' + e.key); if (el) { const sc = tripEjeScore(e.key, tripBorrador.checks[e.key]); el.textContent = sc + '/20'; el.style.color = sc < 15 ? 'var(--alerta)' : ''; } });
 }
 function tripPintarAccion() { const btns = document.querySelectorAll('#trip-accion button'); ['Incentivo', 'Seguimiento', 'Advertencia'].forEach((a, i) => { if (btns[i]) btns[i].classList.toggle('on', tripBorrador.accion === a); }); }
 function tripLeerFoto(inp) { const f = inp.files[0]; if (!f) return; comprimirFoto(f, d => { tripBorrador.foto = d; tripPintarFotoBox(); }); }
@@ -4440,15 +4461,21 @@ function dirAdmin() {
       '<div class="mini muted">' + esc(s.direccion || '') + '</div></div>' +
       '<span class="badge ' + (s.activa ? 'ok' : 'aviso') + '">' + (s.activa ? 'activa' : 'pausada') + '</span>' +
       '<button class="btn s mini" onclick="modalSucursal(\'' + s.id + '\')">✏️</button></div>').join('') + '</div>';
-  /* personal */
-  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">👥 Personal y sueldos</h3>' +
+  /* personal — cards simplificados por colaborador */
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">👥 El equipo</h3>' +
     '<button class="btn s mini" onclick="modalPersona()">+ Agregar</button></div>' +
-    '<div class="tabla-wrap"><table><tr><th>Nombre</th><th class="num">$/turno (' + (c.baseHoras || 6) + 'h)</th><th class="num">$/h extra</th><th>Estado</th><th></th></tr>' +
-    db.personal.filter(p => !p.del).map(p => '<tr' + (p.activo ? '' : ' style="opacity:.45"') + '><td>' +
-      puntoPersona(p.id) + esc(p.nombre) +
-      '</td><td class="num">' + fmt$(p.pagoTurno) + '</td><td class="num">' + fmt$(p.pagoHora) +
-      '</td><td class="mini">' + (p.activo ? 'activo' : 'inactivo') +
-      '</td><td><button class="btn s mini" onclick="modalPersona(\'' + p.id + '\')">✏️</button></td></tr>').join('') + '</table></div></div>';
+    '<div class="equipo-cards">' +
+    db.personal.filter(p => !p.del).sort((a, b) => (b.activo ? 1 : 0) - (a.activo ? 1 : 0) || a.nombre.localeCompare(b.nombre, 'es')).map(p => {
+      const ed = edad(p.fechaNacimiento);
+      return '<div class="equipo-card"' + (p.activo ? '' : ' style="opacity:.5"') + ' onclick="modalPersona(\'' + p.id + '\')">' +
+        '<div class="fila" style="align-items:center;gap:8px">' + avatarPersona(p.id, p.nombre) +
+        '<div class="grow" style="min-width:0"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.nombre) + '</b>' +
+        '<div class="mini muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p.nombreCompleto || 'Sin nombre completo') + '</div></div>' +
+        (p.activo ? '' : '<span class="badge aviso mini">inactivo</span>') + '</div>' +
+        '<div class="fila mini muted" style="flex-wrap:wrap;gap:4px 12px;margin-top:8px">' +
+        '<span>🎂 ' + (p.fechaNacimiento ? fmtFechaCorta(p.fechaNacimiento) + (ed !== '' ? ' · ' + ed + ' años' : '') : '—') + '</span>' +
+        '<span>💵 ' + fmt$(p.pagoTurno) + '/turno · ' + fmt$(p.pagoHora) + '/h</span></div></div>';
+    }).join('') + '</div></div>';
   /* productos */
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📦 Catálogo de productos (' + db.productos.length + ')</h3>' +
     '<button class="btn s mini" onclick="modalProducto()">+ Agregar</button></div>' +
@@ -4558,8 +4585,11 @@ function modalPersona(id) {
   const p = id ? per(id) : null;
   colorPersonaSel = (p && p.color) || colorLibre();
   abrirModal('<h3>' + (p ? 'Editar colaborador' : 'Nuevo colaborador') + '</h3>' +
-    '<label>Nombre</label><input id="mp-nombre" value="' + esc(p?.nombre || '') + '">' +
-    '<div class="fila"><div><label>Pago por turno base ($)</label><input id="mp-turno" type="number" value="' + (p?.pagoTurno ?? 300) + '"></div>' +
+    '<label>Apodo en la app</label><input id="mp-nombre" value="' + esc(p?.nombre || '') + '" placeholder="Como se le identifica (ej. Añex)">' +
+    '<label style="margin-top:10px">Nombre completo</label><input id="mp-completo" value="' + esc(p?.nombreCompleto || '') + '" placeholder="Nombre y apellidos">' +
+    '<label style="margin-top:10px">Fecha de nacimiento</label><input id="mp-nac" type="date" max="' + hoyISO() + '" value="' + esc(p?.fechaNacimiento || '') + '">' +
+    (p && p.fechaNacimiento ? '<p class="mini muted" style="margin:4px 0 0">Edad: <b class="amar">' + edad(p.fechaNacimiento) + ' años</b> · se usará para cumpleaños en el calendario.</p>' : '') +
+    '<div class="fila" style="margin-top:10px"><div><label>Pago por turno base ($)</label><input id="mp-turno" type="number" value="' + (p?.pagoTurno ?? 300) + '"></div>' +
     '<div><label>Pago por hora extra ($)</label><input id="mp-hora" type="number" value="' + (p?.pagoHora ?? 50) + '"></div></div>' +
     (p ? '<label>Estado</label><select id="mp-activo"><option value="1"' + (p.activo ? ' selected' : '') + '>Activo</option><option value="0"' + (!p.activo ? ' selected' : '') + '>Inactivo</option></select>' : '') +
     '<label style="margin-top:12px">Color en el calendario</label>' +
@@ -4580,11 +4610,12 @@ function guardarPersona(id) {
   const nombre = $('mp-nombre').value.trim();
   if (!nombre) return toast('Ponle nombre al colaborador');
   const color = colorPersonaSel || colorLibre();
-  if (id) { const p = per(id); Object.assign(p, { nombre, color, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1', t: Date.now() }); }
+  const extra = { nombreCompleto: $('mp-completo').value.trim(), fechaNacimiento: $('mp-nac').value || '' };
+  if (id) { const p = per(id); Object.assign(p, { nombre, color, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: $('mp-activo').value === '1', t: Date.now() }, extra); }
   else {
     let nid = 'per-' + slug(nombre);
     if (db.personal.some(p => p.id === nid)) nid = 'per-' + uid();
-    db.personal.push({ id: nid, nombre, color, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true, t: Date.now() });
+    db.personal.push(Object.assign({ id: nid, nombre, color, pagoTurno: Number($('mp-turno').value) || 0, pagoHora: Number($('mp-hora').value) || 0, activo: true, t: Date.now() }, extra));
   }
   tocarCatalogos(); guardarDB(); cerrarModal(); renderDireccion(); toast('👥 Colaborador guardado');
 }
