@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.2';
+const VERSION = '4.3';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -346,7 +346,7 @@ function seedDB() {
     ],
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
-    calendario: [], gastos: [],
+    calendario: [], gastos: [], tripulacion: [], tripCapac: [], tripAuditoria: [],
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
@@ -759,6 +759,9 @@ function migrarDB() {
   if (!db.preparaciones) db.preparaciones = [];
   if (!db.calendario) db.calendario = [];
   if (!db.gastos) db.gastos = [];
+  if (!db.tripulacion) db.tripulacion = [];
+  if (!db.tripCapac) db.tripCapac = [];
+  if (!db.tripAuditoria) db.tripAuditoria = [];
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
@@ -1135,7 +1138,7 @@ function ir(id) {
   window.scrollTo(0, 0);
   renderPantalla(id);
 }
-function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; ir('scr-portada'); }
+function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; esTrip = false; ir('scr-portada'); }
 function renderPantalla(id) {
   if (id === 'scr-portada') renderPortada();
   if (id === 'scr-suc') renderSucursal();
@@ -1150,6 +1153,7 @@ function renderPantalla(id) {
   if (id === 'scr-cal') renderCalendario();
   if (id === 'scr-esc') renderEscandallo();
   if (id === 'scr-dir') renderDireccion();
+  if (id === 'scr-trip') renderTripulacion();
 }
 /* menú del título: saltar entre sucursales y paneles sin volver al inicio */
 function menuNavegacion() {
@@ -3203,6 +3207,290 @@ async function calendarioPNG() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     toast('⬇️ ' + nombre);
   }, 'image/png');
+}
+
+/* ═══════════ TRIPULACIÓN (expediente vivo del colaborador) ═══════════
+   Evaluación semanal + plan de trabajo + capacitación + auditoría.
+   Detrás del PIN 0616. Steph y Toño llevan evaluaciones y seguimiento. */
+const TRIP_EJES = [
+  { key: 'servicio', nombre: 'Servicio', emoji: '🛎️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · atención' }, subs: [
+    ['Actitud positiva', 'Saluda, buena cara y buen trato todo el turno; sin quejas.'],
+    ['Explica el menú', 'Describe platillos y recomienda sin dudar.'],
+    ['Responde con seguridad', 'Resuelve dudas del cliente sin depender de otro.'],
+    ['Contacto con el cliente', 'Da seguimiento a las mesas sin que se lo pidan.'] ] },
+  { key: 'metodo', nombre: 'Método', emoji: '🧪', capa: { fn: 'irPreparaciones()', txt: 'Recetario' }, subs: [
+    ['Sigue recetas', 'Gramaje y montaje del recetario; sin correcciones.'],
+    ['Orden en estación', 'Su área organizada todo el turno.'],
+    ['Limpieza constante', 'Limpia sobre la marcha, no acumula.'],
+    ['Usa formatos', 'Llena checklist, cierres y evidencias en la app.'] ] },
+  { key: 'actitud', nombre: 'Actitud', emoji: '⚡', capa: null, subs: [
+    ['Apoya al equipo', 'Ayuda sin que se lo pidan cuando hace falta.'],
+    ['Propone mejoras', 'Aportó al menos una idea en la semana.'],
+    ['Energía en turno', 'Mantiene ritmo y disposición todo el turno.'],
+    ['Resuelve solo', 'Toma iniciativa ante problemas.'] ] },
+  { key: 'resultados', nombre: 'Resultados', emoji: '🎯', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · venta' }, subs: [
+    ['Venta adicional', 'Ofrece extras/upselling de forma habitual.'],
+    ['Reduce errores', 'Sin errores repetidos ni retrabajos.'],
+    ['Cumple tiempos', 'Los platillos salen en el tiempo esperado.'],
+    ['Cuida producto', 'Sin desperdicio evitable ni mermas por descuido.'] ] },
+  { key: 'tiempo', nombre: 'Tiempo', emoji: '⏱️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · cierre' }, subs: [
+    ['Puntualidad', 'Llegó a tiempo a todos sus turnos (o avisó).'],
+    ['No se distrae', 'Se mantiene en la operación.'],
+    ['Mantiene ritmo', 'Sostiene el ritmo en horas pico.'],
+    ['Cierra correcto', 'Deja el cierre completo y correcto.'] ] },
+];
+const TRIP_CAPAC = [
+  ['Inducción y contexto', ['Filosofía y sistema de la marca', 'Concepto del restaurante', 'Experiencia que se busca', 'Roles y jerarquías', 'Reglas internas (puntualidad, uniforme, higiene)', 'Áreas (cocina, barra, servicio, caja)', 'Flujo de operación', 'Plataformas y formatos', 'Procedimientos de seguridad', 'Datos fiscales', 'Uso de evaluaciones']],
+  ['Servicio al cliente', ['Bienvenida correcta', 'Tiempos de espera', 'Asignación de mesa', 'Introducción al cliente', 'Toma de orden', 'Montaje de mesa', 'Entrega de alimentos', 'Verificación de satisfacción', 'Atención durante consumo', 'Retiro de platos']],
+  ['Conocimiento del menú', ['Conoce todos los platillos', 'Ejecuta las preparaciones', 'Ingredientes principales', 'Recomendaciones clave', 'Sugerencias según cliente', 'Tiempos de preparación', 'Resuelve dudas básicas', 'Narrativa de los alimentos']],
+  ['Procedimientos operativos', ['Situaciones extraordinarias y seguridad', 'Proceso de cobro', 'Limpieza y orden', 'Manejo de utensilios', 'Checklist de cierre', 'Plataformas de delivery', 'Equipos de cocina y limpieza']],
+];
+const TRIP_AUDIT = [
+  ['Atención', ['Saludo inmediato', 'Pedido claro', 'Tiempo adecuado']],
+  ['Cocina', ['Orden en área', 'Insumos completos', 'Tiempos correctos']],
+  ['Limpieza', ['Baños limpios', 'Piso limpio', 'Área general limpia']],
+  ['Experiencia', ['Música activa', 'Juegos disponibles', 'Ambiente correcto']],
+  ['Seguridad', ['Área sin riesgos', 'Equipos seguros']],
+];
+const CAPAC_ESTADOS = { pend: ['⬜', 'Pendiente'], proc: ['◐', 'En proceso'], ok: ['✅', 'Cumplido'], verif: ['✔️', 'Verificado'] };
+let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana = null, tripCapEvaluador = '', tripCapacCid = '', tripAudSid = '', tripAudFecha = '';
+
+function pedirPinTripulacion() {
+  abrirPin('PIN de Tripulación', pin => {
+    if (pin === db.config.adminPin || pin === '0616') { esTrip = true; tripTab = 'tripulantes'; ir('scr-trip'); }
+    else toast('⛔ PIN incorrecto');
+  });
+}
+/* ---- helpers de dominio ---- */
+function tripBanda(t) {
+  if (t >= 90) return { k: 'excelente', label: 'Excelente', color: '#22C55E', emoji: '🌟' };
+  if (t >= 80) return { k: 'bueno', label: 'Bueno', color: '#3B82F6', emoji: '👍' };
+  if (t >= 70) return { k: 'aceptable', label: 'Aceptable', color: '#F59E0B', emoji: '⚠️' };
+  return { k: 'deficiente', label: 'Deficiente', color: '#EF4444', emoji: '⛔' };
+}
+function tripSemanaKey(iso) { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
+function tripSemanaShift(k, d) { const x = new Date(k + 'T12:00:00'); x.setDate(x.getDate() + d * 7); return x.toISOString().slice(0, 10); }
+function tripSemanaLabel(k) { const a = new Date(k + 'T12:00:00'), b = new Date(k + 'T12:00:00'); b.setDate(b.getDate() + 6); const f = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }); return 'Semana del ' + f(a) + ' al ' + f(b); }
+const tripEvals = () => (db.tripulacion || []).filter(e => !e.del);
+function tripEvalsDe(cid) { return tripEvals().filter(e => e.colaboradorId === cid).sort((a, b) => a.semana < b.semana ? -1 : 1); }
+function tripUltima(cid) { const e = tripEvalsDe(cid); return e[e.length - 1]; }
+function tripEjeScore(arr) { return (arr || []).filter(Boolean).length * 5; }
+function tripTotal(checks) { return TRIP_EJES.reduce((a, e) => a + tripEjeScore(checks[e.key]), 0); }
+function tripTendencia(cid) { const e = tripEvalsDe(cid); if (e.length < 2) return { a: '→', c: 'var(--muted)' }; const d = e[e.length - 1].total - e[e.length - 2].total; if (d > 2) return { a: '↑', c: 'var(--ok)' }; if (d < -2) return { a: '↓', c: 'var(--alerta)' }; return { a: '→', c: 'var(--muted)' }; }
+function tripListoIncentivo(cid) { const e = tripEvalsDe(cid); return e.length >= 2 && e[e.length - 1].total >= 90 && e[e.length - 2].total >= 90; }
+function tripSpark(cid, w, h) {
+  const e = tripEvalsDe(cid).slice(-8); if (e.length < 2) return '<span class="mini muted">—</span>';
+  w = w || 160; h = h || 34; const vals = e.map(x => x.total), min = Math.min(60, ...vals), max = 100, col = tripBanda(vals[vals.length - 1]).color;
+  const xy = i => [(i / (vals.length - 1)) * (w - 6) + 3, h - 3 - ((vals[i] - min) / (max - min || 1)) * (h - 6)];
+  const pts = vals.map((v, i) => xy(i).map(n => n.toFixed(1)).join(',')).join(' ');
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '"><polyline fill="none" stroke="' + col + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="' + pts + '"/>' +
+    vals.map((v, i) => { const p = xy(i); return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2" fill="' + col + '"/>'; }).join('') + '</svg>';
+}
+const tripCapacDe = cid => (db.tripCapac || []).find(x => !x.del && x.colaboradorId === cid);
+function tripCapacProgreso(cid) {
+  const r = tripCapacDe(cid); const total = TRIP_CAPAC.reduce((a, b) => a + b[1].length, 0);
+  let ok = 0; if (r) Object.values(r.items || {}).forEach(v => { if (v === 'ok' || v === 'verif') ok++; });
+  return { ok, total, pct: total ? Math.round(ok / total * 100) : 0 };
+}
+/* ---- pantalla ---- */
+function renderTripulacion() {
+  if (!esTrip) return salirASucursales();
+  document.querySelectorAll('#trip-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tripTab));
+  const c = $('trip-contenido');
+  c.innerHTML = tripTab === 'evaluar' ? tripEvaluarHTML()
+    : tripTab === 'capac' ? tripCapacHTML()
+      : tripTab === 'auditoria' ? tripAuditoriaHTML()
+        : tripRosterHTML();
+}
+function tripTabIr(t) { tripTab = t; renderTripulacion(); }
+/* ---- TAB 1: Tripulantes (roster + perfil) ---- */
+function tripRosterHTML() {
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  const semAct = tripSemanaKey(hoyISO());
+  const evaluados = gente.filter(p => tripEvals().some(e => e.colaboradorId === p.id && e.semana === semAct)).length;
+  const con = gente.map(p => tripUltima(p.id)).filter(Boolean);
+  const prom = con.length ? Math.round(con.reduce((a, u) => a + u.total, 0) / con.length) : 0;
+  let html = '<div class="grid c3">' +
+    '<div class="stat"><div class="v">' + gente.length + '</div><div class="l">tripulantes</div></div>' +
+    '<div class="stat"><div class="v">' + evaluados + '/' + gente.length + '</div><div class="l">evaluados esta semana</div></div>' +
+    '<div class="stat verde"><div class="v">' + prom + '</div><div class="l">promedio /100</div></div></div>' +
+    '<button class="btn p gigante" onclick="tripTabIr(\'evaluar\')">📋 Evaluar tripulación</button>';
+  const rows = gente.map(p => ({ p, u: tripUltima(p.id) })).sort((a, b) => (a.u ? a.u.total : -1) - (b.u ? b.u.total : -1));
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🎖️ La tripulación</h3></div>' +
+    rows.map(({ p, u }) => {
+      const b = u ? tripBanda(u.total) : null, t = tripTendencia(p.id), cap = tripCapacProgreso(p.id), inc = tripListoIncentivo(p.id);
+      return '<div class="item-linea" style="cursor:pointer" onclick="tripPerfil(\'' + p.id + '\')">' + avatarPersona(p.id, p.nombre) +
+        '<div class="grow"><b>' + esc(p.nombre) + '</b>' + (inc ? ' <span class="badge ok">⭐ incentivo</span>' : '') +
+        '<div class="mini muted">' + (u ? tripSemanaLabel(u.semana) : 'Sin evaluación') + ' · capacitación ' + cap.pct + '%</div></div>' +
+        (b ? '<span class="badge" style="background:' + b.color + '22;color:' + b.color + ';border-color:' + b.color + '66">' + b.emoji + ' ' + u.total + '</span> <b style="color:' + t.c + '">' + t.a + '</b>' : '<span class="badge aviso">nuevo</span>') +
+        '</div>';
+    }).join('') + '</div>';
+  return html;
+}
+function tripPerfil(id) {
+  const p = per(id); if (!p) return; const evs = tripEvalsDe(id), u = evs[evs.length - 1];
+  let html = '<div class="fila" style="align-items:center;gap:10px">' + avatarPersona(id, p.nombre) +
+    '<div><h3 style="margin:0">' + esc(p.nombre) + '</h3>' + (p.fechaIngreso ? '<div class="mini muted">Desde ' + fmtFecha(p.fechaIngreso) + '</div>' : '') + '</div></div>';
+  const cap = tripCapacProgreso(id);
+  html += '<div class="mini muted" style="margin-top:8px">📚 Capacitación: <b>' + cap.ok + '/' + cap.total + '</b> (' + cap.pct + '%)</div>';
+  if (!u) html += '<p class="muted" style="margin-top:12px">Todavía sin evaluaciones.</p>';
+  else {
+    const b = tripBanda(u.total);
+    html += '<div class="card" style="margin:12px 0;text-align:center"><div style="font-size:2.3rem;font-weight:800;color:' + b.color + '">' + u.total + '<span style="font-size:1rem;opacity:.6">/100</span></div>' +
+      '<div style="color:' + b.color + ';font-weight:700">' + b.emoji + ' ' + b.label + '</div><div class="mini muted">' + tripSemanaLabel(u.semana) + '</div>' +
+      '<div style="margin-top:8px">' + tripSpark(id, 210, 42) + '</div></div>';
+    html += TRIP_EJES.map(eje => { const sc = tripEjeScore(u.checks[eje.key]); const bajo = sc < 15; return '<div class="item-linea"><span style="flex:0 0 22px">' + eje.emoji + '</span><div class="grow"><b>' + eje.nombre + '</b>' + (bajo && eje.capa ? '<div class="mini" style="color:var(--alerta)">Reforzar → <a href="#" onclick="event.preventDefault();cerrarModal();' + eje.capa.fn + '">' + esc(eje.capa.txt) + '</a></div>' : '') + '</div><span class="badge"' + (bajo ? ' style="color:var(--alerta)"' : '') + '>' + sc + '/20</span></div>'; }).join('');
+    if (u.observacion) html += '<p class="mini muted" style="margin-top:10px">🗒️ ' + esc(u.observacion) + '</p>';
+    if (u.foto) html += '<div style="margin-top:8px"><img src="' + fotoURL(u.foto) + '" style="max-width:140px;border-radius:8px" onclick="window.open(this.src)"></div>';
+  }
+  // planes de trabajo (seguimiento)
+  const planes = evs.filter(e => e.plan && e.plan.objetivo).map(e => ({ e, pl: e.plan })).reverse();
+  if (planes.length) html += '<div class="sep"></div><h4 style="margin:6px 0">🧭 Planes de trabajo</h4>' + planes.map(({ e, pl }) =>
+    '<div class="item-linea"><div class="grow"><b>' + esc(pl.objetivo) + '</b>' + (pl.fecha ? ' <span class="mini muted">· ' + fmtFecha(pl.fecha) + '</span>' : '') +
+    (pl.acciones ? '<div class="mini muted">' + esc(pl.acciones) + '</div>' : '') + '</div>' +
+    (pl.estado === 'cerrado' ? '<span class="badge ok">✔ cumplido</span>' : '<button class="btn s mini" onclick="tripCerrarPlan(\'' + e.id + '\')">Marcar cumplido</button>') + '</div>').join('');
+  // historial
+  if (evs.length) html += '<div class="sep"></div><h4 style="margin:6px 0">📜 Historial</h4><div class="tabla-wrap"><table><tr><th>Semana</th><th class="num">/100</th><th>Acción</th></tr>' +
+    evs.slice().reverse().map(e => '<tr><td class="mini">' + tripSemanaLabel(e.semana).replace('Semana del ', '') + '</td><td class="num">' + e.total + '</td><td class="mini">' + esc(e.accion || '') + '</td></tr>').join('') + '</table></div>';
+  html += '<button class="btn s" style="margin-top:12px" onclick="cerrarModal()">Cerrar</button>';
+  abrirModal(html);
+}
+function tripCerrarPlan(evalId) {
+  const e = (db.tripulacion || []).find(x => x.id === evalId); if (!e || !e.plan) return;
+  e.plan.estado = 'cerrado'; e.t = Date.now(); guardarDB();
+  toast('✔ Plan marcado como cumplido'); tripPerfil(e.colaboradorId);
+}
+/* ---- TAB 2: Evaluar ---- */
+function tripEvaluarHTML() {
+  if (!tripCapSemana) tripCapSemana = tripSemanaKey(hoyISO());
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  const evalds = tripEvals().filter(e => e.semana === tripCapSemana);
+  const hoyK = tripSemanaKey(hoyISO());
+  let html = '<div class="card"><div class="fila" style="align-items:center;gap:6px">' +
+    '<button class="btn s mini" onclick="tripCapSemana=tripSemanaShift(tripCapSemana,-1);renderTripulacion()">◀</button>' +
+    '<div class="grow centrado"><b>' + tripSemanaLabel(tripCapSemana) + '</b></div>' +
+    '<button class="btn s mini"' + (tripCapSemana >= hoyK ? ' disabled' : '') + ' onclick="tripCapSemana=tripSemanaShift(tripCapSemana,1);renderTripulacion()">▶</button></div>' +
+    '<label style="margin-top:8px">¿Quién evalúa?</label><select id="trip-evaluador" onchange="tripCapEvaluador=this.value">' +
+    '<option value="">— elige evaluador —</option>' + gente.map(p => '<option value="' + p.id + '"' + (p.id === tripCapEvaluador ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('') + '</select></div>';
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">Tripulante a evaluar</h3></div>' +
+    gente.map(p => { const ev = evalds.find(e => e.colaboradorId === p.id); const b = ev ? tripBanda(ev.total) : null;
+      return '<div class="item-linea" style="cursor:pointer" onclick="tripAbrirCaptura(\'' + p.id + '\')">' + avatarPersona(p.id, p.nombre) +
+        '<div class="grow"><b>' + esc(p.nombre) + '</b></div>' +
+        (ev ? '<span class="badge" style="color:' + b.color + '">✔ ' + ev.total + '</span>' : '<span class="badge aviso">pendiente</span>') + '</div>';
+    }).join('') + '</div>';
+  return html;
+}
+function tripAbrirCaptura(cid) {
+  const sel = $('trip-evaluador'); if (sel && sel.value) tripCapEvaluador = sel.value;
+  if (!tripCapEvaluador) return toast('Primero elige quién evalúa');
+  const ex = tripEvals().find(e => e.colaboradorId === cid && e.semana === tripCapSemana);
+  tripBorrador = ex ? JSON.parse(JSON.stringify(ex)) : { colaboradorId: cid, semana: tripCapSemana, sucursalId: (per(cid) && per(cid).sucursal) || '', evaluadorId: tripCapEvaluador, checks: {}, observacion: '', accion: 'Seguimiento', plan: { objetivo: '', acciones: '', fecha: '', estado: 'abierto' }, foto: '' };
+  tripBorrador.evaluadorId = tripCapEvaluador;
+  if (!tripBorrador.plan) tripBorrador.plan = { objetivo: '', acciones: '', fecha: '', estado: 'abierto' };
+  TRIP_EJES.forEach(e => { if (!tripBorrador.checks[e.key]) tripBorrador.checks[e.key] = [false, false, false, false]; });
+  tripPintarCaptura();
+}
+function tripPintarCaptura() {
+  const p = per(tripBorrador.colaboradorId);
+  let html = '<h3>🎖️ ' + esc(p ? p.nombre : '') + '</h3><div class="mini muted">' + tripSemanaLabel(tripBorrador.semana) + '</div>' +
+    '<div class="card" id="trip-total" style="margin:10px 0;text-align:center"></div>' +
+    TRIP_EJES.map(eje => '<div class="card" style="margin:8px 0"><div class="encabezado-seccion"><b>' + eje.emoji + ' ' + eje.nombre + '</b><span class="badge" id="trip-eje-' + eje.key + '"></span></div>' +
+      eje.subs.map((s, i) => '<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 2px;cursor:pointer">' +
+        '<input type="checkbox" style="width:auto;margin-top:3px"' + (tripBorrador.checks[eje.key][i] ? ' checked' : '') + ' onchange="tripBorrador.checks[\'' + eje.key + '\'][' + i + ']=this.checked;tripPintarTotales()">' +
+        '<span><b>' + esc(s[0]) + '</b><div class="mini muted">' + esc(s[1]) + '</div></span></label>').join('') + '</div>').join('');
+  html += '<label style="margin-top:8px">Observación directa (obligatoria)</label>' +
+    '<textarea id="trip-obs" placeholder="Qué viste esta semana…" oninput="tripBorrador.observacion=this.value">' + esc(tripBorrador.observacion || '') + '</textarea>' +
+    '<label style="margin-top:10px">Acción</label><div class="seg" id="trip-accion">' +
+    ['Incentivo', 'Seguimiento', 'Advertencia'].map(a => '<button onclick="tripBorrador.accion=\'' + a + '\';tripPintarAccion()">' + a + '</button>').join('') + '</div>' +
+    '<div class="card" style="margin-top:12px"><h4 style="margin:0 0 6px">🧭 Plan de trabajo (opcional)</h4>' +
+    '<input id="trip-plan-obj" placeholder="Objetivo: qué mejorar" value="' + esc(tripBorrador.plan.objetivo || '') + '" oninput="tripBorrador.plan.objetivo=this.value">' +
+    '<textarea id="trip-plan-acc" placeholder="Acciones concretas" oninput="tripBorrador.plan.acciones=this.value" style="margin-top:6px">' + esc(tripBorrador.plan.acciones || '') + '</textarea>' +
+    '<label style="margin-top:6px">Fecha compromiso</label><input id="trip-plan-fecha" type="date" value="' + esc(tripBorrador.plan.fecha || '') + '" oninput="tripBorrador.plan.fecha=this.value"></div>' +
+    '<div class="card" style="margin-top:12px"><h4 style="margin:0 0 6px">📷 Foto del formato (si lo hiciste en papel)</h4>' +
+    '<input type="file" id="trip-foto-file" accept="image/*" capture="environment" hidden onchange="tripLeerFoto(this)">' +
+    '<button class="btn s" onclick="document.getElementById(\'trip-foto-file\').click()">📷 Tomar / elegir foto</button>' +
+    '<div id="trip-foto-box" style="margin-top:8px"></div>' +
+    '<p class="mini muted" style="margin-top:6px">🤖 La transcripción automática con IA llega en una siguiente fase (requiere conectar una API). Por ahora la foto se guarda como respaldo del formato físico.</p></div>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarTripEval()">💾 Guardar evaluación</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>';
+  abrirModal(html); tripPintarTotales(); tripPintarAccion(); tripPintarFotoBox();
+}
+function tripPintarTotales() {
+  const total = tripTotal(tripBorrador.checks), b = tripBanda(total), box = $('trip-total');
+  if (box) box.innerHTML = '<div style="font-size:2rem;font-weight:800;color:' + b.color + '">' + total + '<span style="font-size:.9rem;opacity:.6">/100</span></div><div style="color:' + b.color + ';font-weight:700">' + b.emoji + ' ' + b.label + '</div>';
+  TRIP_EJES.forEach(e => { const el = $('trip-eje-' + e.key); if (el) { const sc = tripEjeScore(tripBorrador.checks[e.key]); el.textContent = sc + '/20'; el.style.color = sc < 15 ? 'var(--alerta)' : ''; } });
+}
+function tripPintarAccion() { const btns = document.querySelectorAll('#trip-accion button'); ['Incentivo', 'Seguimiento', 'Advertencia'].forEach((a, i) => { if (btns[i]) btns[i].classList.toggle('on', tripBorrador.accion === a); }); }
+function tripLeerFoto(inp) { const f = inp.files[0]; if (!f) return; comprimirFoto(f, d => { tripBorrador.foto = d; tripPintarFotoBox(); }); }
+function tripPintarFotoBox() { const b = $('trip-foto-box'); if (!b) return; b.innerHTML = tripBorrador.foto ? '<img src="' + fotoURL(tripBorrador.foto) + '" style="max-width:130px;border-radius:8px"> <button class="btn s mini" onclick="tripBorrador.foto=\'\';tripPintarFotoBox()">Quitar</button>' : '<span class="mini muted">Sin foto</span>'; }
+function guardarTripEval() {
+  if (!(tripBorrador.observacion || '').trim()) return toast('La observación es obligatoria');
+  const total = tripTotal(tripBorrador.checks);
+  const ex = tripEvals().find(e => e.colaboradorId === tripBorrador.colaboradorId && e.semana === tripBorrador.semana);
+  const rec = Object.assign(ex || {}, {
+    id: (ex && ex.id) || ('trip-' + uid()), colaboradorId: tripBorrador.colaboradorId, sucursalId: tripBorrador.sucursalId,
+    semana: tripBorrador.semana, fecha: hoyISO(), evaluadorId: tripBorrador.evaluadorId, checks: tripBorrador.checks,
+    total, banda: tripBanda(total).k, observacion: tripBorrador.observacion.trim(), accion: tripBorrador.accion,
+    plan: tripBorrador.plan, foto: tripBorrador.foto || '', t: Date.now(), del: false
+  });
+  if (!ex) (db.tripulacion = db.tripulacion || []).unshift(rec);
+  guardarDB(); cerrarModal(); toast('💾 Evaluación de ' + (per(rec.colaboradorId) || {}).nombre + ' guardada'); renderTripulacion();
+}
+/* ---- TAB 3: Capacitación (por persona, click para avanzar) ---- */
+function tripCapacHTML() {
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  if (!tripCapacCid || !gente.some(p => p.id === tripCapacCid)) tripCapacCid = gente[0] ? gente[0].id : '';
+  let html = '<div class="card"><label>Tripulante</label><select onchange="tripCapacCid=this.value;renderTripulacion()">' +
+    gente.map(p => '<option value="' + p.id + '"' + (p.id === tripCapacCid ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('') + '</select>';
+  const prog = tripCapacProgreso(tripCapacCid);
+  html += '<div class="mini muted" style="margin-top:8px">Avance: <b>' + prog.ok + '/' + prog.total + '</b> (' + prog.pct + '%). Toca cada punto para avanzar: ⬜ → ◐ → ✅ → ✔️</div></div>';
+  const r = tripCapacDe(tripCapacCid), items = (r && r.items) || {};
+  html += TRIP_CAPAC.map((bl, bi) => '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + esc(bl[0]) + '</h3></div>' +
+    bl[1].map((it, ii) => { const st = items[bi + '-' + ii] || 'pend'; const e = CAPAC_ESTADOS[st];
+      return '<div class="item-linea" style="cursor:pointer" onclick="tripCapacCiclar(' + bi + ',' + ii + ')"><span style="flex:0 0 26px;font-size:1.1rem">' + e[0] + '</span>' +
+        '<div class="grow"' + (st === 'pend' ? '' : '') + '><b' + (st === 'ok' || st === 'verif' ? ' style="opacity:.7"' : '') + '>' + esc(it) + '</b></div>' +
+        '<span class="mini muted">' + e[1] + '</span></div>';
+    }).join('') + '</div>').join('');
+  return html;
+}
+function tripCapacCiclar(bi, ii) {
+  const cid = tripCapacCid; let r = tripCapacDe(cid);
+  if (!r) { r = { id: 'cap-' + cid, colaboradorId: cid, items: {}, t: 0, del: false }; (db.tripCapac = db.tripCapac || []).unshift(r); }
+  const orden = ['pend', 'proc', 'ok', 'verif'], k = bi + '-' + ii, cur = r.items[k] || 'pend';
+  r.items[k] = orden[(orden.indexOf(cur) + 1) % 4]; r.t = Date.now();
+  guardarDB(); renderTripulacion();
+}
+/* ---- TAB 4: Auditoría (por sucursal + día) ---- */
+function tripAuditoriaHTML() {
+  const sucs = db.sucursales.filter(s => s.activa && !s.del);
+  if (!tripAudSid || !sucs.some(s => s.id === tripAudSid)) tripAudSid = sucs[0] ? sucs[0].id : '';
+  if (!tripAudFecha) tripAudFecha = hoyISO();
+  const rec = (db.tripAuditoria || []).find(a => !a.del && a.sucursalId === tripAudSid && a.fecha === tripAudFecha);
+  const checks = (rec && rec.checks) || {};
+  const total = TRIP_AUDIT.reduce((a, b) => a + b[1].length, 0);
+  let ok = 0; Object.values(checks).forEach(v => { if (v) ok++; });
+  const pct = total ? Math.round(ok / total * 100) : 0;
+  let html = '<div class="card"><div class="fila"><div style="flex:1"><label>Sucursal</label><select onchange="tripAudSid=this.value;renderTripulacion()">' +
+    sucs.map(s => '<option value="' + s.id + '"' + (s.id === tripAudSid ? ' selected' : '') + '>' + esc(s.nombre) + '</option>').join('') + '</select></div>' +
+    '<div style="flex:1"><label>Día</label><input type="date" value="' + tripAudFecha + '" max="' + hoyISO() + '" onchange="tripAudFecha=this.value;renderTripulacion()"></div></div>' +
+    '<div class="grid c3" style="margin-top:10px"><div class="stat"><div class="v">' + ok + '/' + total + '</div><div class="l">cumplidos</div></div>' +
+    '<div class="stat ' + (pct >= 80 ? 'verde' : '') + '"><div class="v">' + pct + '%</div><div class="l">cumplimiento</div></div>' +
+    '<div class="stat"><div class="v">' + (total - ok) + '</div><div class="l">pendientes</div></div></div></div>';
+  html += TRIP_AUDIT.map((sec, si) => '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + esc(sec[0]) + '</h3></div>' +
+    sec[1].map((it, ii) => { const on = !!checks[si + '-' + ii];
+      return '<div class="item-linea" style="cursor:pointer" onclick="tripAudToggle(' + si + ',' + ii + ')"><span style="flex:0 0 26px;font-size:1.1rem">' + (on ? '✅' : '⬜') + '</span>' +
+        '<div class="grow"><b>' + esc(it) + '</b></div>' + (on ? '<span class="badge ok mini">sí</span>' : '<span class="badge aviso mini">pendiente</span>') + '</div>';
+    }).join('') + '</div>').join('');
+  return html;
+}
+function tripAudToggle(si, ii) {
+  let rec = (db.tripAuditoria || []).find(a => !a.del && a.sucursalId === tripAudSid && a.fecha === tripAudFecha);
+  if (!rec) { rec = { id: 'aud-' + tripAudSid + '-' + tripAudFecha, sucursalId: tripAudSid, fecha: tripAudFecha, checks: {}, t: 0, del: false }; (db.tripAuditoria = db.tripAuditoria || []).unshift(rec); }
+  const k = si + '-' + ii; rec.checks[k] = !rec.checks[k];
+  let ok = 0; Object.values(rec.checks).forEach(v => { if (v) ok++; });
+  const total = TRIP_AUDIT.reduce((a, b) => a + b[1].length, 0);
+  rec.total = ok; rec.pct = total ? Math.round(ok / total * 100) : 0; rec.t = Date.now();
+  guardarDB(); renderTripulacion();
 }
 
 /* ═══════════ ESCANDALLO (costeo de recetas) ═══════════

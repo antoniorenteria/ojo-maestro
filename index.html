@@ -485,6 +485,9 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
         <button class="btn s" onclick="pedirPinSupervision()"><span class="ico">🔍</span> Supervisión</button>
         <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección</button>
       </div>
+      <div style="max-width:420px;margin:10px auto 0">
+        <button class="btn s" style="width:100%" onclick="pedirPinTripulacion()"><span class="ico">🎖️</span> Tripulación</button>
+      </div>
       <div id="portada-aviso" style="display:none"></div>
       <div style="margin-top:18px"><button class="btn s mini" onclick="toggleTema()">🌓 Cambiar tema</button></div>
       <p class="mini muted" style="margin-top:22px" id="portada-version"></p>
@@ -743,6 +746,25 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       </div>
     </div>
     <div id="dir-contenido"></div>
+  </section>
+
+  <!-- ══════════ TRIPULACIÓN ══════════ -->
+  <section class="screen" id="scr-trip">
+    <div class="topbar">
+      <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+      <div>
+        <div class="tit amar" style="font-weight:700">🎖️ Tripulación</div>
+        <div class="sub">Expediente de la tripulación de Mirano</div></div>
+      <div class="grow"></div>
+      <button class="btn s mini" onclick="toggleTema()">🌓</button>
+    </div>
+    <div class="tabs" id="trip-tabs">
+      <button data-t="tripulantes" class="on" onclick="tripTabIr('tripulantes')">🎖️ Tripulantes</button>
+      <button data-t="evaluar" onclick="tripTabIr('evaluar')">📋 Evaluar</button>
+      <button data-t="capac" onclick="tripTabIr('capac')">✅ Capacitación</button>
+      <button data-t="auditoria" onclick="tripTabIr('auditoria')">🔍 Auditoría</button>
+    </div>
+    <div id="trip-contenido"></div>
   </section>
 
 </div>
