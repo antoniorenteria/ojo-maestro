@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.6';
+const VERSION = '4.7';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
