@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.8';
+const VERSION = '4.9';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -89,24 +89,45 @@ const REGISTROS = [
   { id: 'r-bano', n: 'Baño limpio', em: '🚻', tipo: 'limpieza' },
   { id: 'r-cocina', n: 'Cocina limpia y ordenada', em: '🍳', tipo: 'limpieza' },
 ];
-/* dias: sin definir = diario · [0..6] días aplicables (0 = domingo) */
+/* ═══ CHECKLIST POR BLOQUES (según horarios reales) ═══
+   Quien ABRE trabaja 1–3 solo; de 3–7 están AMBOS (se divide y se adelanta
+   todo para no acumular); quien CIERRA remata 7–9 sobre una base ya ordenada. */
+const CHK_BLOQUES = [
+  { k: 'apertura', nombre: 'Apertura', emoji: '🌅', quien: 'Quien abre · 1:00–3:00 pm', nota: 'Deja todo listo para arrancar el día.' },
+  { k: 'juntos', nombre: 'Juntos', emoji: '🤝', quien: 'Ambos · 3:00–7:00 pm', nota: 'Divídanse todo y adelántenlo. Lo de «sobre la marcha» se mantiene TODO el turno para no dejarlo al final.' },
+  { k: 'cierre', nombre: 'Cierre', emoji: '🌙', quien: 'Quien cierra · 7:00–9:00 pm', nota: 'Sobre una base ya ordenada: corte, última pasada y cerrar. Que quien abra mañana encuentre todo listo.' },
+];
+/* bloque: apertura|juntos|cierre · cont:true = continuo (mantener sobre la marcha)
+   dias: sin definir = diario · [0..6] días aplicables (0 = domingo) */
 const ACCIONES = [
-  { id: 'a-salsa-abismo', n: 'Preparación Salsa Abismo' },
-  { id: 'a-masa-crepi', n: 'Preparación Masa Crepiburger' },
-  { id: 'a-salsa-aliento', n: 'Preparación Salsa Aliento D' },
-  { id: 'a-mamilas', n: 'Mamilas llenas' },
-  { id: 'a-queso', n: 'Queso rallado' },
-  { id: 'a-alitas', n: 'Alitas precongeladas' },
-  { id: 'a-lechuga', n: 'Lechuga desinfectada' },
-  { id: 'a-stickers', n: 'Empaque stickers' },
-  { id: 'a-papel', n: 'Papel cortado' },
-  { id: 'a-wa', n: 'Responder mensajes pendientes de WhatsApp' },
-  { id: 'a-plataformas', n: 'Encendido de plataformas (DiDi, Uber, Rappi)' },
-  { id: 'a-comedor', n: 'Comedor y pasillo trapeado' },
-  { id: 'a-bano', n: 'Baño trapeado y abastecido' },
-  { id: 'a-refri', n: 'Limpieza de refrigerador', dias: [2, 4, 6] },
-  { id: 'a-freidoras', n: 'Limpieza de freidoras', dias: [1, 3, 5] },
-  { id: 'a-congelador', n: 'Limpieza de congelador', dias: [0] },
+  // 🌅 APERTURA — quien abre, solo (1–3)
+  { id: 'a-equipos', n: 'Encender equipos, luces y TV con música autorizada', bloque: 'apertura' },
+  { id: 'a-plataformas', n: 'Activar plataformas (DiDi, Uber, Rappi) y responder WhatsApp', bloque: 'apertura' },
+  { id: 'a-caja', n: 'Verificar fondo de caja ($350)', bloque: 'apertura' },
+  { id: 'a-orden-previo', n: 'Revisar que la sucursal quedó en orden (mesas, pisos, baño, insumos)', bloque: 'apertura' },
+  { id: 'a-salsa-abismo', n: 'Preparación: Salsa Abismo', bloque: 'apertura' },
+  { id: 'a-masa-crepi', n: 'Preparación: Masa Crepiburger', bloque: 'apertura' },
+  { id: 'a-salsa-aliento', n: 'Preparación: Salsa Aliento de Dragón', bloque: 'apertura' },
+  { id: 'a-mamilas', n: 'Mamilas llenas y queso rallado', bloque: 'apertura' },
+  { id: 'a-alitas', n: 'Alitas precongeladas y lechuga desinfectada', bloque: 'apertura' },
+  { id: 'a-empaque', n: 'Stickers y papel cortado', bloque: 'apertura' },
+  // 🤝 JUNTOS — ambos (3–7) · sobre la marcha (mantener)
+  { id: 'j-trastes', n: 'Trastes lavados al momento (que no se acumulen)', bloque: 'juntos', cont: true },
+  { id: 'j-mesas', n: 'Mesas limpias y ordenadas', bloque: 'juntos', cont: true },
+  { id: 'j-area', n: 'Área y estación en orden', bloque: 'juntos', cont: true },
+  { id: 'j-juegos', n: 'Juegos recogidos y ordenados después de usarse', bloque: 'juntos', cont: true },
+  // 🤝 JUNTOS — del turno (se reparten)
+  { id: 'j-trapear', n: 'Trapear comedor y pasillo', bloque: 'juntos' },
+  { id: 'j-bano', n: 'Baño limpio y abastecido', bloque: 'juntos' },
+  { id: 'j-reabasto', n: 'Reabastecer insumos y empaque para el cierre y el día siguiente', bloque: 'juntos' },
+  { id: 'a-refri', n: 'Limpieza profunda: refrigerador', bloque: 'juntos', dias: [2, 4, 6] },
+  { id: 'a-freidoras', n: 'Limpieza profunda: freidoras', bloque: 'juntos', dias: [1, 3, 5] },
+  { id: 'a-congelador', n: 'Limpieza profunda: congelador', bloque: 'juntos', dias: [0] },
+  // 🌙 CIERRE — quien cierra, solo (7–9)
+  { id: 'c-avisos', n: 'Avisos de cierre (8:15 · 8:20 solo para llevar · 8:30 retirar platos · 9:00 cerrar)', bloque: 'cierre' },
+  { id: 'c-grafico', n: 'Ingresar material gráfico', bloque: 'cierre' },
+  { id: 'c-corte', n: 'Finalizar ventas, corte de caja y verificar efectivo', bloque: 'cierre' },
+  { id: 'c-ultima', n: 'Última pasada: trapear, baño, apagar equipos y luces, cerrar puerta', bloque: 'cierre' },
 ];
 const DIAS_SEM = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
 function tareasDelDia(fechaISO) {
@@ -1652,20 +1673,33 @@ function archivoRegistro(input) {
   });
 }
 
-/* ---- sección 2: acciones del día ---- */
+/* ---- sección 2: acciones del día, agrupadas por bloque de turno ---- */
+function filaTarea(t) {
+  const h = tareaHecha(t);
+  const cls = 'tarea' + (h ? (h.ver ? ' verificada' : ' hecha') : '');
+  const meta = h
+    ? '✔ ' + esc(h.por || 'Equipo') + ' · ' + fmtHora(h.ts) + (h.ver ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '')
+    : (t.dias ? esc(notaTarea(t)) : (t.cont ? 'Mantener sobre la marcha' : 'Pendiente'));
+  return '<div class="' + cls + '" onclick="toggleTarea(\'' + t.id + '\')">' +
+    '<div class="box">' + (h ? '✔' : '') + '</div>' +
+    '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' + meta + '</div></div>' +
+    '<span class="vv ' + (h ? 'si' : 'no') + '">' + (h ? (h.ver ? '✔✔' : 'HECHA') : 'PENDIENTE') + '</span></div>';
+}
 function renderActividades() {
   const lista = tareasDelDia();
-  $('chk-items').innerHTML = lista.map(t => {
-    const h = tareaHecha(t);
-    const cls = 'tarea' + (h ? (h.ver ? ' verificada' : ' hecha') : '');
-    return '<div class="' + cls + '" onclick="toggleTarea(\'' + t.id + '\')">' +
-      '<div class="box">' + (h ? '✔' : '') + '</div>' +
-      '<div><div class="tt">' + esc(t.n) + '</div>' +
-      '<div class="meta">' + (h
-        ? '✔ ' + esc(h.por || 'Equipo') + ' · ' + fmtHora(h.ts) + (h.ver ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '')
-        : esc(notaTarea(t))) +
-      '</div></div>' +
-      '<span class="vv ' + (h ? 'si' : 'no') + '">' + (h ? (h.ver ? '✔✔' : 'HECHA') : 'PENDIENTE') + '</span></div>';
+  $('chk-items').innerHTML = CHK_BLOQUES.map(b => {
+    const items = lista.filter(t => (t.bloque || 'juntos') === b.k);
+    if (!items.length) return '';
+    const hechas = items.filter(t => tareaHecha(t)).length;
+    const cont = items.filter(t => t.cont), once = items.filter(t => !t.cont);
+    return '<div class="chk-bloque">' +
+      '<div class="chk-bloque-h"><b>' + b.emoji + ' Turno ' + b.nombre + '</b>' +
+      '<span class="badge ' + (hechas === items.length ? 'ok' : 'mor') + '">' + hechas + '/' + items.length + '</span></div>' +
+      '<div class="chk-bloque-quien">' + esc(b.quien) + '</div>' +
+      '<p class="mini muted" style="margin:4px 0 8px">' + esc(b.nota) + '</p>' +
+      (cont.length ? '<div class="chk-sub">🔄 Sobre la marcha · mantener todo el turno</div>' + cont.map(filaTarea).join('') : '') +
+      (once.length ? (cont.length ? '<div class="chk-sub">✔️ Del turno · repártanlas</div>' : '') + once.map(filaTarea).join('') : '') +
+      '</div>';
   }).join('');
 }
 function toggleTarea(tid) {
