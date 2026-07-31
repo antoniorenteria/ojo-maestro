@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.5';
+const VERSION = '4.6';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -766,13 +766,14 @@ function migrarDB() {
   if (!db.tripCapac) db.tripCapac = [];
   if (!db.tripAuditoria) db.tripAuditoria = [];
   if (!db.calEventos) db.calEventos = [];
+  // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
+  // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
+  let limpio = false;
+  // fechas/eventos por defecto (después de declarar `limpio` para no romper el arranque)
   if (!db.calEventosSembrado) {
     SEED_CAL_EVENTOS.forEach(e => { if (!db.calEventos.some(x => x.id === evtId(e))) db.calEventos.push(eventoSeed(e)); });
     db.calEventosSembrado = true; limpio = true;
   }
-  // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
-  // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
-  let limpio = false;
   // v3.2: escandallo con la lista COMPLETA de la hoja de Toño. Siembra los
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
   if (!db.insumos) db.insumos = [];
