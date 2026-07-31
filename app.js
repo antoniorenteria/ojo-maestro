@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.4';
+const VERSION = '4.5';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -349,6 +349,7 @@ function seedDB() {
     productos: prods, stock,
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
     calendario: [], gastos: [], tripulacion: [], tripCapac: [], tripAuditoria: [],
+    calEventos: SEED_CAL_EVENTOS.map(eventoSeed), calEventosSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
@@ -764,6 +765,11 @@ function migrarDB() {
   if (!db.tripulacion) db.tripulacion = [];
   if (!db.tripCapac) db.tripCapac = [];
   if (!db.tripAuditoria) db.tripAuditoria = [];
+  if (!db.calEventos) db.calEventos = [];
+  if (!db.calEventosSembrado) {
+    SEED_CAL_EVENTOS.forEach(e => { if (!db.calEventos.some(x => x.id === evtId(e))) db.calEventos.push(eventoSeed(e)); });
+    db.calEventosSembrado = true; limpio = true;
+  }
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
@@ -2359,6 +2365,29 @@ function guardarRevision(fecha, sid, pct) {
    de db — porque pesa cientos de KB y haría lento cada guardado y cada sync. */
 const CAL_DIAS = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 let calMes = mesISO(), calSuc = null, calEdit = false;
+/* fechas y eventos por defecto del calendario (recurrentes cada año). Toño
+   puede editarlas y agregar más (campañas, Super Bowl, etc.). */
+const SEED_CAL_EVENTOS = [
+  { titulo: 'No laborar', emoji: '🎄', mes: 12, dia: 25, noLaboral: true, color: '#EF4444' },
+  { titulo: 'No laborar', emoji: '🎆', mes: 12, dia: 31, noLaboral: true, color: '#EF4444' },
+  { titulo: 'No laborar', emoji: '🎇', mes: 1, dia: 1, noLaboral: true, color: '#EF4444' },
+  { titulo: 'San Valentín', emoji: '❤️', mes: 2, dia: 14, color: '#EC4899' },
+  { titulo: 'Aniversario Revolución', emoji: '🎂', mes: 12, dia: 15, color: '#F59E0B' },
+  { titulo: 'Aniversario Tulipanes', emoji: '🌷', mes: 6, dia: 6, color: '#F59E0B' },
+];
+const evtId = e => 'evt-' + slug(e.titulo + '-' + e.mes + '-' + e.dia);
+const eventoSeed = e => Object.assign({ id: evtId(e), anio: null, color: '', noLaboral: false, t: 0 }, e);
+const eventosVivos = () => (db.calEventos || []).filter(e => !e.del);
+/* eventos + cumpleaños que caen en una fecha ISO (los cumples salen del personal) */
+function eventosDelDia(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const evs = eventosVivos().filter(e => e.mes === m && e.dia === d && (e.anio == null || e.anio === y))
+    .map(e => ({ tipo: 'evento', id: e.id, emoji: e.emoji || '📌', titulo: e.titulo, color: e.color || '', noLaboral: !!e.noLaboral }));
+  const cumples = db.personal.filter(p => !p.del && p.fechaNacimiento).filter(p => {
+    const pr = p.fechaNacimiento.split('-'); return Number(pr[1]) === m && Number(pr[2]) === d;
+  }).map(p => ({ tipo: 'cumple', emoji: '🎂', titulo: 'Cumple ' + p.nombre, color: p.color || '#F59E0B' }));
+  return evs.concat(cumples);
+}
 
 /* Cada color siguiente cambia de tono lo más posible respecto al anterior,
    para que dos personas del mismo calendario nunca queden en verdes
@@ -2476,12 +2505,17 @@ function renderCalendario() {
   semanasDelMes(calMes).forEach(sem => sem.forEach(f => {
     const iso = isoLocal(f), fuera = f.getMonth() !== m - 1;
     const ts = fuera ? [] : calTurnosDe(iso, calSuc);
+    const evs = fuera ? [] : eventosDelDia(iso);
+    const tinte = evs.find(e => e.color);
     /* En teléfono la celda mide ~41 px: ahí el nombre se oculta y a cada quien
        lo identifica su color (la leyenda de abajo dice de quién es). Se toca
        el día para ver el detalle completo. */
     html += '<div class="cal-d' + (fuera ? ' fuera' : '') + (iso === hoy ? ' hoy' : '') + (fuera ? '' : ' tocable') + '"' +
+      (!fuera && tinte ? ' style="background:' + tinte.color + '20"' : '') +
       (fuera ? '' : ' onclick="modalDiaCal(\'' + iso + '\')"') + '>' +
       '<div class="n">' + f.getDate() + '</div>' +
+      evs.map(e => '<div class="cal-ev"' + (e.color ? ' style="background:' + e.color + '2e"' : '') +
+        ' title="' + esc(e.titulo) + '"><span>' + e.emoji + '</span><span class="evn">' + esc(e.titulo) + '</span></div>').join('') +
       ts.map(t => '<div class="cal-t" style="border-left-color:' + colorPersona(t.personalId) +
         ';background:' + colorPersona(t.personalId) + '26">' +
         '<b class="nom">' + esc(calNombre(t.personalId)) + '</b> ' + rangoCorto(t) + '</div>').join('') +
@@ -2497,6 +2531,7 @@ function renderCalendario() {
     '<button class="btn ' + (calEdit ? 'p' : 's') + '" onclick="calModificar()">' + (calEdit ? '✅ Listo' : '✏️ Modificar') + '</button>' +
     '<button class="btn p" onclick="calendarioPNG()">📤 Enviar PNG</button></div>';
   if (calEdit) html += '<button class="btn p gigante" style="margin-top:10px" onclick="calRapido()">⚡ Llenado rápido</button>' +
+    '<button class="btn s" style="margin-top:10px;width:100%" onclick="modalEventos()">📌 Fechas y eventos</button>' +
     '<div class="fila" style="margin-top:10px;flex-wrap:wrap">' +
     '<button class="btn s mini" onclick="calCopiar()">📋 Copiar una semana a otras</button>' +
     '<button class="btn s mini" onclick="calCopiarMes()">📅 Copiar calendario a otro mes</button>' +
@@ -3145,14 +3180,84 @@ function calVaciarMes() {
 }
 
 /* ---------- exportar el calendario como PNG ---------- */
+/* ---- gestor de fechas y eventos del calendario ---- */
+const EVT_COLORES = ['#EF4444', '#EC4899', '#F59E0B', '#22C55E', '#3B82F6', '#A855F7', '#14B8A6', '#6B7280'];
+let evtColorSel = '';
+function modalEventos() {
+  const evs = eventosVivos().slice().sort((a, b) => a.mes - b.mes || a.dia - b.dia);
+  let html = '<div class="encabezado-seccion"><h3 style="margin:0">📌 Fechas y eventos</h3>' +
+    '<button class="btn s mini" onclick="modalEventoEdit()">➕ Agregar</button></div>' +
+    '<p class="mini muted">Se ven en el calendario y en el PNG que compartes. Los 🎂 cumpleaños salen solos de la fecha de nacimiento del equipo (se editan en Dirección → El equipo).</p>' +
+    (evs.length ? evs.map(e => '<div class="item-linea"><span style="flex:0 0 28px;font-size:1.2rem">' + (e.emoji || '📌') + '</span>' +
+      '<div class="grow"><b>' + esc(e.titulo) + '</b> ' + (e.noLaboral ? '<span class="badge aviso mini">no laborar</span>' : '') +
+      '<div class="mini muted">' + e.dia + ' ' + MESES[e.mes - 1] + (e.anio ? ' ' + e.anio : ' · cada año') + '</div></div>' +
+      (e.color ? '<i style="width:15px;height:15px;border-radius:4px;background:' + e.color + ';display:inline-block;margin-right:6px"></i>' : '') +
+      '<button class="btn s mini" onclick="modalEventoEdit(\'' + e.id + '\')">✏️</button></div>').join('')
+      : '<p class="muted mini">Sin eventos aún.</p>') +
+    '<button class="btn s" style="margin-top:12px" onclick="cerrarModal()">Cerrar</button>';
+  abrirModal(html);
+}
+function marcarEvtColor(el) { el.parentNode.querySelectorAll('.swatch').forEach(b => b.classList.remove('on')); el.classList.add('on'); }
+function modalEventoEdit(id) {
+  const e = id ? eventosVivos().find(x => x.id === id) : null;
+  evtColorSel = e ? (e.color || '') : '';
+  const meses = MESES.map((mn, i) => '<option value="' + (i + 1) + '"' + ((e ? e.mes : 1) === i + 1 ? ' selected' : '') + '>' + mn + '</option>').join('');
+  abrirModal('<h3>' + (e ? '✏️ Editar evento' : '➕ Nuevo evento') + '</h3>' +
+    '<div class="fila"><div style="flex:0 0 84px"><label>Emoji</label><input id="ev-emoji" value="' + esc(e ? e.emoji : '📌') + '" maxlength="4" style="text-align:center;font-size:1.2rem"></div>' +
+    '<div style="flex:1"><label>Título</label><input id="ev-titulo" value="' + esc(e ? e.titulo : '') + '" placeholder="Ej. Halloween, Super Bowl…"></div></div>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Día</label><input id="ev-dia" type="number" min="1" max="31" value="' + (e ? e.dia : 1) + '"></div>' +
+    '<div style="flex:1.6"><label>Mes</label><select id="ev-mes">' + meses + '</select></div></div>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="ev-anual" style="width:auto"' + ((!e || e.anio == null) ? ' checked' : '') + ' onchange="document.getElementById(\'ev-anio-box\').style.display=this.checked?\'none\':\'block\'"> Se repite cada año</label>' +
+    '<div id="ev-anio-box" style="display:' + ((e && e.anio != null) ? 'block' : 'none') + ';margin-top:6px"><label>Año específico</label><input id="ev-anio" type="number" value="' + ((e && e.anio) || new Date().getFullYear()) + '"></div>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="ev-nolab" style="width:auto"' + ((e && e.noLaboral) ? ' checked' : '') + '> No laborar (día de cierre)</label>' +
+    '<label style="margin-top:12px">Color del día (opcional)</label>' +
+    '<div class="paleta" id="ev-paleta"><button type="button" class="swatch' + (evtColorSel === '' ? ' on' : '') + '" style="background:var(--fondo-2);border:1px dashed #999" title="sin color" onclick="evtColorSel=\'\';marcarEvtColor(this)">∅</button>' +
+    EVT_COLORES.map(col => '<button type="button" class="swatch' + (evtColorSel === col ? ' on' : '') + '" style="background:' + col + '" onclick="evtColorSel=\'' + col + '\';marcarEvtColor(this)"></button>').join('') + '</div>' +
+    '<div class="fila" style="margin-top:16px"><button class="btn p" onclick="guardarEvento(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (e ? '<button class="btn peligro" onclick="borrarEvento(\'' + id + '\')">🗑️ Eliminar</button>' : '') + '</div>' +
+    '<button class="btn s" style="margin-top:8px" onclick="modalEventos()">← Volver</button>');
+}
+function guardarEvento(id) {
+  const titulo = $('ev-titulo').value.trim(); if (!titulo) return toast('Ponle título al evento');
+  const anual = $('ev-anual').checked;
+  const datos = {
+    titulo, emoji: $('ev-emoji').value.trim() || '📌',
+    dia: Math.min(31, Math.max(1, Number($('ev-dia').value) || 1)), mes: Number($('ev-mes').value) || 1,
+    anio: anual ? null : (Number($('ev-anio').value) || null), noLaboral: $('ev-nolab').checked, color: evtColorSel || '', t: Date.now()
+  };
+  if (id) { const e = (db.calEventos || []).find(x => x.id === id); if (e) Object.assign(e, datos); }
+  else { db.calEventos = db.calEventos || []; db.calEventos.push(Object.assign({ id: 'evt-' + uid(), del: false }, datos)); }
+  guardarDB(); toast('📌 Evento guardado'); renderCalendario(); modalEventos();
+}
+function borrarEvento(id) {
+  const e = (db.calEventos || []).find(x => x.id === id); if (!e) return;
+  if (!confirm('¿Eliminar el evento "' + e.titulo + '"?')) return;
+  e.del = true; e.t = Date.now(); guardarDB(); toast('🗑️ Evento eliminado'); renderCalendario(); modalEventos();
+}
 async function calendarioPNG() {
   const s = suc(calSuc), [y, m] = calMes.split('-').map(Number);
   const semanas = semanasDelMes(calMes), gente = personasDelMes();
-  if (!gente.length) return toast('Arma el calendario antes de enviarlo 📅');
+  if (!gente.length && !eventosVivos().length) return toast('Arma el calendario antes de enviarlo 📅');
   toast('🖼️ Generando imagen…');
   try { await document.fonts.ready; } catch (e) { }
   const x0 = 40, W = 1480, celW = (W - x0 * 2) / 7, celH = 152, y0 = 214;
-  const legY = y0 + semanas.length * celH + 52, H = legY + 96;
+  const recorta = (s, n) => (s && s.length > n) ? s.slice(0, n - 1) + '…' : s;
+  // eventos + cumpleaños del mes, para dibujarlos y para la leyenda de abajo
+  const evMap = {};
+  semanas.forEach(sem => sem.forEach(f => {
+    if (f.getMonth() !== m - 1) return;
+    eventosDelDia(isoLocal(f)).forEach(e => { const k = f.getDate() + '|' + e.titulo; if (!evMap[k]) evMap[k] = { emoji: e.emoji, titulo: e.titulo, dia: f.getDate() }; });
+  }));
+  const evMes = Object.values(evMap).sort((a, b) => a.dia - b.dia);
+  const legY = y0 + semanas.length * celH + 52;
+  const evTitleY = legY + 50;
+  const evLineH = 30, maxW = W - x0 * 2;
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = '400 20px Poppins, system-ui, sans-serif';
+  const evLines = [];
+  if (evMes.length) { let line = [], w = 0; evMes.forEach(ev => { const label = ev.emoji + ' ' + ev.dia + ' ' + ev.titulo; const ww = meas.measureText(label).width + 44; if (w + ww > maxW && line.length) { evLines.push(line); line = []; w = 0; } line.push({ label, ww }); w += ww; }); if (line.length) evLines.push(line); }
+  const footerY = (evMes.length ? evTitleY + 30 + evLines.length * evLineH : legY + 8) + 42;
+  const H = footerY + 24;
   const cv = document.createElement('canvas');
   cv.width = W; cv.height = H;
   const c = cv.getContext('2d');
@@ -3169,7 +3274,8 @@ async function calendarioPNG() {
     .forEach((d, i) => c.fillText(d, x0 + celW * i + celW / 2, y0 - 20));
   semanas.forEach((sem, r) => sem.forEach((f, i) => {
     const x = x0 + celW * i, yy = y0 + celH * r, fuera = f.getMonth() !== m - 1;
-    c.fillStyle = fuera ? '#FAFAFC' : '#F4F4F8';
+    const iso = isoLocal(f), evs = fuera ? [] : eventosDelDia(iso), tinte = evs.find(e => e.color);
+    c.fillStyle = fuera ? '#FAFAFC' : (tinte ? tinte.color + '26' : '#F4F4F8');
     c.fillRect(x + 3, yy + 3, celW - 6, celH - 6);
     c.strokeStyle = '#E4E4EA'; c.lineWidth = 2;
     c.strokeRect(x + 3, yy + 3, celW - 6, celH - 6);
@@ -3178,20 +3284,24 @@ async function calendarioPNG() {
     c.font = '800 25px Poppins, system-ui, sans-serif';
     c.fillText(String(f.getDate()), x + 16, yy + 36);
     if (fuera) return;
-    const lista = calTurnosDe(isoLocal(f), calSuc);
-    lista.slice(0, 4).forEach((t, k) => {
-      const ty = yy + 62 + k * 25;
-      // bloque de color ancho: es lo que identifica a la persona
+    // eventos / cumpleaños del día (hasta 2)
+    let evY = yy + 58;
+    evs.slice(0, 2).forEach(e => { c.font = '600 16px Poppins, system-ui, sans-serif'; c.fillStyle = '#3B0764'; c.fillText(recorta(e.emoji + ' ' + e.titulo, 16), x + 14, evY); evY += 22; });
+    const lista = calTurnosDe(iso, calSuc);
+    const maxT = evs.length ? 3 : 4, tBase = evs.length ? evY + 6 : yy + 62;
+    lista.slice(0, maxT).forEach((t, k) => {
+      const ty = tBase + k * 24;
       c.fillStyle = colorPersona(t.personalId);
-      c.fillRect(x + 12, ty - 15, 16, 21);
-      c.fillStyle = '#111114'; c.font = '600 18px Poppins, system-ui, sans-serif';
-      c.fillText(calNombre(t.personalId) + '  ' + rangoCorto(t), x + 36, ty + 2);
+      c.fillRect(x + 12, ty - 14, 15, 19);
+      c.fillStyle = '#111114'; c.font = '600 17px Poppins, system-ui, sans-serif';
+      c.fillText(calNombre(t.personalId) + '  ' + rangoCorto(t), x + 34, ty + 1);
     });
-    if (lista.length > 4) {
-      c.fillStyle = '#5C5C66'; c.font = '400 15px Poppins, system-ui, sans-serif';
-      c.fillText('+' + (lista.length - 4) + ' más', x + 36, yy + 62 + 4 * 25);
+    if (lista.length > maxT) {
+      c.fillStyle = '#5C5C66'; c.font = '400 14px Poppins, system-ui, sans-serif';
+      c.fillText('+' + (lista.length - maxT) + ' más', x + 34, tBase + maxT * 24);
     }
   }));
+  // leyenda de personas
   c.textAlign = 'left'; c.font = '600 21px Poppins, system-ui, sans-serif';
   let lx = x0;
   gente.forEach(p => {
@@ -3199,8 +3309,16 @@ async function calendarioPNG() {
     c.fillStyle = '#111114'; c.fillText(p.nombre, lx + 32, legY);
     lx += 52 + c.measureText(p.nombre).width;
   });
+  // leyenda de fechas y eventos del mes (resumen)
+  if (evMes.length) {
+    c.fillStyle = '#3B0764'; c.font = '700 22px Poppins, system-ui, sans-serif';
+    c.fillText('📌 Fechas del mes', x0, evTitleY);
+    c.font = '400 20px Poppins, system-ui, sans-serif';
+    let ly = evTitleY + 32;
+    evLines.forEach(line => { let ex = x0; line.forEach(it => { c.fillStyle = '#111114'; c.fillText(it.label, ex, ly); ex += it.ww; }); ly += evLineH; });
+  }
   c.font = '400 18px Poppins, system-ui, sans-serif'; c.fillStyle = '#5C5C66';
-  c.fillText('El Anillo del Cíclope · El Ojo Maestro · actualizado el ' + fmtFecha(hoyISO()), x0, legY + 48);
+  c.fillText('El Anillo del Cíclope · El Ojo Maestro · actualizado el ' + fmtFecha(hoyISO()), x0, footerY);
   const nombre = 'Calendario-' + (s?.nombre || 'sucursal').replace(/\s+/g, '-') + '-' + calMes + '.png';
   cv.toBlob(async blob => {
     if (!blob) return toast('⚠️ No se pudo generar la imagen');
