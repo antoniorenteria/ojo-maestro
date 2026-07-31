@@ -1,0 +1,17 @@
+{
+  "name": "El Ojo Maestro · El Anillo del Cíclope",
+  "short_name": "Ojo Maestro",
+  "description": "Centro de operaciones de El Anillo del Cíclope: asistencia, inventario, checklist, calendario y cierres.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050008",
+  "theme_color": "#3B0764",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "img/icono-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "img/icono.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "img/icono.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
