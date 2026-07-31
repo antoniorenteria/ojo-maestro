@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.7';
+const VERSION = '4.8';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -3344,32 +3344,43 @@ async function calendarioPNG() {
    Detrás del PIN 0616. Steph y Toño llevan evaluaciones y seguimiento. */
 const TRIP_EJES = [
   { key: 'servicio', nombre: 'Servicio', emoji: '🛎️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · atención' }, subs: [
-    ['Anticipa necesidades', 'Lee lenguaje corporal y no verbal; se adelanta a lo que el cliente va a necesitar.'],
-    ['Explicación proactiva', 'Explica juegos y dinámicas sin que se lo pidan.'],
+    ['Atiende con actitud positiva', 'Buena cara y buen trato todo el turno; sin quejas.'],
+    ['Explica claramente el menú', 'Describe platillos y recomienda sin dudar.'],
+    ['Responde con seguridad', 'Resuelve dudas del cliente sin depender de otro.'],
+    ['Mantiene contacto con el cliente', 'Da seguimiento a las mesas sin que se lo pidan.'],
+    ['Anticipa necesidades', 'Lee lenguaje corporal y no verbal; se adelanta a lo que el cliente necesita.'],
+    ['Explicación proactiva de juegos y dinámicas', 'Explica juegos y dinámicas sin que se lo pidan.'],
     ['Resolución de situaciones', 'Resuelve problemas y equivocaciones en el momento.'],
     ['Atención online', 'Atiende y procura mensajes y llamadas.'],
     ['Performance Cíclope', 'Mantiene la temática y el concepto.'] ] },
   { key: 'metodo', nombre: 'Método', emoji: '🧪', capa: { fn: 'irPreparaciones()', txt: 'Recetario' }, subs: [
+    ['Sigue recetas correctamente', 'Gramaje y montaje del recetario; sin correcciones.'],
+    ['Mantiene orden en estación', 'Su área organizada todo el turno.'],
+    ['Limpieza constante', 'Limpia sobre la marcha, no acumula.'],
+    ['Usa formatos correctamente', 'Llena checklist, cierres y evidencias en la app.'],
     ['Toma de orden', 'Repite la orden, la retira e imprime ticket.'],
     ['Entrega de orden', 'Presentación y entrega correctas.'],
     ['Cierre de venta', 'Entrega y cierre del ticket.'],
-    ['Plataformas delivery', 'Lee y entrega sin errores.'],
+    ['Uso de plataformas delivery', 'Lee y entrega sin errores.'],
     ['Optimización de procesos', 'Preparaciones, atención y ventas.'] ] },
   { key: 'actitud', nombre: 'Actitud', emoji: '⚡', capa: null, subs: [
     ['Apoya al equipo', 'Ayuda sin que se lo pidan cuando hace falta.'],
-    ['Energía y disposición', 'Mantiene ritmo y buena disposición todo el turno.'],
     ['Propone mejoras', 'Aporta ideas para mejorar.'],
+    ['Mantiene energía en turno', 'Mantiene ritmo y disposición todo el turno.'],
+    ['Resuelve sin que se le diga', 'Toma iniciativa ante problemas.'],
     ['Acepta responsabilidades', 'Asume sus tareas y sus errores sin evadir.'] ] },
   { key: 'resultados', nombre: 'Resultados', emoji: '🎯', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · venta' }, subs: [
-    ['Venta adicional', 'Ofrece extras/upselling de forma habitual.'],
+    ['Sugiere productos (venta adicional)', 'Ofrece extras/upselling de forma habitual.'],
     ['Reduce errores', 'Sin errores repetidos ni retrabajos.'],
+    ['Cumple tiempos', 'Los platillos salen en el tiempo esperado.'],
     ['Cuida producto', 'Sin desperdicio evitable ni mermas por descuido.'],
-    ['Cuidado de experiencia', 'Procura un ambiente familiar y alineado al concepto.'],
-    ['Cierre correcto', 'Deja el cierre completo y correcto.'] ] },
+    ['Cuidado de experiencia', 'Procura un ambiente familiar y alineado al concepto.'] ] },
   { key: 'desempeno', nombre: 'Desempeño', emoji: '📈', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · cierre y puntualidad' }, subs: [
     ['Puntualidad', 'Llega a tiempo (o avisa justificando).'],
-    ['Enfoque en la tarea', 'Se mantiene en lo que hace, sin distracciones.'],
-    ['Mantiene ritmo', 'Capacidad de producción continua.'],
+    ['No se distrae', 'Se mantiene en la operación.'],
+    ['Mantiene ritmo de trabajo', 'Capacidad de producción continua.'],
+    ['Cierra correctamente', 'Deja el cierre completo y correcto.'],
+    ['Enfoque en la tarea', 'Se mantiene en lo que hace, sin dispersarse.'],
     ['Autonomía', 'Trabaja con mínima supervisión directa.'],
     ['Organización', 'Ideas, procesos y tiempos ordenados.'],
     ['Comunicación efectiva', 'Reporta mejoras o problemas en tiempo, con claridad y respeto.'],
