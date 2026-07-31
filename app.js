@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '4.9';
+const VERSION = '5.0';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -89,46 +89,45 @@ const REGISTROS = [
   { id: 'r-bano', n: 'Baño limpio', em: '🚻', tipo: 'limpieza' },
   { id: 'r-cocina', n: 'Cocina limpia y ordenada', em: '🍳', tipo: 'limpieza' },
 ];
-/* ═══ CHECKLIST POR BLOQUES (según horarios reales) ═══
-   Quien ABRE trabaja 1–3 solo; de 3–7 están AMBOS (se divide y se adelanta
-   todo para no acumular); quien CIERRA remata 7–9 sobre una base ya ordenada. */
-const CHK_BLOQUES = [
-  { k: 'apertura', nombre: 'Apertura', emoji: '🌅', quien: 'Quien abre · 1:00–3:00 pm', nota: 'Deja todo listo para arrancar el día.' },
-  { k: 'juntos', nombre: 'Juntos', emoji: '🤝', quien: 'Ambos · 3:00–7:00 pm', nota: 'Divídanse todo y adelántenlo. Lo de «sobre la marcha» se mantiene TODO el turno para no dejarlo al final.' },
-  { k: 'cierre', nombre: 'Cierre', emoji: '🌙', quien: 'Quien cierra · 7:00–9:00 pm', nota: 'Sobre una base ya ordenada: corte, última pasada y cerrar. Que quien abra mañana encuentre todo listo.' },
+/* ═══ CHECKLIST POR TURNO (designación clara + hora límite) ═══
+   Cada actividad tiene DUEÑO (Turno 1 = quien abre 1–7, Turno 2 = quien cierra
+   3–9) y una hora límite. Solo lo ligero de compartir va En conjunto. Las de
+   mayor demanda física/tiempo quedan bien designadas a un turno. */
+const CHK_TURNOS = [
+  { k: 't1', nombre: 'Turno 1', emoji: '🌅', quien: 'Quien abre · entra 1:00 · responsable 12:55 pm' },
+  { k: 'conjunto', nombre: 'En conjunto', emoji: '🤝', quien: 'Ambos (3:00–7:00) · lo fácil de compartir' },
+  { k: 't2', nombre: 'Turno 2', emoji: '🌙', quien: 'Quien cierra · entra 3:00 · responsable 2:55 pm' },
 ];
-/* bloque: apertura|juntos|cierre · cont:true = continuo (mantener sobre la marcha)
+/* turno: t1|conjunto|t2 · hora: hora límite · resp: responsable (en conjunto)
    dias: sin definir = diario · [0..6] días aplicables (0 = domingo) */
 const ACCIONES = [
-  // 🌅 APERTURA — quien abre, solo (1–3)
-  { id: 'a-equipos', n: 'Encender equipos, luces y TV con música autorizada', bloque: 'apertura' },
-  { id: 'a-plataformas', n: 'Activar plataformas (DiDi, Uber, Rappi) y responder WhatsApp', bloque: 'apertura' },
-  { id: 'a-caja', n: 'Verificar fondo de caja ($350)', bloque: 'apertura' },
-  { id: 'a-orden-previo', n: 'Revisar que la sucursal quedó en orden (mesas, pisos, baño, insumos)', bloque: 'apertura' },
-  { id: 'a-salsa-abismo', n: 'Preparación: Salsa Abismo', bloque: 'apertura' },
-  { id: 'a-masa-crepi', n: 'Preparación: Masa Crepiburger', bloque: 'apertura' },
-  { id: 'a-salsa-aliento', n: 'Preparación: Salsa Aliento de Dragón', bloque: 'apertura' },
-  { id: 'a-mamilas', n: 'Mamilas llenas y queso rallado', bloque: 'apertura' },
-  { id: 'a-alitas', n: 'Alitas precongeladas y lechuga desinfectada', bloque: 'apertura' },
-  { id: 'a-empaque', n: 'Stickers y papel cortado', bloque: 'apertura' },
-  // 🤝 JUNTOS — ambos (3–7) · sobre la marcha (mantener)
-  { id: 'j-trastes', n: 'Trastes lavados al momento (que no se acumulen)', bloque: 'juntos', cont: true },
-  { id: 'j-mesas', n: 'Mesas limpias y ordenadas', bloque: 'juntos', cont: true },
-  { id: 'j-area', n: 'Área y estación en orden', bloque: 'juntos', cont: true },
-  { id: 'j-juegos', n: 'Juegos recogidos y ordenados después de usarse', bloque: 'juntos', cont: true },
-  // 🤝 JUNTOS — del turno (se reparten)
-  { id: 'j-trapear', n: 'Trapear comedor y pasillo', bloque: 'juntos' },
-  { id: 'j-bano', n: 'Baño limpio y abastecido', bloque: 'juntos' },
-  { id: 'j-reabasto', n: 'Reabastecer insumos y empaque para el cierre y el día siguiente', bloque: 'juntos' },
-  { id: 'a-refri', n: 'Limpieza profunda: refrigerador', bloque: 'juntos', dias: [2, 4, 6] },
-  { id: 'a-freidoras', n: 'Limpieza profunda: freidoras', bloque: 'juntos', dias: [1, 3, 5] },
-  { id: 'a-congelador', n: 'Limpieza profunda: congelador', bloque: 'juntos', dias: [0] },
-  // 🌙 CIERRE — quien cierra, solo (7–9)
-  { id: 'c-avisos', n: 'Avisos de cierre (8:15 · 8:20 solo para llevar · 8:30 retirar platos · 9:00 cerrar)', bloque: 'cierre' },
-  { id: 'c-grafico', n: 'Ingresar material gráfico', bloque: 'cierre' },
-  { id: 'c-corte', n: 'Finalizar ventas, corte de caja y verificar efectivo', bloque: 'cierre' },
-  { id: 'c-ultima', n: 'Última pasada: trapear, baño, apagar equipos y luces, cerrar puerta', bloque: 'cierre' },
+  // 🌅 TURNO 1 — quien abre
+  { id: 't1-wa', n: 'Responder mensajes pendientes de WhatsApp', turno: 't1', hora: '1:15 pm' },
+  { id: 't1-plat', n: 'Encendido de plataformas (DiDi, Uber, Rappi)', turno: 't1', hora: '1:15 pm' },
+  { id: 't1-comedor', n: 'Comedor y pasillo barrido y trapeado', turno: 't1', hora: '1:30 pm' },
+  { id: 't1-bano', n: 'Baño trapeado y abastecido', turno: 't1', hora: '2:00 pm' },
+  { id: 't1-prep', n: 'Preparaciones del día (Salsa Abismo, Masa Crepiburger, Aliento de Dragón)', turno: 't1', hora: '2:30 pm' },
+  { id: 't1-mamilas', n: 'Rellenar mamilas de salsas', turno: 't1', hora: '2:30 pm' },
+  { id: 't1-congelador', n: 'Limpieza de congelador', turno: 't1', hora: '2:00 pm', dias: [0] },
+  { id: 't1-refri', n: 'Limpieza de refrigerador', turno: 't1', hora: '4:00 pm', dias: [2, 4, 6] },
+  { id: 't1-freidoras', n: 'Limpieza de freidoras', turno: 't1', hora: '4:00 pm', dias: [1, 3, 5] },
+  { id: 't1-plantas', n: 'Regar plantas', turno: 't1', hora: '5:00 pm', dias: [2] },
+  // 🤝 EN CONJUNTO — ambos, lo fácil de compartir
+  { id: 'co-inventario', n: 'Realización de inventario', turno: 'conjunto', hora: '5:00 pm', resp: 't2' },
+  { id: 'co-queso', n: 'Rallar queso (si hace falta)', turno: 'conjunto', hora: '' },
+  { id: 'co-juegos', n: 'Limpiar juegos', turno: 'conjunto', hora: '' },
+  // 🌙 TURNO 2 — quien cierra
+  { id: 't2-cocina', n: 'Cocina barrida y trapeada', turno: 't2', hora: '3:30 pm' },
+  { id: 't2-mesas', n: 'Mesas de trabajo limpias y ordenadas', turno: 't2', hora: '4:00 pm' },
+  { id: 't2-crepera', n: 'Limpieza de crepera', turno: 't2', hora: '7:00 pm', dias: [1, 3, 5] },
+  { id: 't2-comedor', n: 'Comedor limpio y ordenado', turno: 't2', hora: '8:55 pm' },
+  { id: 't2-trastes', n: 'Trastes lavados', turno: 't2', hora: '8:55 pm' },
+  { id: 't2-invact', n: 'Actualización de inventario', turno: 't2', hora: '8:55 pm' },
+  { id: 't2-basura', n: 'Sacar basura', turno: 't2', hora: '8:55 pm', dias: [1, 3, 5] },
 ];
+/* minutos del día a partir de la hora límite (para ordenar) */
+function horaMin(h) { const m = String(h || '').match(/(\d+):(\d+)\s*(a|p)/i); if (!m) return 9999; let hh = (+m[1]) % 12; if (/p/i.test(m[3])) hh += 12; return hh * 60 + (+m[2]); }
+function frecTarea(t) { if (!t.dias) return 'Diario'; const ab = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; return t.dias.map(d => ab[d]).join(' · '); }
 const DIAS_SEM = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados'];
 function tareasDelDia(fechaISO) {
   const d = new Date((fechaISO || hoyISO()) + 'T12:00:00').getDay();
@@ -1673,13 +1672,13 @@ function archivoRegistro(input) {
   });
 }
 
-/* ---- sección 2: acciones del día, agrupadas por bloque de turno ---- */
+/* ---- sección 2: acciones del día, designadas por turno con hora límite ---- */
 function filaTarea(t) {
   const h = tareaHecha(t);
   const cls = 'tarea' + (h ? (h.ver ? ' verificada' : ' hecha') : '');
   const meta = h
     ? '✔ ' + esc(h.por || 'Equipo') + ' · ' + fmtHora(h.ts) + (h.ver ? ' · <b style="color:var(--ok)">verificada ✔✔</b>' : '')
-    : (t.dias ? esc(notaTarea(t)) : (t.cont ? 'Mantener sobre la marcha' : 'Pendiente'));
+    : frecTarea(t) + (t.hora ? ' · ⏰ ' + esc(t.hora) : ' · sobre la marcha') + (t.resp ? ' · resp. ' + (t.resp === 't2' ? 'Turno 2' : 'Turno 1') : '');
   return '<div class="' + cls + '" onclick="toggleTarea(\'' + t.id + '\')">' +
     '<div class="box">' + (h ? '✔' : '') + '</div>' +
     '<div><div class="tt">' + esc(t.n) + '</div><div class="meta">' + meta + '</div></div>' +
@@ -1687,19 +1686,15 @@ function filaTarea(t) {
 }
 function renderActividades() {
   const lista = tareasDelDia();
-  $('chk-items').innerHTML = CHK_BLOQUES.map(b => {
-    const items = lista.filter(t => (t.bloque || 'juntos') === b.k);
+  $('chk-items').innerHTML = CHK_TURNOS.map(tn => {
+    const items = lista.filter(t => (t.turno || 'conjunto') === tn.k).sort((a, b) => horaMin(a.hora) - horaMin(b.hora));
     if (!items.length) return '';
     const hechas = items.filter(t => tareaHecha(t)).length;
-    const cont = items.filter(t => t.cont), once = items.filter(t => !t.cont);
     return '<div class="chk-bloque">' +
-      '<div class="chk-bloque-h"><b>' + b.emoji + ' Turno ' + b.nombre + '</b>' +
+      '<div class="chk-bloque-h"><b>' + tn.emoji + ' ' + tn.nombre + '</b>' +
       '<span class="badge ' + (hechas === items.length ? 'ok' : 'mor') + '">' + hechas + '/' + items.length + '</span></div>' +
-      '<div class="chk-bloque-quien">' + esc(b.quien) + '</div>' +
-      '<p class="mini muted" style="margin:4px 0 8px">' + esc(b.nota) + '</p>' +
-      (cont.length ? '<div class="chk-sub">🔄 Sobre la marcha · mantener todo el turno</div>' + cont.map(filaTarea).join('') : '') +
-      (once.length ? (cont.length ? '<div class="chk-sub">✔️ Del turno · repártanlas</div>' : '') + once.map(filaTarea).join('') : '') +
-      '</div>';
+      '<div class="chk-bloque-quien">' + esc(tn.quien) + '</div>' +
+      items.map(filaTarea).join('') + '</div>';
   }).join('');
 }
 function toggleTarea(tid) {
