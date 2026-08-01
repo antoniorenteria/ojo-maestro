@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.0';
+const VERSION = '5.1';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -89,42 +89,55 @@ const REGISTROS = [
   { id: 'r-bano', n: 'Baño limpio', em: '🚻', tipo: 'limpieza' },
   { id: 'r-cocina', n: 'Cocina limpia y ordenada', em: '🍳', tipo: 'limpieza' },
 ];
-/* ═══ CHECKLIST POR TURNO (designación clara + hora límite) ═══
-   Cada actividad tiene DUEÑO (Turno 1 = quien abre 1–7, Turno 2 = quien cierra
-   3–9) y una hora límite. Solo lo ligero de compartir va En conjunto. Las de
-   mayor demanda física/tiempo quedan bien designadas a un turno. */
+/* ═══ CHECKLIST POR TURNO (limpieza y orden CONSTANTE) ═══
+   Cada actividad tiene su hora en T1 (temprano) y/o T2 (más tarde): así se
+   mantiene todo limpio, abastecido y rellenado a lo largo del día (un baño se
+   ensucia con el uso → T1 lo deja listo y T2 lo repite). Unas son de un solo
+   turno; el inventario a las 5 lo hacen AMBOS. */
 const CHK_TURNOS = [
   { k: 't1', nombre: 'Turno 1', emoji: '🌅', quien: 'Quien abre · entra 1:00 · responsable 12:55 pm' },
-  { k: 'conjunto', nombre: 'En conjunto', emoji: '🤝', quien: 'Ambos (3:00–7:00) · lo fácil de compartir' },
+  { k: 'ambos', nombre: 'Ambos', emoji: '🤝', quien: 'Juntos · la única que hacen los dos' },
   { k: 't2', nombre: 'Turno 2', emoji: '🌙', quien: 'Quien cierra · entra 3:00 · responsable 2:55 pm' },
 ];
-/* turno: t1|conjunto|t2 · hora: hora límite · resp: responsable (en conjunto)
-   dias: sin definir = diario · [0..6] días aplicables (0 = domingo) */
-const ACCIONES = [
-  // 🌅 TURNO 1 — quien abre
-  { id: 't1-wa', n: 'Responder mensajes pendientes de WhatsApp', turno: 't1', hora: '1:15 pm' },
-  { id: 't1-plat', n: 'Encendido de plataformas (DiDi, Uber, Rappi)', turno: 't1', hora: '1:15 pm' },
-  { id: 't1-comedor', n: 'Comedor y pasillo barrido y trapeado', turno: 't1', hora: '1:30 pm' },
-  { id: 't1-bano', n: 'Baño trapeado y abastecido', turno: 't1', hora: '2:00 pm' },
-  { id: 't1-prep', n: 'Preparaciones del día (Salsa Abismo, Masa Crepiburger, Aliento de Dragón)', turno: 't1', hora: '2:30 pm' },
-  { id: 't1-mamilas', n: 'Rellenar mamilas de salsas', turno: 't1', hora: '2:30 pm' },
-  { id: 't1-congelador', n: 'Limpieza de congelador', turno: 't1', hora: '2:00 pm', dias: [0] },
-  { id: 't1-refri', n: 'Limpieza de refrigerador', turno: 't1', hora: '4:00 pm', dias: [2, 4, 6] },
-  { id: 't1-freidoras', n: 'Limpieza de freidoras', turno: 't1', hora: '4:00 pm', dias: [1, 3, 5] },
-  { id: 't1-plantas', n: 'Regar plantas', turno: 't1', hora: '5:00 pm', dias: [2] },
-  // 🤝 EN CONJUNTO — ambos, lo fácil de compartir
-  { id: 'co-inventario', n: 'Realización de inventario', turno: 'conjunto', hora: '5:00 pm', resp: 't2' },
-  { id: 'co-queso', n: 'Rallar queso (si hace falta)', turno: 'conjunto', hora: '' },
-  { id: 'co-juegos', n: 'Limpiar juegos', turno: 'conjunto', hora: '' },
-  // 🌙 TURNO 2 — quien cierra
-  { id: 't2-cocina', n: 'Cocina barrida y trapeada', turno: 't2', hora: '3:30 pm' },
-  { id: 't2-mesas', n: 'Mesas de trabajo limpias y ordenadas', turno: 't2', hora: '4:00 pm' },
-  { id: 't2-crepera', n: 'Limpieza de crepera', turno: 't2', hora: '7:00 pm', dias: [1, 3, 5] },
-  { id: 't2-comedor', n: 'Comedor limpio y ordenado', turno: 't2', hora: '8:55 pm' },
-  { id: 't2-trastes', n: 'Trastes lavados', turno: 't2', hora: '8:55 pm' },
-  { id: 't2-invact', n: 'Actualización de inventario', turno: 't2', hora: '8:55 pm' },
-  { id: 't2-basura', n: 'Sacar basura', turno: 't2', hora: '8:55 pm', dias: [1, 3, 5] },
+/* Tabla de actividades: t1 / t2 = hora en cada turno (vacío = ese turno no la
+   hace) · ambos = hora que hacen los dos juntos · dias: [0..6] (0=domingo). */
+const ACTIVIDADES = [
+  // ── Constantes: las hacen los DOS, T1 temprano y T2 más tarde ──
+  { id: 'cocina', n: 'Barrer y trapear cocina', t1: '1:15 pm', t2: '6:00 pm' },
+  { id: 'comedor', n: 'Barrer y trapear comedor y pasillo', t1: '1:30 pm', t2: '8:00 pm' },
+  { id: 'bano', n: 'Baño limpio, trapeado y abastecido', t1: '2:00 pm', t2: '7:00 pm' },
+  { id: 'mesas', n: 'Mesas de trabajo limpias y ordenadas', t1: '2:00 pm', t2: '8:00 pm' },
+  { id: 'trastes', n: 'Trastes lavados', t1: '3:00 pm', t2: '8:55 pm' },
+  { id: 'reabasto', n: 'Reabastecer y rellenar insumos y salsas', t1: '2:30 pm', t2: '6:30 pm' },
+  { id: 'juegos', n: 'Juegos limpios y ordenados', t1: '2:00 pm', t2: '7:30 pm' },
+  // ── Solo Turno 1 (quien abre) ──
+  { id: 'caja', n: 'Verificar fondo de caja ($350)', t1: '1:00 pm' },
+  { id: 'wa', n: 'Responder mensajes pendientes de WhatsApp', t1: '1:15 pm' },
+  { id: 'plataformas', n: 'Encender plataformas (DiDi, Uber, Rappi)', t1: '1:15 pm' },
+  { id: 'basura1', n: 'Sacar la basura', t1: '1:30 pm' },
+  { id: 'prep', n: 'Preparaciones del día (Salsa Abismo, Masa Crepiburger, Aliento de Dragón)', t1: '2:30 pm' },
+  { id: 'mamilas', n: 'Rellenar mamilas de salsas', t1: '2:30 pm' },
+  { id: 'congelador', n: 'Limpieza de congelador', t1: '2:00 pm', dias: [0] },
+  { id: 'refri', n: 'Limpieza de refrigerador', t1: '4:00 pm', dias: [2, 4, 6] },
+  { id: 'freidoras', n: 'Limpieza de freidoras', t1: '4:00 pm', dias: [1, 3, 5] },
+  { id: 'plantas', n: 'Regar plantas', t1: '5:00 pm', dias: [2] },
+  // ── Solo Turno 2 (quien cierra) ──
+  { id: 'crepera', n: 'Limpieza de crepera', t2: '7:00 pm', dias: [1, 3, 5] },
+  { id: 'ordenmesas', n: 'Orden final de mesas y estación para mañana', t2: '8:55 pm' },
+  { id: 'invact', n: 'Actualización de inventario', t2: '8:55 pm' },
+  { id: 'evidencias', n: 'Envío de evidencias del cierre', t2: '8:55 pm' },
+  { id: 'cierre', n: 'Cierre: corte de caja, verificar efectivo, apagar y cerrar', t2: '9:00 pm' },
+  // ── Ambos, juntos ──
+  { id: 'inventario', n: 'Realización de inventario', ambos: '5:00 pm', resp: 't2' },
 ];
+/* de cada actividad se generan las tareas del día (una por turno con hora) */
+const ACCIONES = [];
+ACTIVIDADES.forEach(a => {
+  const mk = (turno, hora) => ACCIONES.push({ id: a.id + '-' + turno, n: a.n, turno, hora, dias: a.dias, resp: a.resp });
+  if (a.t1) mk('t1', a.t1);
+  if (a.ambos) mk('ambos', a.ambos);
+  if (a.t2) mk('t2', a.t2);
+});
 /* minutos del día a partir de la hora límite (para ordenar) */
 function horaMin(h) { const m = String(h || '').match(/(\d+):(\d+)\s*(a|p)/i); if (!m) return 9999; let hh = (+m[1]) % 12; if (/p/i.test(m[3])) hh += 12; return hh * 60 + (+m[2]); }
 function frecTarea(t) { if (!t.dias) return 'Diario'; const ab = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; return t.dias.map(d => ab[d]).join(' · '); }
