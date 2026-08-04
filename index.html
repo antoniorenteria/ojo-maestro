@@ -194,6 +194,10 @@ tr:last-child td{border-bottom:none}
 .ojo-pulso{animation:pulso 3s ease-in-out infinite}
 @keyframes pulso{0%,100%{filter:drop-shadow(0 0 6px rgba(255,213,35,.35))}50%{filter:drop-shadow(0 0 22px rgba(255,213,35,.7))}}
 .reloj-grande{font-size:2.6rem;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums;text-align:center}
+.reloj-chico{font-size:1.5rem;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums;line-height:1}
+.obj-card{padding:12px;margin:0 0 10px;cursor:pointer;transition:transform .12s}
+.obj-card:active{transform:scale(.99)}
+.aviso-card{display:flex;gap:10px;align-items:flex-start;padding:12px;margin:0 0 10px}
 .encabezado-seccion{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px}
 .tabs button{white-space:nowrap;background:var(--fondo-3);border:1px solid rgba(147,51,234,.35);color:var(--muted);
@@ -521,13 +525,15 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <button class="btn s mini" onclick="toggleTema()">🌓</button>
       <span class="chip" id="chip-red"><span class="dot"></span><span id="chip-red-tx">local</span></span>
     </div>
-    <div class="card centrado">
-      <div class="reloj-grande" id="reloj">--:--</div>
-      <div class="muted" id="fecha-hoy"></div>
-      <div class="sep"></div>
-      <div id="suc-en-turno"></div>
+    <div class="card">
+      <div class="fila" style="align-items:center;justify-content:space-between;gap:10px">
+        <div><span class="reloj-chico" id="reloj">--:--</span><div class="mini muted" id="fecha-hoy"></div></div>
+        <span id="suc-cierre-chip"></span>
+      </div>
+      <div id="suc-en-turno" style="margin-top:8px"></div>
     </div>
-    <div class="card amarilla" id="suc-avance"></div>
+    <div id="suc-objetivos"></div>
+    <div id="suc-avisos"></div>
     <div class="menu-grid">
       <div class="menu-item" onclick="irAsistencia()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Entrada / Salida</span><div class="d">Asistencia y pago del día</div></div>
       <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del día</span><div class="d">Cierre, evidencias y acciones</div></div>
@@ -754,6 +760,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       </div>
       <div class="tabs" id="dir-tabs">
         <button data-t="hoy" class="on" onclick="dirTab('hoy')">🔮 Hoy</button>
+        <button data-t="metas" onclick="dirTab('metas')">🎯 Metas</button>
         <button data-t="finanzas" onclick="dirTab('finanzas')">📊 Finanzas</button>
         <button data-t="nomina" onclick="dirTab('nomina')">💰 Nómina</button>
         <button data-t="inv" onclick="dirTab('inv')">📦 Inventarios</button>

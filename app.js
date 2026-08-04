@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.1';
+const VERSION = '5.2';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -383,6 +383,7 @@ function seedDB() {
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
     calendario: [], gastos: [], tripulacion: [], tripCapac: [], tripAuditoria: [],
     calEventos: SEED_CAL_EVENTOS.map(eventoSeed), calEventosSembrado: true,
+    objetivos: [], avisos: [], dirTareas: [],
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
@@ -799,6 +800,9 @@ function migrarDB() {
   if (!db.tripCapac) db.tripCapac = [];
   if (!db.tripAuditoria) db.tripAuditoria = [];
   if (!db.calEventos) db.calEventos = [];
+  if (!db.objetivos) db.objetivos = [];
+  if (!db.avisos) db.avisos = [];
+  if (!db.dirTareas) db.dirTareas = [];
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
@@ -1324,21 +1328,63 @@ function entrarSucursal(id) { sucursalActual = id; ir('scr-suc'); }
 function renderSucursal() {
   const s = suc(sucursalActual); if (!s) return salirASucursales();
   $('suc-nombre').textContent = '🏬 ' + s.nombre;
-  $('fecha-hoy').textContent = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  $('fecha-hoy').textContent = new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+  // estado unificado: cierre del día + quién está en turno
+  const cie = cierreDelDia();
+  const chipC = $('suc-cierre-chip');
+  if (chipC) chipC.innerHTML = cie
+    ? '<span class="badge ok">🌙 cierre listo</span>'
+    : '<span class="badge aviso">🌙 cierre pendiente</span>';
   const abiertos = turnosAbiertos(sucursalActual);
   $('suc-en-turno').innerHTML = abiertos.length
-    ? '<div class="mini muted" style="margin-bottom:8px">EN TURNO AHORA</div>' + abiertos.map(t => {
+    ? '<div class="mini muted" style="margin-bottom:6px">EN TURNO AHORA</div>' + abiertos.map(t => {
       const p = per(t.personalId);
-      return '<div class="item-linea">' + avatarPersona(t.personalId, p?.nombre) +
-        '<div class="grow"><b>' + esc(p?.nombre || '¿?') + '</b><div class="mini muted">' +
-        (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') + ' · entró ' + fmtHora(t.entrada) + '</div></div>' +
+      return '<div class="item-linea" style="padding:6px 2px">' + avatarPersona(t.personalId, p?.nombre) +
+        '<div class="grow"><b>' + esc(p?.nombre || '¿?') + '</b> <span class="mini muted">' +
+        (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') + ' · entró ' + fmtHora(t.entrada) + '</span></div>' +
         '<span class="badge mor">activo</span></div>';
     }).join('')
-    : '<span class="muted">Nadie en turno todavía. ¡Que comience la aventura! 🕐</span>';
+    : '<span class="muted mini">Nadie en turno todavía 🕐</span>';
   const f = faltantes(sucursalActual).length;
   const chip = $('inv-alerta-chip');
   if (chip) chip.innerHTML = f ? '🛒 ' + f + ' por comprar' : '✅ stock completo';
-  renderAvance();
+  renderObjetivosSuc();
+  renderAvisosSuc();
+}
+/* ---- objetivos y avisos (se crean/editan en Dirección → Metas) ---- */
+const objetivosVivos = () => (db.objetivos || []).filter(o => !o.del);
+const avisosVivos = () => (db.avisos || []).filter(a => !a.del);
+const objPct = o => (o.meta > 0 ? Math.min(100, Math.round((Number(o.logrado) || 0) / o.meta * 100)) : 0);
+function objetivosDe(sid) { return objetivosVivos().filter(o => o.sucursalId === 'all' || o.sucursalId === sid).sort((a, b) => (a.fin || '').localeCompare(b.fin || '')); }
+function avisosDe(sid) { return avisosVivos().filter(a => a.sucursalId === 'all' || a.sucursalId === sid).sort((a, b) => (b.t || 0) - (a.t || 0)); }
+function renderObjetivosSuc() {
+  const box = $('suc-objetivos'); if (!box) return;
+  const list = objetivosDe(sucursalActual);
+  box.innerHTML = list.length ? '<h3 style="margin:16px 0 8px">🎯 Objetivos</h3>' + list.map(o => {
+    const pct = objPct(o);
+    return '<div class="card obj-card" onclick="verObjetivo(\'' + o.id + '\')">' +
+      '<div class="fila" style="justify-content:space-between;gap:8px"><b>' + esc(o.titulo) + '</b>' +
+      '<span class="mini muted" style="white-space:nowrap">' + fmtFechaCorta(o.inicio) + '–' + fmtFechaCorta(o.fin) + '</span></div>' +
+      '<div class="barra" style="margin-top:8px"><div style="width:' + pct + '%;height:100%;background:var(--amarillo)"></div></div>' +
+      '<div class="mini muted" style="margin-top:4px">' + (Number(o.logrado) || 0).toLocaleString('es-MX') + ' / ' + Number(o.meta).toLocaleString('es-MX') + ' ' + esc(o.unidad || '') + ' · ' + pct + '%</div></div>';
+  }).join('') : '';
+}
+function verObjetivo(id) {
+  const o = objetivosVivos().find(x => x.id === id); if (!o) return; const pct = objPct(o);
+  abrirModal('<h3>🎯 ' + esc(o.titulo) + '</h3>' +
+    '<div class="mini muted">' + fmtFecha(o.inicio) + ' → ' + fmtFecha(o.fin) + (o.sucursalId === 'all' ? ' · ambas sucursales' : '') + '</div>' +
+    '<div class="barra" style="margin:12px 0"><div style="width:' + pct + '%;height:100%;background:var(--amarillo)"></div></div>' +
+    '<div class="grid c3"><div class="stat"><div class="v">' + (Number(o.logrado) || 0).toLocaleString('es-MX') + '</div><div class="l">logrado</div></div>' +
+    '<div class="stat"><div class="v">' + Number(o.meta).toLocaleString('es-MX') + '</div><div class="l">meta</div></div>' +
+    '<div class="stat verde"><div class="v">' + pct + '%</div><div class="l">avance</div></div></div>' +
+    (o.detalle ? '<p class="mini muted" style="margin-top:10px">' + esc(o.detalle) + '</p>' : '') +
+    '<button class="btn s" style="margin-top:14px" onclick="cerrarModal()">Cerrar</button>');
+}
+function renderAvisosSuc() {
+  const box = $('suc-avisos'); if (!box) return;
+  const list = avisosDe(sucursalActual);
+  box.innerHTML = list.length ? '<h3 style="margin:16px 0 8px">📢 Avisos</h3>' + list.map(a =>
+    '<div class="card aviso-card"><span style="flex:0 0 20px;font-size:1.1rem">📢</span><div>' + esc(a.texto) + '</div></div>').join('') : '';
 }
 function avanceDia(fecha, sid) {
   const lista = tareasDelDia(fecha);
@@ -1352,6 +1398,7 @@ function avanceDia(fecha, sid) {
   };
 }
 function renderAvance() {
+  if (!$('suc-avance')) return;   // el panel se unificó en v5.2; este avance ya no se muestra
   const hoy = hoyISO();
   const a = avanceDia(hoy, sucursalActual);
   const cierreHoy = cierreDelDia(hoy, sucursalActual);
@@ -4088,11 +4135,82 @@ function renderDireccion() {
   if (['mes', 'semana', 'gastos'].includes(tabDir)) tabDir = tabDir === 'semana' ? 'nomina' : 'finanzas';
   if (tabDir === 'evid') tabDir = 'hoy';
   if (tabDir === 'hoy') c.innerHTML = dirHoy();
+  if (tabDir === 'metas') c.innerHTML = dirMetas();
   if (tabDir === 'finanzas') c.innerHTML = dirFinanzas();
   if (tabDir === 'nomina') c.innerHTML = dirNomina();
   if (tabDir === 'inv') c.innerHTML = dirInventarios();
   if (tabDir === 'admin') c.innerHTML = dirAdmin();
 }
+
+/* --- METAS: objetivos + avisos (se muestran en el panel de sucursal) --- */
+function dirMetas() {
+  let html = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🎯 Objetivos</h3>' +
+    '<button class="btn s mini" onclick="modalObjetivo()">+ Nuevo</button></div>' +
+    '<p class="mini muted">Aparecen en el panel de cada sucursal con su barra de avance.</p>';
+  const objs = objetivosVivos().sort((a, b) => (a.fin || '').localeCompare(b.fin || ''));
+  html += objs.length ? objs.map(o => {
+    const pct = objPct(o), sn = o.sucursalId === 'all' ? 'Ambas' : (suc(o.sucursalId)?.nombre || '');
+    return '<div class="item-linea"><div class="grow"><b>' + esc(o.titulo) + '</b> <span class="mini muted">' + esc(sn) + ' · ' + fmtFechaCorta(o.inicio) + '–' + fmtFechaCorta(o.fin) + '</span>' +
+      '<div class="barra" style="margin-top:6px;max-width:240px"><div style="width:' + pct + '%;height:100%;background:var(--amarillo)"></div></div>' +
+      '<div class="mini muted">' + (Number(o.logrado) || 0).toLocaleString('es-MX') + ' / ' + Number(o.meta).toLocaleString('es-MX') + ' ' + esc(o.unidad || '') + ' · ' + pct + '%</div></div>' +
+      '<button class="btn s mini" onclick="modalObjetivo(\'' + o.id + '\')">✏️</button></div>';
+  }).join('') : '<p class="muted mini">Sin objetivos aún.</p>';
+  html += '</div>';
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📢 Avisos generales</h3>' +
+    '<button class="btn s mini" onclick="modalAviso()">+ Nuevo</button></div>';
+  const avs = avisosVivos().sort((a, b) => (b.t || 0) - (a.t || 0));
+  html += avs.length ? avs.map(a => {
+    const sn = a.sucursalId === 'all' ? 'Ambas' : (suc(a.sucursalId)?.nombre || '');
+    return '<div class="item-linea"><div class="grow"><b>' + esc(a.texto) + '</b><div class="mini muted">' + esc(sn) + '</div></div>' +
+      '<button class="btn s mini" onclick="modalAviso(\'' + a.id + '\')">✏️</button></div>';
+  }).join('') : '<p class="muted mini">Sin avisos.</p>';
+  html += '</div>';
+  return html;
+}
+function sucOptions(sel) {
+  return '<option value="all"' + (sel === 'all' || !sel ? ' selected' : '') + '>Ambas sucursales</option>' +
+    db.sucursales.filter(s => !s.del).map(s => '<option value="' + s.id + '"' + (sel === s.id ? ' selected' : '') + '>' + esc(s.nombre) + '</option>').join('');
+}
+function modalObjetivo(id) {
+  const o = id ? objetivosVivos().find(x => x.id === id) : null;
+  abrirModal('<h3>' + (o ? '✏️ Editar objetivo' : '🎯 Nuevo objetivo') + '</h3>' +
+    '<label>Título</label><input id="ob-tit" value="' + esc(o ? o.titulo : '') + '" placeholder="Ej. Ventas del mes">' +
+    '<label style="margin-top:10px">Detalle (opcional)</label><textarea id="ob-det" placeholder="Descripción…">' + esc(o ? (o.detalle || '') : '') + '</textarea>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="ob-suc">' + sucOptions(o ? o.sucursalId : 'all') + '</select>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Inicio</label><input id="ob-ini" type="date" value="' + (o ? o.inicio : hoyISO()) + '"></div>' +
+    '<div style="flex:1"><label>Fin</label><input id="ob-fin" type="date" value="' + (o ? o.fin : '') + '"></div></div>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Meta</label><input id="ob-meta" type="number" inputmode="decimal" value="' + (o ? o.meta : '') + '"></div>' +
+    '<div style="flex:1"><label>Logrado</label><input id="ob-log" type="number" inputmode="decimal" value="' + (o ? (o.logrado || 0) : 0) + '"></div>' +
+    '<div style="flex:1"><label>Unidad</label><input id="ob-uni" value="' + esc(o ? (o.unidad || '') : '') + '" placeholder="$, ventas…"></div></div>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarObjetivo(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (o ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarObjetivo(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function guardarObjetivo(id) {
+  const tit = $('ob-tit').value.trim(); if (!tit) return toast('Ponle título al objetivo');
+  const datos = { titulo: tit, detalle: $('ob-det').value.trim(), sucursalId: $('ob-suc').value, inicio: $('ob-ini').value, fin: $('ob-fin').value, meta: Number($('ob-meta').value) || 0, logrado: Number($('ob-log').value) || 0, unidad: $('ob-uni').value.trim(), t: Date.now() };
+  if (id) { const o = (db.objetivos || []).find(x => x.id === id); if (o) Object.assign(o, datos); }
+  else { db.objetivos = db.objetivos || []; db.objetivos.unshift(Object.assign({ id: 'obj-' + uid(), del: false }, datos)); }
+  guardarDB(); cerrarModal(); renderDireccion(); toast('🎯 Objetivo guardado');
+}
+function borrarObjetivo(id) { const o = (db.objetivos || []).find(x => x.id === id); if (!o) return; if (!confirm('¿Eliminar el objetivo "' + o.titulo + '"?')) return; o.del = true; o.t = Date.now(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Objetivo eliminado'); }
+function modalAviso(id) {
+  const a = id ? avisosVivos().find(x => x.id === id) : null;
+  abrirModal('<h3>' + (a ? '✏️ Editar aviso' : '📢 Nuevo aviso') + '</h3>' +
+    '<label>Mensaje</label><textarea id="av-txt" placeholder="Ej. Recuerden promocionar el combo de la semana…">' + esc(a ? a.texto : '') + '</textarea>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="av-suc">' + sucOptions(a ? a.sucursalId : 'all') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarAviso(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (a ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarAviso(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function guardarAviso(id) {
+  const txt = $('av-txt').value.trim(); if (!txt) return toast('Escribe el aviso');
+  const datos = { texto: txt, sucursalId: $('av-suc').value, t: Date.now() };
+  if (id) { const a = (db.avisos || []).find(x => x.id === id); if (a) Object.assign(a, datos); }
+  else { db.avisos = db.avisos || []; db.avisos.unshift(Object.assign({ id: 'avi-' + uid(), del: false }, datos)); }
+  guardarDB(); cerrarModal(); renderDireccion(); toast('📢 Aviso guardado');
+}
+function borrarAviso(id) { const a = (db.avisos || []).find(x => x.id === id); if (!a) return; if (!confirm('¿Eliminar este aviso?')) return; a.del = true; a.t = Date.now(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Aviso eliminado'); }
 
 /* --- HOY --- */
 function dirHoy() {
