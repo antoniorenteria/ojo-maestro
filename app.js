@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.2';
+const VERSION = '5.3';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -383,7 +383,7 @@ function seedDB() {
     turnos: [], checklists: [], cierres: [], evidencias: [], eventos: [], propinas: [], tareas: [], revisiones: [], preparaciones: [],
     calendario: [], gastos: [], tripulacion: [], tripCapac: [], tripAuditoria: [],
     calEventos: SEED_CAL_EVENTOS.map(eventoSeed), calEventosSembrado: true,
-    objetivos: [], avisos: [], dirTareas: [],
+    objetivos: [], avisos: [], dirTareas: [], retro: [], tripTiempos: [], tripCapacExtra: [],
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
@@ -803,6 +803,9 @@ function migrarDB() {
   if (!db.objetivos) db.objetivos = [];
   if (!db.avisos) db.avisos = [];
   if (!db.dirTareas) db.dirTareas = [];
+  if (!db.retro) db.retro = [];
+  if (!db.tripTiempos) db.tripTiempos = [];
+  if (!db.tripCapacExtra) db.tripCapacExtra = [];
   // v1.3: el personal ya no usa PIN; se borra el dato viejo de instalaciones previas.
   // No se toca catTs a propósito: es limpieza, no una edición de catálogo.
   let limpio = false;
@@ -1386,6 +1389,56 @@ function renderAvisosSuc() {
   box.innerHTML = list.length ? '<h3 style="margin:16px 0 8px">📢 Avisos</h3>' + list.map(a =>
     '<div class="card aviso-card"><span style="flex:0 0 20px;font-size:1.1rem">📢</span><div>' + esc(a.texto) + '</div></div>').join('') : '';
 }
+
+/* ═══════════ RETROALIMENTACIÓN (encuesta al cliente) ═══════════
+   El equipo pone su nombre y entrega la tablet; el cliente califica con
+   caritas. Los resultados quedan ligados al colaborador para Tripulación. */
+const RETRO_EMOJIS = [['😠', 'Muy malo'], ['😕', 'Malo'], ['😐', 'Regular'], ['🙂', 'Bueno'], ['🤩', 'Excelente']];
+let retroBorrador = null;
+function abrirRetro() {
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  if (!gente.length) return toast('Primero da de alta al equipo en Dirección');
+  retroBorrador = { colaboradorId: '', ambiente: 0, marca: 0, atencion: 0, comentario: '' };
+  retroPaso1();
+}
+function retroPaso1() {
+  const gente = db.personal.filter(p => p.activo && !p.del).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+  abrirModal('<h3>⭐ Retroalimentación</h3><p class="mini muted">Para el equipo: elige tu nombre y entrega la tablet al cliente 🙂</p>' +
+    '<label>¿Quién atendió?</label><select id="retro-quien"><option value="">— elige —</option>' +
+    gente.map(p => '<option value="' + p.id + '"' + (p.id === retroBorrador.colaboradorId ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:14px" onclick="retroIrEncuesta()">Entregar al cliente →</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function retroIrEncuesta() {
+  const q = $('retro-quien').value; if (!q) return toast('Elige quién atendió');
+  retroBorrador.colaboradorId = q; retroEncuesta();
+}
+function retroEscala(campo, valor) { retroBorrador[campo] = valor; retroEncuesta(); }
+function retroEncuesta() {
+  const nom = per(retroBorrador.colaboradorId)?.nombre || '';
+  const pregunta = (campo, emoji, txt) => '<div class="card" style="margin:10px 0"><b>' + emoji + ' ' + txt + '</b>' +
+    '<div class="retro-escala">' + RETRO_EMOJIS.map((e, i) => '<button class="retro-emo' + (retroBorrador[campo] === i + 1 ? ' on' : '') + '" onclick="retroEscala(\'' + campo + '\',' + (i + 1) + ')" title="' + e[1] + '">' + e[0] + '</button>').join('') + '</div></div>';
+  abrirModal('<h3>Tu opinión nos ayuda 💜</h3><p class="mini muted">Toca la carita que mejor represente tu experiencia.</p>' +
+    pregunta('ambiente', '🎭', 'El ambiente y la temática') +
+    pregunta('marca', '🌀', 'La experiencia y la marca en general') +
+    pregunta('atencion', '👤', 'Cómo te atendió ' + esc(nom)) +
+    '<label style="margin-top:10px">¿Algo que quieras contarnos? (opcional)</label>' +
+    '<textarea id="retro-com" placeholder="Tu comentario…" oninput="retroBorrador.comentario=this.value">' + esc(retroBorrador.comentario) + '</textarea>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="enviarRetro()">Enviar ⭐</button>');
+}
+function enviarRetro() {
+  const b = retroBorrador;
+  if (!b.ambiente || !b.marca || !b.atencion) return toast('Toca una carita en cada pregunta 🙂');
+  db.retro = db.retro || [];
+  db.retro.unshift({ id: 'ret-' + uid(), sucursalId: sucursalActual, colaboradorId: b.colaboradorId, fecha: hoyISO(), ambiente: b.ambiente, marca: b.marca, atencion: b.atencion, comentario: (b.comentario || '').trim(), t: Date.now(), del: false });
+  guardarDB();
+  abrirModal('<div class="centrado" style="padding:24px 0"><div style="font-size:3.2rem">🎉</div>' +
+    '<h3>¡Gracias por tu visita!</h3><p class="muted">Tu opinión nos ayuda a mejorar. ¡Te esperamos pronto en El Anillo del Cíclope! 👁️</p>' +
+    '<button class="btn p gigante" style="margin-top:16px" onclick="cerrarModal()">Listo</button></div>');
+}
+/* resumen de retroalimentación de un colaborador (para Tripulación) */
+function retroDe(cid) { return (db.retro || []).filter(r => !r.del && r.colaboradorId === cid); }
+function retroPromedio(cid) { const r = retroDe(cid); return r.length ? (r.reduce((a, x) => a + x.atencion, 0) / r.length) : 0; }
 function avanceDia(fecha, sid) {
   const lista = tareasDelDia(fecha);
   const pendientes = lista.filter(t => !tareaHecha(t, fecha, sid));
@@ -3526,7 +3579,8 @@ function tripSpark(cid, w, h) {
 }
 const tripCapacDe = cid => (db.tripCapac || []).find(x => !x.del && x.colaboradorId === cid);
 function tripCapacProgreso(cid) {
-  const r = tripCapacDe(cid); const total = TRIP_CAPAC.reduce((a, b) => a + b[1].length, 0);
+  const r = tripCapacDe(cid);
+  const total = TRIP_CAPAC.reduce((a, b) => a + b[1].length, 0) + (db.tripCapacExtra || []).filter(x => !x.del).length;
   let ok = 0; if (r) Object.values(r.items || {}).forEach(v => { if (v === 'ok' || v === 'verif') ok++; });
   return { ok, total, pct: total ? Math.round(ok / total * 100) : 0 };
 }
@@ -3573,6 +3627,8 @@ function tripPerfil(id) {
     '<div class="mini muted">Apodo: ' + esc(p.nombre) + (p.fechaNacimiento ? ' · 🎂 ' + fmtFechaCorta(p.fechaNacimiento) + (ed !== '' ? ' (' + ed + ' años)' : '') : '') + '</div></div></div>';
   const cap = tripCapacProgreso(id);
   html += '<div class="mini muted" style="margin-top:8px">📚 Capacitación: <b>' + cap.ok + '/' + cap.total + '</b> (' + cap.pct + '%)</div>';
+  const rt = retroDe(id);
+  if (rt.length) html += '<div class="mini muted">⭐ Clientes: <b>' + retroPromedio(id).toFixed(1) + '/5</b> en atención · ' + rt.length + ' encuesta' + (rt.length === 1 ? '' : 's') + '</div>';
   if (!u) html += '<p class="muted" style="margin-top:12px">Todavía sin evaluaciones.</p>';
   else {
     const b = tripBanda(u.total);
@@ -3683,22 +3739,55 @@ function tripCapacHTML() {
   let html = '<div class="card"><label>Tripulante</label><select onchange="tripCapacCid=this.value;renderTripulacion()">' +
     gente.map(p => '<option value="' + p.id + '"' + (p.id === tripCapacCid ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('') + '</select>';
   const prog = tripCapacProgreso(tripCapacCid);
-  html += '<div class="mini muted" style="margin-top:8px">Avance: <b>' + prog.ok + '/' + prog.total + '</b> (' + prog.pct + '%). Toca cada punto para avanzar: ⬜ → ◐ → ✅ → ✔️</div></div>';
+  html += '<div class="mini muted" style="margin-top:8px">Avance: <b>' + prog.ok + '/' + prog.total + '</b> (' + prog.pct + '%). Toca cada punto para avanzar: ⬜ → ◐ → ✅ → ✔️</div>' +
+    '<button class="btn s" style="margin-top:10px" onclick="modalCapacItem()">➕ Agregar elemento</button></div>';
   const r = tripCapacDe(tripCapacCid), items = (r && r.items) || {};
+  const extras = (db.tripCapacExtra || []).filter(x => !x.del);
+  const seedNames = TRIP_CAPAC.map(b => b[0]);
   html += TRIP_CAPAC.map((bl, bi) => '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + esc(bl[0]) + '</h3></div>' +
-    bl[1].map((it, ii) => { const st = items[bi + '-' + ii] || 'pend'; const e = CAPAC_ESTADOS[st];
-      return '<div class="item-linea" style="cursor:pointer" onclick="tripCapacCiclar(' + bi + ',' + ii + ')"><span style="flex:0 0 26px;font-size:1.1rem">' + e[0] + '</span>' +
-        '<div class="grow"' + (st === 'pend' ? '' : '') + '><b' + (st === 'ok' || st === 'verif' ? ' style="opacity:.7"' : '') + '>' + esc(it) + '</b></div>' +
-        '<span class="mini muted">' + e[1] + '</span></div>';
-    }).join('') + '</div>').join('');
+    bl[1].map((it, ii) => filaCapac(items, bi + '-' + ii, it, null)).join('') +
+    extras.filter(x => x.bloque === bl[0]).map(x => filaCapac(items, 'x-' + x.id, x.item, x.id)).join('') + '</div>').join('');
+  // bloques nuevos (que no existen en el seed)
+  [...new Set(extras.filter(x => !seedNames.includes(x.bloque)).map(x => x.bloque))].forEach(bn => {
+    html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">' + esc(bn) + '</h3></div>' +
+      extras.filter(x => x.bloque === bn).map(x => filaCapac(items, 'x-' + x.id, x.item, x.id)).join('') + '</div>';
+  });
   return html;
 }
-function tripCapacCiclar(bi, ii) {
+function filaCapac(items, key, texto, extraId) {
+  const st = items[key] || 'pend', e = CAPAC_ESTADOS[st];
+  return '<div class="item-linea"><span style="flex:0 0 26px;font-size:1.1rem;cursor:pointer" onclick="tripCapacToggle(\'' + key + '\')">' + e[0] + '</span>' +
+    '<div class="grow" style="cursor:pointer" onclick="tripCapacToggle(\'' + key + '\')"><b' + (st === 'ok' || st === 'verif' ? ' style="opacity:.7"' : '') + '>' + esc(texto) + '</b></div>' +
+    '<span class="mini muted">' + e[1] + '</span>' +
+    (extraId ? ' <button class="btn s mini" onclick="borrarCapacItem(\'' + extraId + '\')">🗑️</button>' : '') + '</div>';
+}
+function tripCapacToggle(key) {
   const cid = tripCapacCid; let r = tripCapacDe(cid);
   if (!r) { r = { id: 'cap-' + cid, colaboradorId: cid, items: {}, t: 0, del: false }; (db.tripCapac = db.tripCapac || []).unshift(r); }
-  const orden = ['pend', 'proc', 'ok', 'verif'], k = bi + '-' + ii, cur = r.items[k] || 'pend';
-  r.items[k] = orden[(orden.indexOf(cur) + 1) % 4]; r.t = Date.now();
+  const orden = ['pend', 'proc', 'ok', 'verif'], cur = r.items[key] || 'pend';
+  r.items[key] = orden[(orden.indexOf(cur) + 1) % 4]; r.t = Date.now();
   guardarDB(); renderTripulacion();
+}
+function modalCapacItem() {
+  const uniq = [...new Set([...TRIP_CAPAC.map(b => b[0]), ...(db.tripCapacExtra || []).filter(x => !x.del).map(x => x.bloque)])];
+  abrirModal('<h3>➕ Agregar elemento de capacitación</h3>' +
+    '<label>Bloque</label><input id="cap-bloque" list="cap-bloques" placeholder="Elige uno o escribe uno nuevo" autocomplete="off">' +
+    '<datalist id="cap-bloques">' + uniq.map(b => '<option value="' + esc(b) + '">').join('') + '</datalist>' +
+    '<label style="margin-top:10px">Elemento</label><input id="cap-item" placeholder="Qué debe saber o hacer">' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarCapacItem()">💾 Agregar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function guardarCapacItem() {
+  const bloque = $('cap-bloque').value.trim(), item = $('cap-item').value.trim();
+  if (!bloque || !item) return toast('Escribe el bloque y el elemento');
+  db.tripCapacExtra = db.tripCapacExtra || [];
+  db.tripCapacExtra.push({ id: 'cx-' + uid(), bloque, item, t: Date.now(), del: false });
+  guardarDB(); cerrarModal(); renderTripulacion(); toast('✅ Elemento agregado');
+}
+function borrarCapacItem(id) {
+  const x = (db.tripCapacExtra || []).find(e => e.id === id); if (!x) return;
+  if (!confirm('¿Eliminar "' + x.item + '"?')) return;
+  x.del = true; x.t = Date.now(); guardarDB(); renderTripulacion(); toast('🗑️ Elemento eliminado');
 }
 /* ---- TAB 4: Auditoría (por sucursal + día) ---- */
 function tripAuditoriaHTML() {

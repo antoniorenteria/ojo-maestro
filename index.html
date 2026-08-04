@@ -198,6 +198,10 @@ tr:last-child td{border-bottom:none}
 .obj-card{padding:12px;margin:0 0 10px;cursor:pointer;transition:transform .12s}
 .obj-card:active{transform:scale(.99)}
 .aviso-card{display:flex;gap:10px;align-items:flex-start;padding:12px;margin:0 0 10px}
+.retro-escala{display:flex;gap:6px;margin-top:10px;justify-content:space-between}
+.retro-emo{flex:1;font-size:1.8rem;padding:8px 0;border-radius:12px;border:1px solid rgba(147,51,234,.3);background:var(--fondo-2);cursor:pointer;transition:transform .1s,background .1s}
+.retro-emo.on{background:var(--amarillo);transform:scale(1.12)}
+.retro-emo:active{transform:scale(1.18)}
 .encabezado-seccion{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px}
 .tabs button{white-space:nowrap;background:var(--fondo-3);border:1px solid rgba(147,51,234,.35);color:var(--muted);
@@ -543,6 +547,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <div class="menu-item" onclick="irPropinas()"><span class="em" style="--tint:#F472B6">💳</span><span class="t">Propinas Digitales</span><div class="d">Registro de propinas por tarjeta</div></div>
       <div class="menu-item" onclick="irPreparaciones()"><span class="em" style="--tint:#FB923C">🧪</span><span class="t">Recetario</span><div class="d">Gramajes y montaje de cada producto</div></div>
       <div class="menu-item" onclick="ir('scr-proto')"><span class="em" style="--tint:#2DD4BF">📖</span><span class="t">Protocolos</span><div class="d">Consulta rápida</div></div>
+      <div class="menu-item" onclick="abrirRetro()"><span class="em" style="--tint:#FBBF24">⭐</span><span class="t">Retroalimentación</span><div class="d">Encuesta para el cliente</div></div>
     </div>
   </section>
 
