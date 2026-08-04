@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.3';
+const VERSION = '5.4';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -3542,7 +3542,7 @@ const TRIP_AUDIT = [
   ['Seguridad', ['Área sin riesgos', 'Equipos seguros']],
 ];
 const CAPAC_ESTADOS = { pend: ['⬜', 'Pendiente'], proc: ['◐', 'En proceso'], ok: ['✅', 'Cumplido'], verif: ['✔️', 'Verificado'] };
-let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana = null, tripCapEvaluador = '', tripCapacCid = '', tripAudSid = '', tripAudFecha = '';
+let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana = null, tripCapEvaluador = '', tripCapacCid = '', tripAudSid = '', tripAudFecha = '', tiempoCid = '';
 
 function pedirPinTripulacion() {
   abrirPin('PIN de Tripulación', pin => {
@@ -3590,9 +3590,10 @@ function renderTripulacion() {
   document.querySelectorAll('#trip-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tripTab));
   const c = $('trip-contenido');
   c.innerHTML = tripTab === 'evaluar' ? tripEvaluarHTML()
-    : tripTab === 'capac' ? tripCapacHTML()
-      : tripTab === 'auditoria' ? tripAuditoriaHTML()
-        : tripRosterHTML();
+    : tripTab === 'tiempos' ? tripTiemposHTML()
+      : tripTab === 'capac' ? tripCapacHTML()
+        : tripTab === 'auditoria' ? tripAuditoriaHTML()
+          : tripRosterHTML();
 }
 function tripTabIr(t) { tripTab = t; renderTripulacion(); }
 /* ---- TAB 1: Tripulantes (roster + perfil) ---- */
@@ -3629,6 +3630,12 @@ function tripPerfil(id) {
   html += '<div class="mini muted" style="margin-top:8px">📚 Capacitación: <b>' + cap.ok + '/' + cap.total + '</b> (' + cap.pct + '%)</div>';
   const rt = retroDe(id);
   if (rt.length) html += '<div class="mini muted">⭐ Clientes: <b>' + retroPromedio(id).toFixed(1) + '/5</b> en atención · ' + rt.length + ' encuesta' + (rt.length === 1 ? '' : 's') + '</div>';
+  const ti = (db.tripTiempos || []).filter(t => !t.del && t.colaboradorId === id);
+  if (ti.length) {
+    const paso = ti.filter(t => t.paso).length;
+    const malos = [...new Set(ti.filter(t => !t.paso).map(t => t.producto))];
+    html += '<div class="mini muted">⏱️ Tiempos: <b>' + paso + '/' + ti.length + '</b> pasó' + (malos.length ? ' · bajar: ' + esc(malos.slice(0, 3).join(', ')) : '') + '</div>';
+  }
   if (!u) html += '<p class="muted" style="margin-top:12px">Todavía sin evaluaciones.</p>';
   else {
     const b = tripBanda(u.total);
@@ -3789,6 +3796,58 @@ function borrarCapacItem(id) {
   if (!confirm('¿Eliminar "' + x.item + '"?')) return;
   x.del = true; x.t = Date.now(); guardarDB(); renderTripulacion(); toast('🗑️ Elemento eliminado');
 }
+/* ---- TAB: Control de tiempos (velocidad en cocina) ---- */
+function tiempoSeg(str) { str = String(str || '').trim(); if (!str) return NaN; if (str.includes(':')) { const p = str.split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); } return Number(str); }
+function fmtSeg(s) { s = Math.round(Number(s) || 0); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function tiempoIntentos() { return ['ti-1', 'ti-2', 'ti-3'].map(id => tiempoSeg(($(id) || {}).value)).filter(x => !isNaN(x) && x > 0); }
+function tiempoPreview() {
+  const box = $('ti-preview'); if (!box) return;
+  const ints = tiempoIntentos(), std = tiempoSeg(($('ti-std') || {}).value);
+  if (!ints.length) { box.innerHTML = ''; return; }
+  const prom = ints.reduce((a, x) => a + x, 0) / ints.length, paso = !isNaN(std) && std > 0 && prom <= std;
+  box.innerHTML = 'Promedio: <b>' + fmtSeg(prom) + '</b>' + (!isNaN(std) && std > 0 ? ' · <b style="color:var(--' + (paso ? 'ok' : 'alerta') + ')">' + (paso ? '✅ pasó' : '⛔ no pasó') + '</b>' : '');
+}
+function tripTiemposHTML() {
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  if (!tiempoCid || !gente.some(p => p.id === tiempoCid)) tiempoCid = gente[0] ? gente[0].id : '';
+  const recetas = [...new Set(recetasVivas().map(r => r.nombre))].sort((a, b) => a.localeCompare(b, 'es'));
+  let html = '<div class="card"><label>Tripulante</label><select onchange="tiempoCid=this.value;renderTripulacion()">' +
+    gente.map(p => '<option value="' + p.id + '"' + (p.id === tiempoCid ? ' selected' : '') + '>' + esc(p.nombre) + '</option>').join('') + '</select></div>';
+  html += '<div class="card"><h3 style="margin:0 0 8px">⏱️ Registrar tiempo</h3>' +
+    '<label>Producto</label><input id="ti-prod" list="ti-prods" placeholder="Ej. Crepiburger Minotauro" autocomplete="off">' +
+    '<datalist id="ti-prods">' + recetas.map(n => '<option value="' + esc(n) + '">').join('') + '</datalist>' +
+    '<label style="margin-top:8px">Tiempo estándar (mm:ss o segundos)</label><input id="ti-std" placeholder="Ej. 1:30" oninput="tiempoPreview()">' +
+    '<div class="fila" style="margin-top:8px"><div style="flex:1"><label class="mini">Intento 1</label><input id="ti-1" placeholder="mm:ss" oninput="tiempoPreview()"></div>' +
+    '<div style="flex:1"><label class="mini">Intento 2</label><input id="ti-2" placeholder="mm:ss" oninput="tiempoPreview()"></div>' +
+    '<div style="flex:1"><label class="mini">Intento 3</label><input id="ti-3" placeholder="mm:ss" oninput="tiempoPreview()"></div></div>' +
+    '<div id="ti-preview" class="mini" style="margin-top:8px"></div>' +
+    '<label style="margin-top:8px">Comentario · en qué mejorar</label><textarea id="ti-com" placeholder="Ej. tarda en el emplatado…"></textarea>' +
+    '<button class="btn p gigante" style="margin-top:10px" onclick="guardarTiempo()">💾 Guardar tiempo</button></div>';
+  const hist = (db.tripTiempos || []).filter(t => !t.del && t.colaboradorId === tiempoCid).sort((a, b) => (b.t || 0) - (a.t || 0));
+  const cumplidos = hist.filter(t => t.paso).length;
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📋 Historial</h3>' +
+    (hist.length ? '<span class="badge ' + (cumplidos === hist.length ? 'ok' : 'mor') + '">' + cumplidos + '/' + hist.length + ' pasó</span>' : '') + '</div>' +
+    (hist.length ? '<div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Prom.</th><th class="num">Est.</th><th></th><th></th></tr>' +
+      hist.map(t => '<tr><td><b>' + esc(t.producto) + '</b><div class="mini muted">intentos: ' + t.intentos.map(fmtSeg).join(' · ') + '</div>' +
+        (t.comentario ? '<div class="mini muted">🗒️ ' + esc(t.comentario) + '</div>' : '') + '</td>' +
+        '<td class="num">' + fmtSeg(t.promedio) + '</td><td class="num">' + fmtSeg(t.estandar) + '</td>' +
+        '<td><span class="badge ' + (t.paso ? 'ok' : 'comprar') + '">' + (t.paso ? '✅' : '⛔') + '</span></td>' +
+        '<td><button class="btn s mini" onclick="borrarTiempo(\'' + t.id + '\')">🗑️</button></td></tr>').join('') + '</table></div>'
+      : '<p class="muted mini">Sin registros de tiempo aún.</p>') + '</div>';
+  return html;
+}
+function guardarTiempo() {
+  const prod = $('ti-prod').value.trim(); if (!prod) return toast('Escribe el producto');
+  const ints = tiempoIntentos(); if (!ints.length) return toast('Anota al menos un intento');
+  const std = tiempoSeg($('ti-std').value); if (isNaN(std) || std <= 0) return toast('Pon el tiempo estándar');
+  const prom = Math.round(ints.reduce((a, x) => a + x, 0) / ints.length);
+  db.tripTiempos = db.tripTiempos || [];
+  db.tripTiempos.unshift({ id: 'tie-' + uid(), colaboradorId: tiempoCid, fecha: hoyISO(), producto: prod, estandar: std, intentos: ints, promedio: prom, paso: prom <= std, comentario: $('ti-com').value.trim(), t: Date.now(), del: false });
+  guardarDB(); renderTripulacion();
+  toast(prom <= std ? '✅ Tiempo guardado — pasó' : '⛔ Tiempo guardado — no pasó');
+}
+function borrarTiempo(id) { const t = (db.tripTiempos || []).find(x => x.id === id); if (!t) return; if (!confirm('¿Eliminar este registro de tiempo?')) return; t.del = true; t.t = Date.now(); guardarDB(); renderTripulacion(); toast('🗑️ Registro eliminado'); }
+
 /* ---- TAB 4: Auditoría (por sucursal + día) ---- */
 function tripAuditoriaHTML() {
   const sucs = db.sucursales.filter(s => s.activa && !s.del);
