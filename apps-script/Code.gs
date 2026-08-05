@@ -341,7 +341,7 @@ function mezclar(a, b) {
   // bandera de siembra del escandallo: si algun lado ya sembro, no re-sembrar
   if (a.escandalloSembrado || b.escandalloSembrado) db.escandalloSembrado = true;
 
-  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario', 'gastos', 'tripulacion', 'tripCapac', 'tripAuditoria', 'calEventos', 'objetivos', 'avisos', 'dirTareas', 'retro', 'tripTiempos', 'tripCapacExtra'].forEach(function (k) {
+  ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario', 'gastos', 'tripulacion', 'tripCapac', 'tripAuditoria', 'calEventos', 'objetivos', 'avisos', 'dirTareas', 'retro', 'tripTiempos', 'tripCapacExtra', 'retroPreguntas'].forEach(function (k) {
     var mapa = {};
     (otro[k] || []).forEach(function (x) { mapa[x.id] = x; });
     var baseLista = (base[k] || []).map(function (x) {

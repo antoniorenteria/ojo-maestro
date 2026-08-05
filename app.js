@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.6';
+const VERSION = '5.7';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -384,6 +384,7 @@ function seedDB() {
     calendario: [], gastos: [], tripulacion: [], tripCapac: [], tripAuditoria: [],
     calEventos: SEED_CAL_EVENTOS.map(eventoSeed), calEventosSembrado: true,
     objetivos: [], avisos: [], dirTareas: [], retro: [], tripTiempos: [], tripCapacExtra: [],
+    retroPreguntas: RETRO_PREGUNTAS_SEED.map(q => Object.assign({ del: false, t: 0 }, q)), retroPregSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
   };
@@ -813,6 +814,11 @@ function migrarDB() {
   if (!db.calEventosSembrado) {
     SEED_CAL_EVENTOS.forEach(e => { if (!db.calEventos.some(x => x.id === evtId(e))) db.calEventos.push(eventoSeed(e)); });
     db.calEventosSembrado = true; limpio = true;
+  }
+  if (!db.retroPreguntas) db.retroPreguntas = [];
+  if (!db.retroPregSembrado) {
+    RETRO_PREGUNTAS_SEED.forEach(q => { if (!db.retroPreguntas.some(x => x.id === q.id)) db.retroPreguntas.push(Object.assign({ del: false, t: 0 }, q)); });
+    db.retroPregSembrado = true; limpio = true;
   }
   // v3.2: escandallo con la lista COMPLETA de la hoja de Toño. Siembra los
   // insumos/recetas que falten, sin pisar lo que él haya editado (une por id).
@@ -1394,11 +1400,36 @@ function renderAvisosSuc() {
    El equipo pone su nombre y entrega la tablet; el cliente califica con
    caritas. Los resultados quedan ligados al colaborador para Tripulación. */
 const RETRO_EMOJIS = [['😠', 'Muy malo'], ['😕', 'Malo'], ['😐', 'Regular'], ['🙂', 'Bueno'], ['🤩', 'Excelente']];
+/* preguntas por defecto. tipo:'general' = evalúa el lugar/marca · 'atencion' =
+   evalúa a quien atendió (esas alimentan el puntaje del colaborador). */
+const RETRO_PREGUNTAS_SEED = [
+  { id: 'p-ambiente', texto: 'El ambiente y la temática', emoji: '🎭', tipo: 'general' },
+  { id: 'p-marca', texto: 'La experiencia y la marca en general', emoji: '🌀', tipo: 'general' },
+  { id: 'p-atencion', texto: 'Cómo te atendió {nombre}', emoji: '👤', tipo: 'atencion' },
+];
+/* sugerencias estilo SurveyMonkey para profesionalizar la encuesta */
+const RETRO_SUGERENCIAS = [
+  { texto: '¿Qué tan satisfecho quedaste con tu experiencia de hoy?', tipo: 'general', emoji: '😊' },
+  { texto: '¿La comida cumplió tus expectativas?', tipo: 'general', emoji: '🍔' },
+  { texto: '¿El lugar estaba limpio y cómodo?', tipo: 'general', emoji: '🧼' },
+  { texto: '¿Qué tan probable es que regreses?', tipo: 'general', emoji: '🔁' },
+  { texto: '¿Qué tan probable es que nos recomiendes con un amigo?', tipo: 'general', emoji: '📣' },
+  { texto: 'La relación calidad-precio', tipo: 'general', emoji: '💰' },
+  { texto: '¿Qué tan atento y amable fue quien te atendió?', tipo: 'atencion', emoji: '🤝' },
+  { texto: '¿Resolvió tus dudas con claridad?', tipo: 'atencion', emoji: '💡' },
+  { texto: '¿Te hizo sentir bienvenido?', tipo: 'atencion', emoji: '🙌' },
+  { texto: 'La rapidez de la atención', tipo: 'atencion', emoji: '⚡' },
+];
+const preguntasVivas = () => (db.retroPreguntas || []).filter(q => !q.del);
+/* respuesta a una pregunta en un registro (con compatibilidad hacia atrás) */
+function retroResp(r, qid) { if (r.respuestas && r.respuestas[qid] != null) return r.respuestas[qid]; if (qid === 'p-ambiente') return r.ambiente; if (qid === 'p-marca') return r.marca; if (qid === 'p-atencion') return r.atencion; return null; }
+/* promedio de las preguntas tipo "atención" de un registro (lo del colaborador) */
+function retroAtencionReg(r) { const qs = preguntasVivas().filter(q => q.tipo === 'atencion'); const vals = qs.map(q => retroResp(r, q.id)).filter(v => v != null); if (vals.length) return vals.reduce((a, x) => a + x, 0) / vals.length; return r.atencion != null ? r.atencion : null; }
 let retroBorrador = null;
 function abrirRetro() {
   const gente = db.personal.filter(p => p.activo && !p.del);
   if (!gente.length) return toast('Primero da de alta al equipo en Dirección');
-  retroBorrador = { colaboradorId: '', ambiente: 0, marca: 0, atencion: 0, comentario: '' };
+  retroBorrador = { colaboradorId: '', resp: {}, comentario: '' };
   retroPaso1();
 }
 function retroPaso1() {
@@ -1411,26 +1442,29 @@ function retroPaso1() {
 }
 function retroIrEncuesta() {
   const q = $('retro-quien').value; if (!q) return toast('Elige quién atendió');
+  // candado: 6 encuestas por colaborador a la semana (para repartir parejo)
+  const wk = weekKey(hoyISO());
+  const cnt = (db.retro || []).filter(r => !r.del && r.colaboradorId === q && weekKey(r.fecha) === wk).length;
+  if (cnt >= 6) return toast('🔒 ' + (per(q)?.nombre || '') + ' ya tiene 6 encuestas esta semana. Elige a alguien más para repartir 🙂');
   retroBorrador.colaboradorId = q; retroEncuesta();
 }
-function retroEscala(campo, valor) { retroBorrador[campo] = valor; retroEncuesta(); }
+function retroEscala(qid, valor) { retroBorrador.resp[qid] = valor; retroEncuesta(); }
 function retroEncuesta() {
   const nom = per(retroBorrador.colaboradorId)?.nombre || '';
-  const pregunta = (campo, emoji, txt) => '<div class="card" style="margin:10px 0"><b>' + emoji + ' ' + txt + '</b>' +
-    '<div class="retro-escala">' + RETRO_EMOJIS.map((e, i) => '<button class="retro-emo' + (retroBorrador[campo] === i + 1 ? ' on' : '') + '" onclick="retroEscala(\'' + campo + '\',' + (i + 1) + ')" title="' + e[1] + '">' + e[0] + '</button>').join('') + '</div></div>';
+  const qs = preguntasVivas();
+  const pregunta = q => { const txt = (q.texto || '').replace('{nombre}', nom); return '<div class="card" style="margin:10px 0"><b>' + (q.emoji || '⭐') + ' ' + esc(txt) + '</b>' +
+    '<div class="retro-escala">' + RETRO_EMOJIS.map((e, i) => '<button class="retro-emo' + (retroBorrador.resp[q.id] === i + 1 ? ' on' : '') + '" onclick="retroEscala(\'' + q.id + '\',' + (i + 1) + ')" title="' + e[1] + '">' + e[0] + '</button>').join('') + '</div></div>'; };
   abrirModal('<h3>Tu opinión nos ayuda 💜</h3><p class="mini muted">Toca la carita que mejor represente tu experiencia.</p>' +
-    pregunta('ambiente', '🎭', 'El ambiente y la temática') +
-    pregunta('marca', '🌀', 'La experiencia y la marca en general') +
-    pregunta('atencion', '👤', 'Cómo te atendió ' + esc(nom)) +
+    qs.map(pregunta).join('') +
     '<label style="margin-top:10px">¿Algo que quieras contarnos? (opcional)</label>' +
     '<textarea id="retro-com" placeholder="Tu comentario…" oninput="retroBorrador.comentario=this.value">' + esc(retroBorrador.comentario) + '</textarea>' +
     '<button class="btn p gigante" style="margin-top:12px" onclick="enviarRetro()">Enviar ⭐</button>');
 }
 function enviarRetro() {
-  const b = retroBorrador;
-  if (!b.ambiente || !b.marca || !b.atencion) return toast('Toca una carita en cada pregunta 🙂');
+  const b = retroBorrador, qs = preguntasVivas();
+  if (qs.some(q => !b.resp[q.id])) return toast('Toca una carita en cada pregunta 🙂');
   db.retro = db.retro || [];
-  db.retro.unshift({ id: 'ret-' + uid(), sucursalId: sucursalActual, colaboradorId: b.colaboradorId, fecha: hoyISO(), ambiente: b.ambiente, marca: b.marca, atencion: b.atencion, comentario: (b.comentario || '').trim(), t: Date.now(), del: false });
+  db.retro.unshift({ id: 'ret-' + uid(), sucursalId: sucursalActual, colaboradorId: b.colaboradorId, fecha: hoyISO(), respuestas: Object.assign({}, b.resp), comentario: (b.comentario || '').trim(), t: Date.now(), del: false });
   guardarDB();
   abrirModal('<div class="centrado" style="padding:24px 0"><div style="font-size:3.2rem">🎉</div>' +
     '<h3>¡Gracias por tu visita!</h3><p class="muted">Tu opinión nos ayuda a mejorar. ¡Te esperamos pronto en El Anillo del Cíclope! 👁️</p>' +
@@ -1438,7 +1472,88 @@ function enviarRetro() {
 }
 /* resumen de retroalimentación de un colaborador (para Tripulación) */
 function retroDe(cid) { return (db.retro || []).filter(r => !r.del && r.colaboradorId === cid); }
-function retroPromedio(cid) { const r = retroDe(cid); return r.length ? (r.reduce((a, x) => a + x.atencion, 0) / r.length) : 0; }
+function retroPromedio(cid) { const rs = retroDe(cid).map(retroAtencionReg).filter(v => v != null); return rs.length ? (rs.reduce((a, x) => a + x, 0) / rs.length) : 0; }
+/* ---- editor de preguntas (Dirección/Tripulación) ---- */
+function modalPreguntas() {
+  const qs = preguntasVivas();
+  let html = '<div class="encabezado-seccion"><h3 style="margin:0">✍️ Preguntas de la encuesta</h3>' +
+    '<button class="btn s mini" onclick="modalPregunta()">+ Nueva</button></div>' +
+    '<p class="mini muted">Las de tipo "atención" evalúan a quien atendió y alimentan el puntaje del colaborador; las "general" evalúan el lugar y la marca.</p>' +
+    qs.map(q => '<div class="item-linea"><span style="flex:0 0 24px">' + (q.emoji || '⭐') + '</span>' +
+      '<div class="grow"><b>' + esc((q.texto || '').replace('{nombre}', 'la persona')) + '</b> <span class="badge ' + (q.tipo === 'atencion' ? 'mor' : 'aviso') + ' mini">' + (q.tipo === 'atencion' ? 'atención' : 'general') + '</span></div>' +
+      '<button class="btn s mini" onclick="modalPregunta(\'' + q.id + '\')">✏️</button></div>').join('') +
+    '<button class="btn s" style="margin-top:12px" onclick="modalSugerencias()">💡 Sugerencias de preguntas (SurveyMonkey)</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>';
+  abrirModal(html);
+}
+function modalPregunta(id) {
+  const q = id ? preguntasVivas().find(x => x.id === id) : null;
+  abrirModal('<h3>' + (q ? '✏️ Editar pregunta' : '➕ Nueva pregunta') + '</h3>' +
+    '<div class="fila"><div style="flex:0 0 84px"><label>Emoji</label><input id="pq-emoji" value="' + esc(q ? q.emoji : '⭐') + '" maxlength="4" style="text-align:center;font-size:1.2rem"></div>' +
+    '<div style="flex:1"><label>Pregunta</label><input id="pq-texto" value="' + esc(q ? q.texto : '') + '" placeholder="Ej. ¿Qué tan satisfecho quedaste?"></div></div>' +
+    '<p class="mini muted" style="margin-top:6px">Tip: usa <b>{nombre}</b> para que aparezca el nombre de quien atendió.</p>' +
+    '<label style="margin-top:10px">Tipo</label><select id="pq-tipo"><option value="general"' + (!q || q.tipo === 'general' ? ' selected' : '') + '>General (lugar/marca)</option><option value="atencion"' + (q && q.tipo === 'atencion' ? ' selected' : '') + '>Atención (evalúa al colaborador)</option></select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarPregunta(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (q ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarPregunta(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="modalPreguntas()">← Volver</button>');
+}
+function guardarPregunta(id) {
+  const texto = $('pq-texto').value.trim(); if (!texto) return toast('Escribe la pregunta');
+  const datos = { texto, emoji: $('pq-emoji').value.trim() || '⭐', tipo: $('pq-tipo').value, t: Date.now() };
+  if (id) { const q = (db.retroPreguntas || []).find(x => x.id === id); if (q) Object.assign(q, datos); }
+  else { db.retroPreguntas = db.retroPreguntas || []; db.retroPreguntas.push(Object.assign({ id: 'pq-' + uid(), del: false }, datos)); }
+  guardarDB(); toast('✍️ Pregunta guardada'); modalPreguntas();
+}
+function borrarPregunta(id) {
+  if (preguntasVivas().length <= 1) return toast('Debe quedar al menos una pregunta');
+  const q = (db.retroPreguntas || []).find(x => x.id === id); if (!q) return;
+  if (!confirm('¿Eliminar la pregunta "' + q.texto + '"?')) return;
+  q.del = true; q.t = Date.now(); guardarDB(); toast('🗑️ Pregunta eliminada'); modalPreguntas();
+}
+function modalSugerencias() {
+  abrirModal('<h3>💡 Sugerencias de preguntas</h3><p class="mini muted">Redactadas al estilo de encuestas profesionales (SurveyMonkey). Toca una para agregarla.</p>' +
+    RETRO_SUGERENCIAS.map((s, i) => '<div class="item-linea" style="cursor:pointer" onclick="agregarSugerencia(' + i + ')"><span style="flex:0 0 24px">' + s.emoji + '</span>' +
+      '<div class="grow"><b>' + esc(s.texto) + '</b> <span class="badge ' + (s.tipo === 'atencion' ? 'mor' : 'aviso') + ' mini">' + (s.tipo === 'atencion' ? 'atención' : 'general') + '</span></div><span class="btn s mini">＋</span></div>').join('') +
+    '<button class="btn s" style="margin-top:12px" onclick="modalPreguntas()">← Volver</button>');
+}
+function agregarSugerencia(i) {
+  const s = RETRO_SUGERENCIAS[i]; if (!s) return;
+  db.retroPreguntas = db.retroPreguntas || [];
+  db.retroPreguntas.push({ id: 'pq-' + uid(), texto: s.texto, emoji: s.emoji, tipo: s.tipo, del: false, t: Date.now() });
+  guardarDB(); toast('✅ Pregunta agregada'); modalSugerencias();
+}
+/* ---- visor de resultados de la encuesta (Tripulantes) ---- */
+function modalRetroResultados() {
+  const todas = (db.retro || []).filter(r => !r.del);
+  const qs = preguntasVivas();
+  let html = '<div class="encabezado-seccion"><h3 style="margin:0">⭐ Resultados de encuestas</h3>' +
+    '<button class="btn s mini" onclick="modalPreguntas()">✍️ Preguntas</button></div>' +
+    '<p class="mini muted">' + todas.length + ' encuesta' + (todas.length === 1 ? '' : 's') + ' en total.</p>';
+  // promedio por pregunta (todas)
+  html += '<div class="card"><h4 style="margin:0 0 6px">Promedio por pregunta</h4>' + qs.map(q => {
+    const vals = todas.map(r => retroResp(r, q.id)).filter(v => v != null);
+    const prom = vals.length ? vals.reduce((a, x) => a + x, 0) / vals.length : 0;
+    const emo = vals.length ? RETRO_EMOJIS[Math.round(prom) - 1] : null;
+    return '<div class="item-linea"><span style="flex:0 0 24px">' + (q.emoji || '⭐') + '</span>' +
+      '<div class="grow"><b>' + esc((q.texto || '').replace('{nombre}', 'quien atendió')) + '</b></div>' +
+      '<span class="badge mor">' + (vals.length ? (emo ? emo[0] + ' ' : '') + prom.toFixed(1) + '/5' : '—') + '</span></div>';
+  }).join('') + '</div>';
+  // por colaborador (atención)
+  const gente = db.personal.filter(p => !p.del);
+  const filas = gente.map(p => ({ p, n: retroDe(p.id).length, prom: retroPromedio(p.id) })).filter(r => r.n > 0).sort((a, b) => b.prom - a.prom);
+  if (filas.length) html += '<div class="card"><h4 style="margin:0 0 6px">Atención por colaborador</h4>' + filas.map(r =>
+    '<div class="item-linea">' + avatarPersona(r.p.id, r.p.nombre) + '<div class="grow"><b>' + esc(r.p.nombre) + '</b><div class="mini muted">' + r.n + ' encuesta' + (r.n === 1 ? '' : 's') + '</div></div>' +
+    '<span class="badge mor">' + r.prom.toFixed(1) + '/5</span></div>').join('') + '</div>';
+  // comentarios recientes
+  const coms = todas.filter(r => (r.comentario || '').trim()).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 20);
+  if (coms.length) html += '<div class="card"><h4 style="margin:0 0 6px">🗣️ Comentarios</h4>' + coms.map(r => {
+    const at = retroAtencionReg(r), emo = at ? (RETRO_EMOJIS[Math.round(at) - 1] || ['💬'])[0] : '💬';
+    return '<div class="item-linea" style="align-items:flex-start"><span style="flex:0 0 24px;font-size:1.1rem">' + emo + '</span>' +
+      '<div class="grow"><div>' + esc(r.comentario) + '</div><div class="mini muted">' + esc(per(r.colaboradorId)?.nombre || '') + ' · ' + fmtFecha(r.fecha) + '</div></div></div>';
+  }).join('') + '</div>';
+  html += '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar</button>';
+  abrirModal(html);
+}
 function avanceDia(fecha, sid) {
   const lista = tareasDelDia(fecha);
   const pendientes = lista.filter(t => !tareaHecha(t, fecha, sid));
@@ -3557,9 +3672,12 @@ function tripBanda(t) {
   if (t >= 70) return { k: 'aceptable', label: 'Aceptable', color: '#F59E0B', emoji: '⚠️' };
   return { k: 'deficiente', label: 'Deficiente', color: '#EF4444', emoji: '⛔' };
 }
-function tripSemanaKey(iso) { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
-function tripSemanaShift(k, d) { const x = new Date(k + 'T12:00:00'); x.setDate(x.getDate() + d * 7); return x.toISOString().slice(0, 10); }
-function tripSemanaLabel(k) { const a = new Date(k + 'T12:00:00'), b = new Date(k + 'T12:00:00'); b.setDate(b.getDate() + 6); const f = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }); return 'Semana del ' + f(a) + ' al ' + f(b); }
+/* la evaluación es MENSUAL: el campo `semana` guarda el mes (YYYY-MM) y solo
+   hay 1 por colaborador por mes. weekKey() se usa aparte para el tope de retro. */
+function tripSemanaKey(iso) { return (iso || hoyISO()).slice(0, 7); }
+function tripSemanaShift(k, d) { let [y, m] = k.split('-').map(Number); m += d; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return y + '-' + String(m).padStart(2, '0'); }
+function tripSemanaLabel(k) { const [y, m] = k.split('-').map(Number); return (MESES[m - 1] || '') + ' ' + y; }
+function weekKey(iso) { const x = new Date((iso || hoyISO()) + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.toISOString().slice(0, 10); }
 const tripEvals = () => (db.tripulacion || []).filter(e => !e.del);
 function tripEvalsDe(cid) { return tripEvals().filter(e => e.colaboradorId === cid).sort((a, b) => a.semana < b.semana ? -1 : 1); }
 function tripUltima(cid) { const e = tripEvalsDe(cid); return e[e.length - 1]; }
@@ -3608,7 +3726,8 @@ function tripRosterHTML() {
     '<div class="stat"><div class="v">' + gente.length + '</div><div class="l">tripulantes</div></div>' +
     '<div class="stat"><div class="v">' + evaluados + '/' + gente.length + '</div><div class="l">evaluados esta semana</div></div>' +
     '<div class="stat verde"><div class="v">' + prom + '</div><div class="l">promedio /100</div></div></div>' +
-    '<button class="btn p gigante" onclick="tripTabIr(\'evaluar\')">📋 Evaluar tripulación</button>';
+    '<button class="btn p gigante" onclick="tripTabIr(\'evaluar\')">📋 Evaluar tripulación</button>' +
+    '<button class="btn s" style="margin-top:8px;width:100%" onclick="modalRetroResultados()">⭐ Ver retroalimentación de clientes</button>';
   const rows = gente.map(p => ({ p, u: tripUltima(p.id) })).sort((a, b) => (a.u ? a.u.total : -1) - (b.u ? b.u.total : -1));
   const rey = cicloGanador(mesISO());
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🎖️ La tripulación</h3></div>' +
@@ -3656,9 +3775,11 @@ function tripPerfil(id) {
     (pl.estado === 'cerrado' ? '<span class="badge ok">✔ cumplido</span>' : '<button class="btn s mini" onclick="tripCerrarPlan(\'' + e.id + '\')">Marcar cumplido</button>') + '</div>').join('');
   // comentarios de las encuestas de clientes (retroalimentación)
   const rcoms = retroDe(id).filter(r => (r.comentario || '').trim()).sort((a, b) => (b.t || 0) - (a.t || 0));
-  if (rcoms.length) html += '<div class="sep"></div><h4 style="margin:6px 0">🗣️ Comentarios de clientes</h4>' + rcoms.slice(0, 15).map(r =>
-    '<div class="item-linea" style="align-items:flex-start"><span style="flex:0 0 26px;font-size:1.15rem">' + ((RETRO_EMOJIS[r.atencion - 1] || ['💬'])[0]) + '</span>' +
-    '<div class="grow"><div>' + esc(r.comentario) + '</div><div class="mini muted">' + fmtFecha(r.fecha) + '</div></div></div>').join('');
+  if (rcoms.length) html += '<div class="sep"></div><h4 style="margin:6px 0">🗣️ Comentarios de clientes</h4>' + rcoms.slice(0, 15).map(r => {
+    const at = retroAtencionReg(r);
+    return '<div class="item-linea" style="align-items:flex-start"><span style="flex:0 0 26px;font-size:1.15rem">' + ((at ? RETRO_EMOJIS[Math.round(at) - 1] : null) || ['💬'])[0] + '</span>' +
+    '<div class="grow"><div>' + esc(r.comentario) + '</div><div class="mini muted">' + fmtFecha(r.fecha) + '</div></div></div>';
+  }).join('');
   // historial
   if (evs.length) html += '<div class="sep"></div><h4 style="margin:6px 0">📜 Historial</h4><div class="tabla-wrap"><table><tr><th>Semana</th><th class="num">/100</th><th>Acción</th></tr>' +
     evs.slice().reverse().map(e => '<tr><td class="mini">' + tripSemanaLabel(e.semana).replace('Semana del ', '') + '</td><td class="num">' + e.total + '</td><td class="mini">' + esc(e.accion || '') + '</td></tr>').join('') + '</table></div>';
@@ -3847,6 +3968,10 @@ function guardarTiempo() {
   const prod = $('ti-prod').value.trim(); if (!prod) return toast('Escribe el producto');
   const ints = tiempoIntentos(); if (!ints.length) return toast('Anota al menos un intento');
   const std = tiempoSeg($('ti-std').value); if (isNaN(std) || std <= 0) return toast('Pon el tiempo estándar');
+  // candado: 3 conteos por colaborador al mes, para que todos lleven lo mismo
+  const mk = hoyISO().slice(0, 7);
+  const cnt = (db.tripTiempos || []).filter(t => !t.del && t.colaboradorId === tiempoCid && (t.fecha || '').slice(0, 7) === mk).length;
+  if (cnt >= 3) return toast('🔒 ' + (per(tiempoCid)?.nombre || '') + ' ya tiene 3 conteos este mes. Así todos llevan los mismos.');
   const prom = Math.round(ints.reduce((a, x) => a + x, 0) / ints.length);
   db.tripTiempos = db.tripTiempos || [];
   db.tripTiempos.unshift({ id: 'tie-' + uid(), colaboradorId: tiempoCid, fecha: hoyISO(), producto: prod, estandar: std, intentos: ints, promedio: prom, paso: prom <= std, comentario: $('ti-com').value.trim(), t: Date.now(), del: false });
@@ -3863,10 +3988,12 @@ function tripPuntajeMes(cid, mesI) {
   const evalScore = evs.length ? evs.reduce((a, e) => a + e.total, 0) / evs.length : null;
   const cap = tripCapacProgreso(cid).pct;
   const rt = retroDe(cid).filter(r => (r.fecha || '').slice(0, 7) === mesI);
-  const cliScore = rt.length ? (rt.reduce((a, r) => a + r.atencion, 0) / rt.length) * 20 : null;
+  const cliVals = rt.map(retroAtencionReg).filter(v => v != null);
+  const cliScore = cliVals.length ? (cliVals.reduce((a, x) => a + x, 0) / cliVals.length) * 20 : null;
   const ti = (db.tripTiempos || []).filter(t => !t.del && t.colaboradorId === cid && (t.fecha || '').slice(0, 7) === mesI);
   const tiScore = ti.length ? (ti.filter(t => t.paso).length / ti.length) * 100 : null;
-  const comps = [[evalScore, 50], [cliScore, 20], [tiScore, 15], [cap, 15]];
+  // capacitación ya NO cuenta en el puntaje (se domina y no se revisa mes a mes)
+  const comps = [[evalScore, 60], [cliScore, 25], [tiScore, 15]];
   let wsum = 0, w = 0; comps.forEach(([v, ww]) => { if (v !== null) { wsum += v * ww; w += ww; } });
   return { total: w ? Math.round(wsum / w) : 0, evalScore, cliScore, tiScore, cap, hasReal: (evs.length || rt.length || ti.length) > 0 };
 }
@@ -3884,7 +4011,7 @@ function tripCicloHTML() {
     '<button class="btn s mini" onclick="tripCicloShift(-1)">◀</button>' +
     '<div class="grow centrado"><b>🏆 Cíclope de ' + MESES[m - 1] + ' ' + y + '</b></div>' +
     '<button class="btn s mini"' + (tripCicloMes >= mesISO() ? ' disabled' : '') + ' onclick="tripCicloShift(1)">▶</button></div>' +
-    '<p class="mini muted" style="margin:8px 0 0">Puntaje total = Evaluación 50% · Clientes 20% · Tiempos 15% · Capacitación 15% (se ajusta a lo que haya registrado).</p></div>';
+    '<p class="mini muted" style="margin:8px 0 0">Puntaje total = Evaluación 60% · Clientes 25% · Tiempos 15% (se ajusta a lo que haya registrado). La capacitación no cuenta en el puntaje.</p></div>';
   if (conData.length) {
     const w = rows[0], b = tripBanda(w.s.total);
     html += '<div class="card" style="text-align:center;border:2px solid var(--amarillo)"><div style="font-size:2.8rem">👑</div>' +
@@ -3896,7 +4023,7 @@ function tripCicloHTML() {
       const s = r.s, medal = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
       const chip = v => v === null ? '—' : Math.round(v);
       return '<div class="item-linea"><span style="flex:0 0 30px;font-weight:800;text-align:center">' + medal + '</span>' + avatarPersona(r.p.id, r.p.nombre) +
-        '<div class="grow"><b>' + esc(r.p.nombre) + '</b><div class="mini muted">Eval ' + chip(s.evalScore) + ' · Cli ' + chip(s.cliScore) + ' · Tie ' + chip(s.tiScore) + ' · Cap ' + s.cap + '</div></div>' +
+        '<div class="grow"><b>' + esc(r.p.nombre) + '</b><div class="mini muted">Eval ' + chip(s.evalScore) + ' · Cli ' + chip(s.cliScore) + ' · Tie ' + chip(s.tiScore) + '</div></div>' +
         '<span class="badge ' + (i === 0 ? 'ok' : 'mor') + '">' + s.total + '</span></div>';
     }).join('') + '</div>';
   // trimestral
