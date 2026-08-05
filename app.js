@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.5';
+const VERSION = '5.6';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -3542,7 +3542,7 @@ const TRIP_AUDIT = [
   ['Seguridad', ['Área sin riesgos', 'Equipos seguros']],
 ];
 const CAPAC_ESTADOS = { pend: ['⬜', 'Pendiente'], proc: ['◐', 'En proceso'], ok: ['✅', 'Cumplido'], verif: ['✔️', 'Verificado'] };
-let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana = null, tripCapEvaluador = '', tripCapacCid = '', tripAudSid = '', tripAudFecha = '', tiempoCid = '';
+let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana = null, tripCapEvaluador = '', tripCapacCid = '', tripAudSid = '', tripAudFecha = '', tiempoCid = '', tripCicloMes = '';
 
 function pedirPinTripulacion() {
   abrirPin('PIN de Tripulación', pin => {
@@ -3593,7 +3593,8 @@ function renderTripulacion() {
     : tripTab === 'tiempos' ? tripTiemposHTML()
       : tripTab === 'capac' ? tripCapacHTML()
         : tripTab === 'auditoria' ? tripAuditoriaHTML()
-          : tripRosterHTML();
+          : tripTab === 'ciclope' ? tripCicloHTML()
+            : tripRosterHTML();
 }
 function tripTabIr(t) { tripTab = t; renderTripulacion(); }
 /* ---- TAB 1: Tripulantes (roster + perfil) ---- */
@@ -3609,11 +3610,12 @@ function tripRosterHTML() {
     '<div class="stat verde"><div class="v">' + prom + '</div><div class="l">promedio /100</div></div></div>' +
     '<button class="btn p gigante" onclick="tripTabIr(\'evaluar\')">📋 Evaluar tripulación</button>';
   const rows = gente.map(p => ({ p, u: tripUltima(p.id) })).sort((a, b) => (a.u ? a.u.total : -1) - (b.u ? b.u.total : -1));
+  const rey = cicloGanador(mesISO());
   html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🎖️ La tripulación</h3></div>' +
     rows.map(({ p, u }) => {
       const b = u ? tripBanda(u.total) : null, t = tripTendencia(p.id), cap = tripCapacProgreso(p.id), inc = tripListoIncentivo(p.id);
       return '<div class="item-linea" style="cursor:pointer" onclick="tripPerfil(\'' + p.id + '\')">' + avatarPersona(p.id, p.nombre) +
-        '<div class="grow"><b>' + esc(p.nombre) + '</b>' + (inc ? ' <span class="badge ok">⭐ incentivo</span>' : '') +
+        '<div class="grow"><b>' + esc(p.nombre) + '</b>' + (p.id === rey ? ' <span class="badge" style="background:#F59E0B22;color:#F59E0B">👑 Cíclope</span>' : '') + (inc ? ' <span class="badge ok">⭐ incentivo</span>' : '') +
         '<div class="mini muted">' + (u ? tripSemanaLabel(u.semana) : 'Sin evaluación') + ' · capacitación ' + cap.pct + '%</div></div>' +
         (b ? '<span class="badge" style="background:' + b.color + '22;color:' + b.color + ';border-color:' + b.color + '66">' + b.emoji + ' ' + u.total + '</span> <b style="color:' + t.c + '">' + t.a + '</b>' : '<span class="badge aviso">nuevo</span>') +
         '</div>';
@@ -3624,7 +3626,7 @@ function tripPerfil(id) {
   const p = per(id); if (!p) return; const evs = tripEvalsDe(id), u = evs[evs.length - 1];
   const ed = edad(p.fechaNacimiento);
   let html = '<div class="fila" style="align-items:center;gap:10px">' + avatarPersona(id, p.nombre) +
-    '<div style="min-width:0"><h3 style="margin:0">' + esc(p.nombreCompleto || p.nombre) + '</h3>' +
+    '<div style="min-width:0"><h3 style="margin:0">' + esc(p.nombreCompleto || p.nombre) + (id === cicloGanador(mesISO()) ? ' <span class="badge" style="background:#F59E0B22;color:#F59E0B">👑 Cíclope del Mes</span>' : '') + '</h3>' +
     '<div class="mini muted">Apodo: ' + esc(p.nombre) + (p.fechaNacimiento ? ' · 🎂 ' + fmtFechaCorta(p.fechaNacimiento) + (ed !== '' ? ' (' + ed + ' años)' : '') : '') + '</div></div></div>';
   const cap = tripCapacProgreso(id);
   html += '<div class="mini muted" style="margin-top:8px">📚 Capacitación: <b>' + cap.ok + '/' + cap.total + '</b> (' + cap.pct + '%)</div>';
@@ -3852,6 +3854,62 @@ function guardarTiempo() {
   toast(prom <= std ? '✅ Tiempo guardado — pasó' : '⛔ Tiempo guardado — no pasó');
 }
 function borrarTiempo(id) { const t = (db.tripTiempos || []).find(x => x.id === id); if (!t) return; if (!confirm('¿Eliminar este registro de tiempo?')) return; t.del = true; t.t = Date.now(); guardarDB(); renderTripulacion(); toast('🗑️ Registro eliminado'); }
+
+/* ---- TAB: Cíclope del Mes (puntaje total mensual + trimestral) ----
+   Suma en un solo puntaje: Evaluación 50% · Clientes 20% · Tiempos 15% ·
+   Capacitación 15% (renormaliza a lo que haya). El #1 del mes es el Cíclope. */
+function tripPuntajeMes(cid, mesI) {
+  const evs = tripEvalsDe(cid).filter(e => (e.semana || '').slice(0, 7) === mesI);
+  const evalScore = evs.length ? evs.reduce((a, e) => a + e.total, 0) / evs.length : null;
+  const cap = tripCapacProgreso(cid).pct;
+  const rt = retroDe(cid).filter(r => (r.fecha || '').slice(0, 7) === mesI);
+  const cliScore = rt.length ? (rt.reduce((a, r) => a + r.atencion, 0) / rt.length) * 20 : null;
+  const ti = (db.tripTiempos || []).filter(t => !t.del && t.colaboradorId === cid && (t.fecha || '').slice(0, 7) === mesI);
+  const tiScore = ti.length ? (ti.filter(t => t.paso).length / ti.length) * 100 : null;
+  const comps = [[evalScore, 50], [cliScore, 20], [tiScore, 15], [cap, 15]];
+  let wsum = 0, w = 0; comps.forEach(([v, ww]) => { if (v !== null) { wsum += v * ww; w += ww; } });
+  return { total: w ? Math.round(wsum / w) : 0, evalScore, cliScore, tiScore, cap, hasReal: (evs.length || rt.length || ti.length) > 0 };
+}
+function quarterMonths(mesI) { const [y, m] = mesI.split('-').map(Number); const start = Math.floor((m - 1) / 3) * 3 + 1; return [0, 1, 2].map(i => y + '-' + String(start + i).padStart(2, '0')); }
+function tripPromTrimestre(cid, mesI) { const vals = quarterMonths(mesI).map(m => tripPuntajeMes(cid, m)).filter(s => s.hasReal).map(s => s.total); return vals.length ? Math.round(vals.reduce((a, x) => a + x, 0) / vals.length) : null; }
+function cicloGanador(mesI) { const rows = db.personal.filter(p => p.activo && !p.del).map(p => ({ id: p.id, s: tripPuntajeMes(p.id, mesI) })).filter(r => r.s.hasReal).sort((a, b) => b.s.total - a.s.total); return rows[0] ? rows[0].id : null; }
+function tripCicloShift(d) { let [y, m] = tripCicloMes.split('-').map(Number); m += d; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } tripCicloMes = y + '-' + String(m).padStart(2, '0'); renderTripulacion(); }
+function tripCicloHTML() {
+  if (!tripCicloMes) tripCicloMes = mesISO();
+  const gente = db.personal.filter(p => p.activo && !p.del);
+  const [y, m] = tripCicloMes.split('-').map(Number);
+  const rows = gente.map(p => ({ p, s: tripPuntajeMes(p.id, tripCicloMes) })).sort((a, b) => b.s.total - a.s.total);
+  const conData = rows.filter(r => r.s.hasReal);
+  let html = '<div class="card"><div class="fila" style="align-items:center;gap:6px">' +
+    '<button class="btn s mini" onclick="tripCicloShift(-1)">◀</button>' +
+    '<div class="grow centrado"><b>🏆 Cíclope de ' + MESES[m - 1] + ' ' + y + '</b></div>' +
+    '<button class="btn s mini"' + (tripCicloMes >= mesISO() ? ' disabled' : '') + ' onclick="tripCicloShift(1)">▶</button></div>' +
+    '<p class="mini muted" style="margin:8px 0 0">Puntaje total = Evaluación 50% · Clientes 20% · Tiempos 15% · Capacitación 15% (se ajusta a lo que haya registrado).</p></div>';
+  if (conData.length) {
+    const w = rows[0], b = tripBanda(w.s.total);
+    html += '<div class="card" style="text-align:center;border:2px solid var(--amarillo)"><div style="font-size:2.8rem">👑</div>' +
+      '<h3 style="margin:0">' + esc(w.p.nombre) + '</h3><div style="color:' + b.color + ';font-weight:800;font-size:1.5rem">' + w.s.total + '<span style="font-size:.9rem;opacity:.6">/100</span></div>' +
+      '<div class="mini muted" style="margin-top:4px">Cíclope del Mes 🎉 · le corresponde <b>1 día de descanso pagado</b> a elegir el próximo mes</div></div>';
+  } else html += '<p class="muted mini" style="margin:10px 0">Aún no hay datos de evaluación este mes.</p>';
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">Ranking del mes</h3></div>' +
+    rows.map((r, i) => {
+      const s = r.s, medal = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '.';
+      const chip = v => v === null ? '—' : Math.round(v);
+      return '<div class="item-linea"><span style="flex:0 0 30px;font-weight:800;text-align:center">' + medal + '</span>' + avatarPersona(r.p.id, r.p.nombre) +
+        '<div class="grow"><b>' + esc(r.p.nombre) + '</b><div class="mini muted">Eval ' + chip(s.evalScore) + ' · Cli ' + chip(s.cliScore) + ' · Tie ' + chip(s.tiScore) + ' · Cap ' + s.cap + '</div></div>' +
+        '<span class="badge ' + (i === 0 ? 'ok' : 'mor') + '">' + s.total + '</span></div>';
+    }).join('') + '</div>';
+  // trimestral
+  const ms = quarterMonths(tripCicloMes);
+  const lab = MESES[+ms[0].split('-')[1] - 1].slice(0, 3) + '–' + MESES[+ms[2].split('-')[1] - 1].slice(0, 3) + ' ' + ms[0].split('-')[0];
+  const tri = gente.map(p => ({ p, prom: tripPromTrimestre(p.id, tripCicloMes) })).filter(r => r.prom !== null).sort((a, b) => b.prom - a.prom);
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📊 Trimestre ' + lab + '</h3></div>' +
+    (tri.length ? '<p class="mini muted">Promedio de las evaluaciones totales del trimestre. El más alto recibe <b>bonificación</b>.</p>' +
+      tri.map((r, i) => '<div class="item-linea"><span style="flex:0 0 30px;font-weight:800;text-align:center">' + (i === 0 ? '⭐' : (i + 1) + '.') + '</span>' + avatarPersona(r.p.id, r.p.nombre) +
+        '<div class="grow"><b>' + esc(r.p.nombre) + '</b>' + (i === 0 ? ' <span class="badge ok">bonificación</span>' : '') + '</div><span class="badge mor">' + r.prom + '</span></div>').join('')
+      : '<p class="muted mini">Sin datos del trimestre aún.</p>') + '</div>';
+  return html;
+}
 
 /* ---- TAB 4: Auditoría (por sucursal + día) ---- */
 function tripAuditoriaHTML() {
