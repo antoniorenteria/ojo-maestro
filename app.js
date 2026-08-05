@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.4';
+const VERSION = '5.5';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -3652,6 +3652,11 @@ function tripPerfil(id) {
     '<div class="item-linea"><div class="grow"><b>' + esc(pl.objetivo) + '</b>' + (pl.fecha ? ' <span class="mini muted">· ' + fmtFecha(pl.fecha) + '</span>' : '') +
     (pl.acciones ? '<div class="mini muted">' + esc(pl.acciones) + '</div>' : '') + '</div>' +
     (pl.estado === 'cerrado' ? '<span class="badge ok">✔ cumplido</span>' : '<button class="btn s mini" onclick="tripCerrarPlan(\'' + e.id + '\')">Marcar cumplido</button>') + '</div>').join('');
+  // comentarios de las encuestas de clientes (retroalimentación)
+  const rcoms = retroDe(id).filter(r => (r.comentario || '').trim()).sort((a, b) => (b.t || 0) - (a.t || 0));
+  if (rcoms.length) html += '<div class="sep"></div><h4 style="margin:6px 0">🗣️ Comentarios de clientes</h4>' + rcoms.slice(0, 15).map(r =>
+    '<div class="item-linea" style="align-items:flex-start"><span style="flex:0 0 26px;font-size:1.15rem">' + ((RETRO_EMOJIS[r.atencion - 1] || ['💬'])[0]) + '</span>' +
+    '<div class="grow"><div>' + esc(r.comentario) + '</div><div class="mini muted">' + fmtFecha(r.fecha) + '</div></div></div>').join('');
   // historial
   if (evs.length) html += '<div class="sep"></div><h4 style="margin:6px 0">📜 Historial</h4><div class="tabla-wrap"><table><tr><th>Semana</th><th class="num">/100</th><th>Acción</th></tr>' +
     evs.slice().reverse().map(e => '<tr><td class="mini">' + tripSemanaLabel(e.semana).replace('Semana del ', '') + '</td><td class="num">' + e.total + '</td><td class="mini">' + esc(e.accion || '') + '</td></tr>').join('') + '</table></div>';
@@ -4359,6 +4364,27 @@ function guardarAviso(id) {
   guardarDB(); cerrarModal(); renderDireccion(); toast('📢 Aviso guardado');
 }
 function borrarAviso(id) { const a = (db.avisos || []).find(x => x.id === id); if (!a) return; if (!confirm('¿Eliminar este aviso?')) return; a.del = true; a.t = Date.now(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Aviso eliminado'); }
+/* --- tareas propias de Dirección (con horario y sucursal), se ven en Hoy --- */
+function modalDirTarea(id) {
+  const t = id ? (db.dirTareas || []).find(x => !x.del && x.id === id) : null;
+  abrirModal('<h3>' + (t ? '✏️ Editar tarea' : '📌 Nueva tarea de Dirección') + '</h3>' +
+    '<label>Tarea</label><textarea id="dt-txt" placeholder="Ej. Revisar precios con proveedor…">' + esc(t ? t.texto : '') + '</textarea>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Fecha</label><input id="dt-fecha" type="date" value="' + (t ? t.fecha : hoyISO()) + '"></div>' +
+    '<div style="flex:1"><label>Hora</label><input id="dt-hora" type="time" value="' + (t ? (t.hora || '') : '') + '"></div></div>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="dt-suc">' + sucOptions(t ? t.sucursalId : 'all') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="guardarDirTarea(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (t ? '<button class="btn peligro" style="margin-top:8px" onclick="borrarDirTarea(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function guardarDirTarea(id) {
+  const txt = $('dt-txt').value.trim(); if (!txt) return toast('Escribe la tarea');
+  const datos = { texto: txt, fecha: $('dt-fecha').value, hora: $('dt-hora').value, sucursalId: $('dt-suc').value, t: Date.now() };
+  if (id) { const t = (db.dirTareas || []).find(x => x.id === id); if (t) Object.assign(t, datos); }
+  else { db.dirTareas = db.dirTareas || []; db.dirTareas.unshift(Object.assign({ id: 'dt-' + uid(), hecha: false, del: false }, datos)); }
+  guardarDB(); cerrarModal(); renderDireccion(); toast('📌 Tarea guardada');
+}
+function toggleDirTarea(id) { const t = (db.dirTareas || []).find(x => x.id === id); if (!t) return; t.hecha = !t.hecha; t.t = Date.now(); guardarDB(); renderDireccion(); }
+function borrarDirTarea(id) { const t = (db.dirTareas || []).find(x => x.id === id); if (!t) return; if (!confirm('¿Eliminar esta tarea?')) return; t.del = true; t.t = Date.now(); guardarDB(); cerrarModal(); renderDireccion(); toast('🗑️ Tarea eliminada'); }
 
 /* --- HOY --- */
 function dirHoy() {
@@ -4375,6 +4401,18 @@ function dirHoy() {
     '<div class="stat"><div class="v">' + abiertos.length + '</div><div class="l">en turno ahora</div></div>' +
     '<div class="stat"><div class="v">' + tareasHoy + '</div><div class="l">tareas hechas hoy</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propHoyTot) + '</div><div class="l">💳 propinas hoy</div></div></div>';
+  // 📌 tareas propias de Dirección (con horario y sucursal)
+  const dts = (db.dirTareas || []).filter(t => !t.del).sort((a, b) => (a.hecha ? 1 : 0) - (b.hecha ? 1 : 0) || (a.fecha || '').localeCompare(b.fecha || '') || (a.hora || '').localeCompare(b.hora || ''));
+  html += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📌 Mis tareas de Dirección</h3>' +
+    '<button class="btn s mini" onclick="modalDirTarea()">+ Nueva</button></div>' +
+    (dts.length ? dts.map(t => {
+      const sn = t.sucursalId === 'all' ? 'Ambas' : (suc(t.sucursalId)?.nombre || '');
+      const cuando = (t.fecha ? fmtFechaCorta(t.fecha) : '') + (t.hora ? ' · ' + t.hora : '');
+      return '<div class="item-linea"><span style="flex:0 0 26px;font-size:1.1rem;cursor:pointer" onclick="toggleDirTarea(\'' + t.id + '\')">' + (t.hecha ? '✅' : '⬜') + '</span>' +
+        '<div class="grow"><b' + (t.hecha ? ' style="opacity:.55;text-decoration:line-through"' : '') + '>' + esc(t.texto) + '</b>' +
+        '<div class="mini muted">' + esc(cuando) + (sn ? ' · 🏬 ' + esc(sn) : '') + '</div></div>' +
+        '<button class="btn s mini" onclick="modalDirTarea(\'' + t.id + '\')">✏️</button></div>';
+    }).join('') : '<p class="muted mini">Sin tareas de Dirección. Agrega una con horario y sucursal.</p>') + '</div>';
   db.sucursales.filter(s => s.activa && !s.del).forEach(s => {
     const enTurno = turnosAbiertos(s.id);
     const falt = faltantes(s.id);
