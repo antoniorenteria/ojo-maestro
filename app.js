@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.8';
+const VERSION = '5.9';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -5809,7 +5809,8 @@ function finSetCv() {
   const v = prompt('Costo de venta estimado (%). Tu medición real de Loyverse es 48%.', db.config.finCvPct || 48);
   if (v === null) return; const n = Number(v);
   if (!(n > 0 && n < 100)) return toast('Pon un porcentaje entre 1 y 99');
-  db.config.finCvPct = n; guardarDB(); renderFinanzas(); toast('Costo de venta al ' + n + '%');
+  db.config.finCvPct = n; db.configTs = db.configTs || {}; db.configTs.finCvPct = Date.now();
+  guardarDB(); renderFinanzas(); toast('Costo de venta al ' + n + '%');
 }
 function finPedirRango() {
   const r = finRango('mes');
@@ -5841,21 +5842,18 @@ function renderFinanzas() {
   pintarRed();
   const c = $('fin-contenido'); if (!c) return;
   if (finTab === 'movimientos') c.innerHTML = finMovimientosTab();
+  else if (finTab === 'flujo') c.innerHTML = finFlujoTab();
+  else if (finTab === 'resultados') c.innerHTML = finResultadosTab();
   else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
   else if (finTab === 'config') c.innerHTML = finConfigTab();
   else c.innerHTML = finResumenTab();
 }
 
-/* ---- TAB 1: Resumen (dashboard ejecutivo) ---- */
-function finResumenTab() {
-  const r = finRango(finPeriodoSel);
-  const g = finResumen(r.desde, r.hasta, finSuc);
-  const gp = finResumen(r.pDesde, r.pHasta, finSuc);
-  const per = finPeriodoSel;
+/* ---- selector de periodo + sucursal (compartido por varias pestañas) ---- */
+function finSelectorHTML() {
+  const r = finRango(finPeriodoSel), per = finPeriodoSel;
   const chip = (s, txt) => '<button class="btn ' + (per === s ? 'p' : 's') + ' mini" onclick="finSetPeriodo(\'' + s + '\')">' + txt + '</button>';
-  const card = (cls, val, lbl, varPct, inv) => '<div class="stat' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' +
-    (varPct !== undefined ? '<div style="margin-top:4px">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
-  let h = '<div class="card"><div class="fila" style="flex-wrap:wrap;gap:6px">' +
+  return '<div class="card"><div class="fila" style="flex-wrap:wrap;gap:6px">' +
     chip('hoy', 'Hoy') + chip('semana', 'Semana') + chip('mes', 'Mes') + chip('mesant', 'Mes ant.') +
     chip('anio', 'Año') + chip('anioant', 'Año ant.') + chip('personalizado', '📅 Rango') + '</div>' +
     '<div class="fila" style="margin-top:10px"><select onchange="finSetSuc(this.value)" style="flex:1">' +
@@ -5863,6 +5861,16 @@ function finResumenTab() {
     db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '"' + (finSuc === s.id ? ' selected' : '') + '>🏬 ' + esc(s.nombre) + '</option>').join('') +
     '</select></div>' +
     '<p class="mini muted" style="margin-top:8px">' + esc(r.label) + ' · comparado con ' + esc(r.pLabel) + '</p></div>';
+}
+
+/* ---- TAB 1: Resumen (dashboard ejecutivo) ---- */
+function finResumenTab() {
+  const r = finRango(finPeriodoSel);
+  const g = finResumen(r.desde, r.hasta, finSuc);
+  const gp = finResumen(r.pDesde, r.pHasta, finSuc);
+  const card = (cls, val, lbl, varPct, inv) => '<div class="stat' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' +
+    (varPct !== undefined ? '<div style="margin-top:4px">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
+  let h = finSelectorHTML();
   h += '<div class="grid c3">' +
     card(' verde', fmt$(g.ventas), 'Ingresos', variacion(g.ventas, gp.ventas)) +
     card(' rojo', fmt$(g.costoVenta), 'Costo de venta ' + Math.round(g.cv) + '%', variacion(g.costoVenta, gp.costoVenta), true) +
@@ -5908,16 +5916,100 @@ function finWaterfallHTML(g) {
     'Las compras de insumo del periodo (' + fmt$(g.compras) + ') y las inversiones en activos (' + fmt$(g.activos) + ') no restan aquí: son flujo, no gasto del resultado.</p></div>';
   return h;
 }
-function finPorCatHTML(g) {
+function finPorCatHTML(g, drill) {
   const ents = Object.entries(g.porCat);
   const filas = [['nomina', '🧑‍🍳 Nómina (turnos)', g.nomina]].concat(ents.map(([c, v]) => [c, finNombreCat(c), v])).filter(x => x[2] > 0).sort((a, b) => b[2] - a[2]);
   const tot = filas.reduce((a, x) => a + x[2], 0);
-  let h = '<div class="card"><h3>🍩 En qué se va el dinero</h3>';
-  h += filas.length ? filas.map(([c, nom, v]) => '<div class="item-linea"><div class="grow"><b>' + esc(nom) + '</b>' +
-    '<div class="barra" style="margin-top:6px"><i style="width:' + (tot ? Math.round(v / tot * 100) : 0) + '%"></i></div></div>' +
-    '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b><div class="mini muted">' + (tot ? Math.round(v / tot * 100) : 0) + '%</div></div></div>').join('')
-    : '<p class="mini muted">Sin gastos en el periodo.</p>';
+  let h = '<div class="card"><h3>🍩 En qué se va el dinero</h3>' + (drill ? '<p class="mini muted" style="margin-top:-4px">Toca una categoría para ver los movimientos que la componen.</p>' : '');
+  h += filas.length ? filas.map(([c, nom, v]) => {
+    const clickable = drill && c !== 'nomina';
+    return '<div class="item-linea"' + (clickable ? ' style="cursor:pointer" onclick="finDrillCat(\'' + c + '\')"' : '') + '><div class="grow"><b>' + esc(nom) + '</b>' + (clickable ? ' <span class="mini muted">›</span>' : '') +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + (tot ? Math.round(v / tot * 100) : 0) + '%"></i></div></div>' +
+      '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b><div class="mini muted">' + (tot ? Math.round(v / tot * 100) : 0) + '%</div></div></div>';
+  }).join('') : '<p class="mini muted">Sin gastos en el periodo.</p>';
   return h + '</div>';
+}
+function finDrillCat(catId) {
+  const r = finRango(finPeriodoSel);
+  const movs = finLedger(r.desde, r.hasta, finSuc).filter(m => finCatId(m.categoriaId) === catId).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  const tot = movs.reduce((a, m) => a + (Number(m.monto) || 0), 0);
+  abrirModal('<h3>' + finNombreCat(catId) + '</h3><p class="mini muted">' + esc(r.label) + ' · ' + fmt$(tot) + ' en ' + movs.length + ' movimiento(s)</p>' +
+    '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Concepto</th><th>Suc.</th><th class="num">Monto</th></tr>' +
+    (movs.length ? movs.map(m => '<tr><td>' + fmtFechaCorta(m.fecha) + '</td><td>' + esc(m.concepto || '—') + '</td><td class="mini">' + esc(suc(m.sucursalId)?.nombre || (m.sucursalId === 'all' ? 'Ambas' : '—')) + '</td><td class="num">' + fmt$(m.monto) + '</td></tr>').join('') : '<tr><td colspan="4" class="muted">Sin detalle.</td></tr>') +
+    '</table></div><button class="btn s" style="margin-top:10px" onclick="cerrarModal()">Cerrar</button>');
+}
+
+/* ---- TAB: Resultados (Estado de resultados + comparación de sucursales) ---- */
+function finResultadosTab() {
+  const r = finRango(finPeriodoSel);
+  const g = finResumen(r.desde, r.hasta, finSuc);
+  let h = finSelectorHTML();
+  h += finWaterfallHTML(g);
+  h += finComparaHTML(r);
+  h += finPorCatHTML(g, true);
+  return h;
+}
+function finComparaHTML(r) {
+  const sucs = db.sucursales.filter(s => s.activa && !s.del);
+  const cols = [{ id: 'global', nombre: 'Global' }].concat(sucs.map(s => ({ id: s.id, nombre: s.nombre })));
+  const data = cols.map(c => ({ c, g: finResumen(r.desde, r.hasta, c.id) }));
+  const fila = (lbl, fn) => '<tr><td>' + lbl + '</td>' + data.map(d => '<td class="num">' + fn(d.g) + '</td>').join('') + '</tr>';
+  return '<div class="card"><h3>⚔️ Comparación de sucursales</h3><div class="tabla-wrap"><table>' +
+    '<tr><th></th>' + data.map(d => '<th class="num">' + esc(d.c.nombre) + '</th>').join('') + '</tr>' +
+    fila('Ventas', g => fmt$(g.ventas)) +
+    fila('Costo de venta', g => fmt$(g.costoVenta)) +
+    fila('Utilidad bruta', g => fmt$(g.utilBruta)) +
+    fila('Nómina', g => fmt$(g.nomina)) +
+    fila('Gastos op.', g => fmt$(g.gastosOp)) +
+    fila('Utilidad operativa', g => '<b class="amar">' + fmt$(g.utilOperativa) + '</b>') +
+    fila('Margen', g => (g.ventas ? Math.round(g.margen) + '%' : '—')) +
+    fila('Punto de equilibrio', g => fmt$(g.pe)) +
+    '</table></div><p class="mini muted" style="margin-top:8px">Vender más no es ganar más: compara la fila de <b>Ventas</b> contra la de <b>Utilidad operativa</b>.</p></div>';
+}
+
+/* ---- TAB: Flujo de efectivo (entradas, salidas, saldo por cuenta) ---- */
+function finFlujoTab() {
+  const r = finRango(finPeriodoSel);
+  const g = finResumen(r.desde, r.hasta, finSuc);
+  const led = finLedger(r.desde, r.hasta, finSuc);
+  const pag = led.filter(m => m.tipo !== 'transferencia' && m.tipo !== 'ingreso' && m.estado !== 'pendiente');
+  const suma = f => pag.filter(f).reduce((a, m) => a + (Number(m.monto) || 0), 0);
+  const salComp = suma(m => finNivel(m.categoriaId) === 'costo' || m.tipo === 'compra_inv');
+  const salAct = suma(m => finNivel(m.categoriaId) === 'activo' || m.tipo === 'activo');
+  const salFin = suma(m => finNivel(m.categoriaId) === 'financiero');
+  const salOp = suma(m => { const n = finNivel(m.categoriaId); return n !== 'costo' && n !== 'activo' && n !== 'financiero' && m.tipo !== 'compra_inv' && m.tipo !== 'activo' && finCatId(m.categoriaId) !== 'sueldos'; });
+  const entradas = [['💰 Ventas', g.ventas], ['➕ Otros ingresos', g.otrosIngresos]].filter(x => x[1] > 0);
+  const salidas = [['🧑‍🍳 Nómina', g.nomina], ['🏬 Gastos operativos', salOp], ['🥩 Compras de insumo', salComp], ['🪑 Activos / inversión', salAct], ['🏦 Financieros', salFin]].filter(x => x[1] > 0);
+  const totEnt = entradas.reduce((a, x) => a + x[1], 0), totSal = salidas.reduce((a, x) => a + x[1], 0);
+  const linea = (l, v, cls) => '<div class="item-linea"><div class="grow">' + l + '</div><b' + (cls ? ' class="' + cls + '"' : '') + '>' + fmt$(v) + '</b></div>';
+  let h = finSelectorHTML();
+  h += '<div class="grid c3">' +
+    '<div class="stat verde"><div class="v">' + fmt$(totEnt) + '</div><div class="l">entró</div></div>' +
+    '<div class="stat rojo"><div class="v">' + fmt$(totSal) + '</div><div class="l">salió</div></div>' +
+    '<div class="stat' + (g.flujo >= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(g.flujo) + '</div><div class="l">saldo del periodo</div></div></div>';
+  h += '<div class="card"><h3>⬇️ Entradas</h3>' + (entradas.length ? entradas.map(x => linea(x[0], x[1])).join('') : '<p class="mini muted">Sin entradas.</p>') +
+    '<div class="sep"></div>' + linea('<b>Total</b>', totEnt, 'amar') + '</div>';
+  h += '<div class="card"><h3>⬆️ Salidas (pagadas)</h3>' + (salidas.length ? salidas.map(x => linea(x[0], x[1])).join('') : '<p class="mini muted">Sin salidas.</p>') +
+    '<div class="sep"></div>' + linea('<b>Total</b>', totSal, 'amar') + '</div>';
+  // por cuenta (solo de los movimientos registrados en Finanzas)
+  const cuentas = finCuentasVivas().map(c => {
+    let ent = 0, sal = 0;
+    led.forEach(m => {
+      if (m.estado === 'pendiente') return;
+      const mo = Number(m.monto) || 0;
+      if (m.tipo === 'ingreso' && m.cuentaId === c.id) ent += mo;
+      else if (m.tipo === 'transferencia') { if (m.cuentaId === c.id) sal += mo; if (m.cuentaDestinoId === c.id) ent += mo; }
+      else if (m.cuentaId === c.id) sal += mo;
+    });
+    return { c, ent, sal, neto: ent - sal };
+  }).filter(x => x.ent || x.sal);
+  if (cuentas.length) h += '<div class="card"><h3>🏦 Movimiento por cuenta</h3><p class="mini muted" style="margin-top:-4px">De lo registrado en Finanzas (las ventas en efectivo entran al conciliar el cierre).</p>' +
+    '<div class="tabla-wrap"><table><tr><th>Cuenta</th><th class="num">Entró</th><th class="num">Salió</th><th class="num">Neto</th></tr>' +
+    cuentas.map(x => '<tr><td>' + esc(x.c.nombre) + '</td><td class="num">' + fmt$(x.ent) + '</td><td class="num">' + fmt$(x.sal) + '</td><td class="num"><b class="amar">' + fmt$(x.neto) + '</b></td></tr>').join('') +
+    '</table></div></div>';
+  if (g.pendientes > 0) h += '<div class="card" style="border:1px solid var(--alerta)"><h3>🔴 Obligaciones por pagar</h3>' +
+    '<p class="mini">Tienes <b>' + fmt$(g.pendientes) + '</b> en compras/gastos a crédito sin liquidar. Cuando los pagues (Movimientos → ✅), saldrán del efectivo aquí sin volver a contar como gasto.</p></div>';
+  return h;
 }
 function finPeHTML(g) {
   const falta = g.pe - g.ventas;

@@ -344,10 +344,7 @@ function mezclar(a, b) {
   if (a.escandalloSembrado || b.escandalloSembrado) db.escandalloSembrado = true;
   if (a.finCatSembrado || b.finCatSembrado) db.finCatSembrado = a.finCatSembrado || b.finCatSembrado;
   if (a.finCuentasSembrado || b.finCuentasSembrado) db.finCuentasSembrado = a.finCuentasSembrado || b.finCuentasSembrado;
-  if (a.config && b.config && (a.config.finCvPct !== undefined || b.config.finCvPct !== undefined)) {
-    // el costo de venta estimado vive en config; que no se pierda al mezclar
-    if (db.config) db.config.finCvPct = (b.config.finCvPct !== undefined ? b.config.finCvPct : a.config.finCvPct);
-  }
+  // (finCvPct vive en config y ya se mezcla arriba campo-por-campo con su configTs)
 
   ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario', 'gastos', 'tripulacion', 'tripCapac', 'tripAuditoria', 'calEventos', 'objetivos', 'avisos', 'dirTareas', 'retro', 'tripTiempos', 'tripCapacExtra', 'retroPreguntas'].forEach(function (k) {
     var mapa = {};
