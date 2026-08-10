@@ -508,8 +508,9 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
         <button class="btn s" onclick="pedirPinSupervision()"><span class="ico">🔍</span> Supervisión</button>
         <button class="btn s" onclick="pedirPinAdmin()"><span class="ico">👁️</span> Dirección</button>
       </div>
-      <div style="max-width:420px;margin:10px auto 0">
-        <button class="btn s" style="width:100%" onclick="pedirPinTripulacion()"><span class="ico">🎖️</span> Tripulación</button>
+      <div style="max-width:420px;margin:10px auto 0;display:grid;gap:10px;grid-template-columns:1fr 1fr">
+        <button class="btn s" onclick="pedirPinFinanzas()"><span class="ico">💰</span> Finanzas</button>
+        <button class="btn s" onclick="pedirPinTripulacion()"><span class="ico">🎖️</span> Tripulación</button>
       </div>
       <div id="portada-aviso" style="display:none"></div>
       <div style="margin-top:18px"><button class="btn s mini" onclick="toggleTema()">🌓 Cambiar tema</button></div>
@@ -794,6 +795,27 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       <button data-t="auditoria" onclick="tripTabIr('auditoria')">🔍 Auditoría</button>
     </div>
     <div id="trip-contenido"></div>
+  </section>
+
+  <!-- ══════════ FINANZAS ══════════ -->
+  <section class="screen" id="scr-fin">
+    <div class="dir-fijo">
+      <div class="topbar">
+        <img class="logo logo-img" alt="logo" onclick="salirASucursales()" style="cursor:pointer" title="Ir al inicio">
+        <div onclick="menuNavegacion()" style="cursor:pointer" title="Ir a otra sección">
+          <div class="tit amar" style="font-weight:700">💰 Finanzas</div>
+          <div class="sub">Centro de inteligencia financiera ▾</div></div>
+        <div class="grow"></div>
+        <button class="btn s mini" onclick="toggleTema()">🌓</button>
+      </div>
+      <div class="tabs" id="fin-tabs">
+        <button data-t="resumen" class="on" onclick="finTabIr('resumen')">📊 Resumen</button>
+        <button data-t="movimientos" onclick="finTabIr('movimientos')">📒 Movimientos</button>
+        <button data-t="cuentas" onclick="finTabIr('cuentas')">🏦 Cuentas</button>
+        <button data-t="config" onclick="finTabIr('config')">⚙️ Configurar</button>
+      </div>
+    </div>
+    <div id="fin-contenido"></div>
   </section>
 
 </div>

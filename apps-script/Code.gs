@@ -328,7 +328,9 @@ function mezclar(a, b) {
   /* PERSONAL, PRODUCTOS y SUCURSALES registro por registro: union por id,
      y en cada registro gana la version con marca t mas reciente (empate:
      servidor). Las eliminaciones son marcas (del) y tambien se sincronizan. */
-  ['personal', 'productos', 'sucursales', 'insumos', 'recetas'].forEach(function (k) {
+  // catalogos + colecciones de Finanzas: union por id, gana la marca t mas reciente
+  // (finMovimientos es el Libro; se une por id igual que un catalogo, del:true = anulado)
+  ['personal', 'productos', 'sucursales', 'insumos', 'recetas', 'finCategorias', 'finCuentas', 'finMovimientos'].forEach(function (k) {
     var mapa = {};
     (a[k] || []).forEach(function (x) { mapa[x.id] = x; });
     (b[k] || []).forEach(function (x) {
@@ -338,8 +340,14 @@ function mezclar(a, b) {
     db[k] = Object.keys(mapa).map(function (id) { return mapa[id]; });
   });
   db.catTs = Math.max(a.catTs || 0, b.catTs || 0);
-  // bandera de siembra del escandallo: si algun lado ya sembro, no re-sembrar
+  // banderas de siembra: si algun lado ya sembro, no re-sembrar
   if (a.escandalloSembrado || b.escandalloSembrado) db.escandalloSembrado = true;
+  if (a.finCatSembrado || b.finCatSembrado) db.finCatSembrado = a.finCatSembrado || b.finCatSembrado;
+  if (a.finCuentasSembrado || b.finCuentasSembrado) db.finCuentasSembrado = a.finCuentasSembrado || b.finCuentasSembrado;
+  if (a.config && b.config && (a.config.finCvPct !== undefined || b.config.finCvPct !== undefined)) {
+    // el costo de venta estimado vive en config; que no se pierda al mezclar
+    if (db.config) db.config.finCvPct = (b.config.finCvPct !== undefined ? b.config.finCvPct : a.config.finCvPct);
+  }
 
   ['turnos', 'cierres', 'checklists', 'evidencias', 'eventos', 'propinas', 'tareas', 'revisiones', 'preparaciones', 'calendario', 'gastos', 'tripulacion', 'tripCapac', 'tripAuditoria', 'calEventos', 'objetivos', 'avisos', 'dirTareas', 'retro', 'tripTiempos', 'tripCapacExtra', 'retroPreguntas'].forEach(function (k) {
     var mapa = {};

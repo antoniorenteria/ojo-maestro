@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.7';
+const VERSION = '5.8';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -366,7 +366,8 @@ function seedDB() {
     v: 2, ts: Date.now(), catTs: 0, configTs: {},
     config: {
       adminPin: '2626', supervisorPin: '4040', scriptUrl: '', emailTo: 'elanillodelciclope@gmail.com',
-      whatsapp: '527711232884', baseHoras: 6, alarmaCierre: '20:50', nombreNegocio: 'El Anillo del Cíclope'
+      whatsapp: '527711232884', baseHoras: 6, alarmaCierre: '20:50', nombreNegocio: 'El Anillo del Cíclope',
+      finCvPct: 48
     },
     sucursales: [
       { id: s1, nombre: 'Revolución', direccion: 'Emilio Asiain 119, Revolución, Pachuca', activa: true, t: 0 },
@@ -387,6 +388,10 @@ function seedDB() {
     retroPreguntas: RETRO_PREGUNTAS_SEED.map(q => Object.assign({ del: false, t: 0 }, q)), retroPregSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
+    finMovimientos: [],
+    finCategorias: FIN_CATEGORIAS_SEED.map((c, i) => ({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false })),
+    finCuentas: FIN_CUENTAS_SEED.map((a, i) => ({ id: a[0], nombre: a[1], tipo: a[2], sucursalId: a[3], saldoInicial: 0, activa: true, orden: i, t: 0, del: false })),
+    finCatSembrado: 'v1', finCuentasSembrado: 'v1',
   };
 }
 /* ═══════════ ESCANDALLO (costeo de recetas) ═══════════
@@ -831,6 +836,22 @@ function migrarDB() {
     SEED_RECETAS.forEach(r => { const id = 'rec-' + slug(r.nombre); if (!idsR.has(id)) db.recetas.push({ id, nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 }); });
     db.escandalloSembrado = 'v11'; limpio = true;
   }
+  // v5.8: módulo Finanzas — Libro de movimientos + taxonomía real de Toño + cuentas.
+  // (después de `let limpio` para no romper el arranque con datos legacy)
+  if (!db.finMovimientos) db.finMovimientos = [];
+  if (!db.finCategorias) db.finCategorias = [];
+  if (!db.finCuentas) db.finCuentas = [];
+  if (db.finCatSembrado !== 'v1') {
+    const idsFC = new Set(db.finCategorias.map(x => x.id));
+    FIN_CATEGORIAS_SEED.forEach((c, i) => { if (!idsFC.has(c[0])) db.finCategorias.push({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false }); });
+    db.finCatSembrado = 'v1'; limpio = true;
+  }
+  if (db.finCuentasSembrado !== 'v1') {
+    const idsFA = new Set(db.finCuentas.map(x => x.id));
+    FIN_CUENTAS_SEED.forEach((a, i) => { if (!idsFA.has(a[0])) db.finCuentas.push({ id: a[0], nombre: a[1], tipo: a[2], sucursalId: a[3], saldoInicial: 0, activa: true, orden: i, t: 0, del: false }); });
+    db.finCuentasSembrado = 'v1'; limpio = true;
+  }
+  if (db.config.finCvPct === undefined) db.config.finCvPct = 48;
   db.personal.forEach(p => { if (p.pin !== undefined) { delete p.pin; limpio = true; } });
   /* v1.5: tapas, domos y vaso soufflé se cuentan por PIEZA, no por paquete.
      Se sube la marca t de cada producto para que el cambio gane en el merge
@@ -1202,7 +1223,7 @@ function ir(id) {
   window.scrollTo(0, 0);
   renderPantalla(id);
 }
-function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; esTrip = false; ir('scr-portada'); }
+function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; esTrip = false; esFin = false; ir('scr-portada'); }
 function renderPantalla(id) {
   if (id === 'scr-portada') renderPortada();
   if (id === 'scr-suc') renderSucursal();
@@ -1218,6 +1239,7 @@ function renderPantalla(id) {
   if (id === 'scr-esc') renderEscandallo();
   if (id === 'scr-dir') renderDireccion();
   if (id === 'scr-trip') renderTripulacion();
+  if (id === 'scr-fin') renderFinanzas();
 }
 /* menú del título: saltar entre sucursales y paneles sin volver al inicio */
 function menuNavegacion() {
@@ -1230,6 +1252,7 @@ function menuNavegacion() {
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();irCalendario()">📅 Calendario</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinEscandallo()">📐 Escandallo</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinSupervision()">🔍 Supervisión</button>' +
+    '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinFinanzas()">💰 Finanzas</button>' +
     '<button class="btn s" style="margin-bottom:10px" onclick="cerrarModal();pedirPinAdmin()">👁️ Dirección</button>' +
     '<button class="btn s" onclick="cerrarModal();salirASucursales()">🏠 Pantalla de inicio</button>');
 }
@@ -1734,18 +1757,45 @@ function borrarBorradorCierre(fecha, sid) {
 /* Ventas traídas de Loyverse para el día en curso (null = aún sin consultar,
    o el POS no está conectado y se sigue capturando a mano). */
 let posHoy = null;
+/* true mientras esperamos a Loyverse en una sucursal que YA sabemos que lo usa:
+   así el checklist muestra el modo automático al instante, sin el parpadeo de
+   "captura a mano → automático" mientras responde el backend. */
+let posEsperado = false;
+/* recordamos por sucursal si sus ventas llegan solas de Loyverse.
+   Devuelve true/false si ya lo sabemos, o undefined si aún no se ha consultado. */
+const POS_MODO_KEY = 'ojo_pos_modo';
+function posModoLeer(sid) {
+  try {
+    const m = JSON.parse(localStorage.getItem(POS_MODO_KEY) || '{}');
+    return sid in m ? !!m[sid] : undefined;
+  } catch (e) { return undefined; }
+}
+function posModoGuardar(sid, usa) {
+  try {
+    const m = JSON.parse(localStorage.getItem(POS_MODO_KEY) || '{}');
+    m[sid] = !!usa;
+    localStorage.setItem(POS_MODO_KEY, JSON.stringify(m));
+  } catch (e) { }
+}
 async function consultarPOS() {
-  posHoy = null;
   const enChk = () => document.querySelector('.screen.active')?.id === 'scr-chk';
-  if (!enLinea()) { if (enChk()) renderChecklist(); return; }
   const sid = sucursalActual;
+  if (!enLinea()) { if (enChk()) renderChecklist(); return; }  // sin red: conserva el modo ya mostrado
   const r = await llamarBackend({ action: 'loyverse', fecha: hoyISO(), sucursalId: sid });
   if (sid !== sucursalActual) return;    // ya cambió de sucursal mientras respondía
   if (r && r.ok && r.disponible) {
     posHoy = r;
+    posEsperado = false;
+    posModoGuardar(sid, true);           // esta sucursal cierra ventas por Loyverse
     // el POS manda la cifra de ventas: se refleja en el borrador
     cierreBorrador.ventas = String(r.ventas);
     guardarBorradorCierre();
+  } else if (r && r.ok) {                 // respondió: esta sucursal NO usa Loyverse
+    posHoy = null;
+    posEsperado = false;
+    posModoGuardar(sid, false);
+  } else {                                // no se pudo confirmar (error/red): captura a mano,
+    posEsperado = false;                  // sin recordar el modo, para reintentar la próxima vez
   }
   if (enChk()) renderChecklist();        // refresca siempre: con o sin POS
 }
@@ -1756,6 +1806,13 @@ function irChecklist() {
   ir('scr-chk');
   // se recupera lo que se haya dejado a medias hoy en esta sucursal
   if (cargarBorradorCierre() && !cierreDelDia()) toast('📝 Se recuperó lo que llevabas capturado');
+  // el cierre se pinta en automático de inmediato (sin el parpadeo manual→Loyverse):
+  //  · si ya sabemos que la sucursal usa Loyverse → automático
+  //  · si aún no lo sabemos pero hay red → automático "cargando" mientras consulta
+  //  · si sabemos que es manual, o no hay red → captura a mano
+  posHoy = null;
+  const modoPOS = posModoLeer(sucursalActual);   // true / false / undefined
+  posEsperado = modoPOS === true || (modoPOS === undefined && enLinea());
   renderChecklist();
   // en segundo plano: si hay POS conectado, trae las ventas y aparece el cuadre
   consultarPOS();
@@ -1778,9 +1835,10 @@ function renderResumenChk() {
   const caja = cie ? cie.caja : Number(cierreBorrador.caja || 0);
   const propTot = propinasDe(hoyISO(), sucursalActual).reduce((a, x) => a + x.monto, 0);
   const pos = cie ? cie.pos : posHoy;   // desglose del punto de venta, si lo hay
+  const modoLoyverse = pos || (!cie && posEsperado);   // etiqueta automática desde el inicio
   $('chk-dinero').innerHTML =
     '<div class="stat verde"><div class="v">' + fmt$(ventas) + '</div><div class="l">ventas' +
-    (pos ? ' · Loyverse' : ' cierre') + '</div></div>' +
+    (modoLoyverse ? ' · Loyverse' : ' cierre') + '</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(caja) + '</div><div class="l">caja de dinero</div></div>' +
     '<div class="stat"><div class="v">' + fmt$(propTot) + '</div><div class="l">💳 propinas</div></div>';
   // ── cuadre de caja: efectivo que reporta el POS vs lo que se contó ──
@@ -1849,11 +1907,18 @@ function filaDinero(r, cie) {
       '</div>';
   }
   const foto = cierreFotos[r.id];
+  // la sucursal cierra ventas por Loyverse: ya sea con datos (posHoy) o porque
+  // ya sabíamos que lo usa y aún están cargando (posEsperado)
+  const hayPos = posHoy || posEsperado;
   // las VENTAS, cuando vienen de Loyverse, no se teclean: campo de solo lectura
-  const desdePOS = r.dinero === 'ventas' && posHoy;
+  const desdePOS = r.dinero === 'ventas' && hayPos;
+  const cargandoPOS = desdePOS && !posHoy;   // el modo ya es automático, faltan las cifras frescas
   const meta = desdePOS
-    ? '📮 Ventas de Loyverse (' + (posHoy.recibos || 0) + ' tickets) · foto opcional'
-    : (r.dinero === 'caja' && posHoy ? 'Cuenta el efectivo · foto al cerrar' : 'Monto y foto al cerrar');
+    ? (cargandoPOS ? '📮 Ventas de Loyverse · actualizando…'
+      : '📮 Ventas de Loyverse (' + (posHoy.recibos || 0) + ' tickets) · foto opcional')
+    : (r.dinero === 'caja' && hayPos ? 'Cuenta el efectivo · foto al cerrar' : 'Monto y foto al cerrar');
+  const valVentas = posHoy ? fmt$(posHoy.ventas)
+    : (cierreBorrador.ventas !== '' && cierreBorrador.ventas != null ? fmt$(cierreBorrador.ventas) : '…');
   return '<div class="reg fila-cierre">' +
     '<div class="box">' + (desdePOS ? '📮' : '') + '</div>' +
     '<div class="grow"><div class="tt">' + r.em + ' ' + esc(r.n) + '</div>' +
@@ -1863,7 +1928,7 @@ function filaDinero(r, cie) {
     (foto ? '🔄' : '📷') + '</button>' +
     '<div class="reg-dinero">' +
     (desdePOS
-      ? '<input id="chk-ventas" type="text" readonly value="' + fmt$(posHoy.ventas) + '" title="Viene de Loyverse" style="font-weight:700">'
+      ? '<input id="chk-ventas" type="text" readonly value="' + valVentas + '" title="Viene de Loyverse" style="font-weight:700">'
       : '<input id="chk-' + r.dinero + '" type="number" inputmode="decimal" placeholder="' + r.ph + '" value="' +
         esc(cierreBorrador[r.dinero]) + '" oninput="cierreBorrador.' + r.dinero + '=this.value;guardarBorradorCierre();renderResumenChk()">') +
     '</div></div>';
@@ -5494,6 +5559,569 @@ function chequearAlarmaCierre() {
     (sucursalActual ? '<button class="btn p gigante" style="margin-top:8px" onclick="cerrarModal();irChecklist()">' +
       (sinCerrar ? '📋 Ir a cerrar el turno' : '📋 Ir al checklist') + '</button>' : '') +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Entendido</button>');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   💰 FINANZAS · Centro de inteligencia financiera (Fase 1)
+   ---------------------------------------------------------------
+   Todo se apoya en UN solo Libro de Movimientos. El Dashboard, el
+   Estado de Resultados y el Flujo NO son pantallas separadas: son
+   vistas del mismo libro + las ventas de Loyverse.
+   Distinción clave (Resultado vs Flujo): cada movimiento sabe cuándo
+   pega a la utilidad (afectaResultado) y cuándo sale el efectivo
+   (fechaFlujo). Una compra a crédito es resultado hoy, flujo después.
+   Regla de oro: no duplicar. Las ventas ya vienen de los cierres/
+   Loyverse; los gastos ya se capturan en 💸 Gastos; el costo de venta
+   ya sale del escandallo. Finanzas los LEE, no los recaptura.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* grupos contables (para agrupar la taxonomía y el "en qué se va") */
+const FIN_GRUPOS = {
+  PERSONAL: { nombre: 'Personal', emoji: '🧑‍🍳' },
+  OPERACION: { nombre: 'Operación', emoji: '🏬' },
+  MARKETING: { nombre: 'Marketing', emoji: '📣' },
+  ADMIN: { nombre: 'Administración', emoji: '📋' },
+  FINANCIEROS: { nombre: 'Financieros', emoji: '🏦' },
+  ACTIVOS: { nombre: 'Activos', emoji: '🪑' },
+  INVENTARIO: { nombre: 'Inventario / Costo', emoji: '🥩' }
+};
+/* taxonomía REAL de Toño (de su libro 2026). nivel = a dónde pega en el P&L:
+   costo = costo de ventas · operativo = gastos operativos · financiero =
+   gastos financieros · activo = inversión (no resta a la utilidad) · impuesto */
+const FIN_CATEGORIAS_SEED = [
+  // [id, nombre, grupo, nivel, emoji]
+  ['sueldos', 'Sueldos y salarios', 'PERSONAL', 'operativo', '🧑‍🍳'],
+  ['mano-obra', 'Mano de obra contratada', 'PERSONAL', 'operativo', '🤝'],
+  ['imp-salarios', 'Impuestos sobre salarios', 'PERSONAL', 'operativo', '🧾'],
+  ['uniformes', 'Uniformes', 'PERSONAL', 'operativo', '👕'],
+  ['personal-bazar', 'Personal stand bazar', 'PERSONAL', 'operativo', '🎪'],
+  ['sueldos-admin', 'Sueldos administrativos', 'PERSONAL', 'operativo', '💼'],
+  ['personal-tono', 'Personal Toño', 'PERSONAL', 'operativo', '👤'],
+  ['materiales', 'Materiales de trabajo', 'OPERACION', 'operativo', '🧰'],
+  ['renta', 'Renta', 'OPERACION', 'operativo', '🏠'],
+  ['internet', 'Internet', 'OPERACION', 'operativo', '🌐'],
+  ['luz', 'Luz', 'OPERACION', 'operativo', '💡'],
+  ['agua', 'Agua', 'OPERACION', 'operativo', '🚰'],
+  ['transporte', 'Gastos de transporte', 'OPERACION', 'operativo', '🚚'],
+  ['reparaciones', 'Reparaciones', 'OPERACION', 'operativo', '🛠️'],
+  ['mantenimiento', 'Mantenimiento (limpieza y mejoras)', 'OPERACION', 'operativo', '🔧'],
+  ['servicios', 'Servicios (gas, otros)', 'OPERACION', 'operativo', '⛽'],
+  ['mkt-online', 'Marketing y publicidad online', 'MARKETING', 'operativo', '📱'],
+  ['mkt-offline', 'Marketing y publicidad offline', 'MARKETING', 'operativo', '📰'],
+  ['ediciones-bazar', 'Ediciones de bazar', 'MARKETING', 'operativo', '🎪'],
+  ['mkt-varios', 'Marketing varios (adornos, eventos)', 'MARKETING', 'operativo', '🎉'],
+  ['honorarios', 'Honorarios profesionales', 'ADMIN', 'operativo', '👔'],
+  ['membresias', 'Membresías y suscripciones', 'ADMIN', 'operativo', '🔑'],
+  ['permisos', 'Permisos y licencias', 'ADMIN', 'operativo', '📜'],
+  ['seguros', 'Seguros', 'ADMIN', 'operativo', '🛡️'],
+  ['intereses', 'Intereses pagados', 'FINANCIEROS', 'financiero', '📉'],
+  ['gastos-banco', 'Gastos bancarios', 'FINANCIEROS', 'financiero', '🏦'],
+  ['comisiones', 'Comisiones', 'FINANCIEROS', 'financiero', '💳'],
+  ['mobiliario', 'Mobiliario y equipo', 'ACTIVOS', 'activo', '🪑'],
+  ['compra-insumos', 'Compra de insumos', 'INVENTARIO', 'costo', '🥩'],
+  ['compra-mercancia', 'Compra de mercancía', 'INVENTARIO', 'costo', '📦'],
+  ['otros', 'Otros', 'OPERACION', 'operativo', '📌']
+];
+/* puente: los códigos viejos de 💸 Gastos (CAT_GASTO) → categoría nueva */
+const FIN_CAT_LEGACY = { insumos: 'compra-insumos', limpieza: 'mantenimiento', manten: 'mantenimiento', servicios: 'servicios', empaque: 'materiales', otros: 'otros' };
+/* cuentas: dónde vive y de dónde sale el dinero */
+const FIN_CUENTAS_SEED = [
+  // [id, nombre, tipo, sucursalId]
+  ['caja-rev', 'Caja Revolución', 'caja', 'suc-revolucion'],
+  ['caja-tul', 'Caja Tulipanes', 'caja', 'suc-tulipanes'],
+  ['banco', 'Cuenta bancaria', 'banco', 'all'],
+  ['mercadopago', 'Mercado Pago', 'digital', 'all'],
+  ['tarjeta-cred', 'Tarjeta de crédito', 'tarjeta', 'all']
+];
+
+/* estado del módulo */
+let finTab = 'resumen', finPeriodoSel = 'mes', finSuc = 'global', finDesde = '', finHasta = '', esFin = false;
+
+/* ---- catálogo ---- */
+const finCatsVivas = () => (db.finCategorias || []).filter(c => !c.del);
+const finCuentasVivas = () => (db.finCuentas || []).filter(c => !c.del);
+const finCuenta = id => (db.finCuentas || []).find(c => c.id === id);
+const finMovVivos = () => (db.finMovimientos || []).filter(m => !m.del);
+const finCatId = c => FIN_CAT_LEGACY[c] || c;
+function finCat(id) { const rid = finCatId(id); return (db.finCategorias || []).find(c => c.id === rid); }
+function finNivel(id) { const c = finCat(id); return c ? c.nivel : 'operativo'; }
+function finNombreCat(id) { const c = finCat(id); return c ? ((c.emoji ? c.emoji + ' ' : '') + c.nombre) : (id || '—'); }
+function finCuentaCajaDe(sid) { const a = (db.finCuentas || []).find(x => !x.del && x.tipo === 'caja' && x.sucursalId === sid); return a ? a.id : ''; }
+
+/* ---- periodo (devuelve rango actual + el anterior comparable) ---- */
+const isoDe = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function finRango(sel) {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const y = hoy.getFullYear(), m = hoy.getMonth(), d = hoy.getDate();
+  const mesLbl = dt => MESES[dt.getMonth()] + ' ' + dt.getFullYear();
+  let desde, hasta, pDesde, pHasta, label, pLabel;
+  if (sel === 'hoy') {
+    desde = hasta = isoDe(hoy); const ay = new Date(hoy); ay.setDate(d - 1); pDesde = pHasta = isoDe(ay);
+    label = 'Hoy · ' + fmtFechaCorta(desde); pLabel = 'ayer';
+  } else if (sel === 'semana') {
+    const dow = (hoy.getDay() + 6) % 7, lun = new Date(hoy); lun.setDate(d - dow);
+    const dom = new Date(lun); dom.setDate(lun.getDate() + 6);
+    const lunP = new Date(lun); lunP.setDate(lun.getDate() - 7); const domP = new Date(lunP); domP.setDate(lunP.getDate() + 6);
+    desde = isoDe(lun); hasta = isoDe(dom); pDesde = isoDe(lunP); pHasta = isoDe(domP);
+    label = 'Semana · ' + fmtFechaCorta(desde) + '–' + fmtFechaCorta(hasta); pLabel = 'semana anterior';
+  } else if (sel === 'mesant') {
+    desde = isoDe(new Date(y, m - 1, 1)); hasta = isoDe(new Date(y, m, 0));
+    pDesde = isoDe(new Date(y, m - 2, 1)); pHasta = isoDe(new Date(y, m - 1, 0));
+    label = mesLbl(new Date(y, m - 1, 1)); pLabel = mesLbl(new Date(y, m - 2, 1));
+  } else if (sel === 'anio') {
+    desde = isoDe(new Date(y, 0, 1)); hasta = isoDe(new Date(y, 11, 31));
+    pDesde = isoDe(new Date(y - 1, 0, 1)); pHasta = isoDe(new Date(y - 1, 11, 31));
+    label = 'Año ' + y; pLabel = 'año ' + (y - 1);
+  } else if (sel === 'anioant') {
+    desde = isoDe(new Date(y - 1, 0, 1)); hasta = isoDe(new Date(y - 1, 11, 31));
+    pDesde = isoDe(new Date(y - 2, 0, 1)); pHasta = isoDe(new Date(y - 2, 11, 31));
+    label = 'Año ' + (y - 1); pLabel = 'año ' + (y - 2);
+  } else if (sel === 'personalizado') {
+    desde = finDesde || isoDe(new Date(y, m, 1)); hasta = finHasta || isoDe(hoy);
+    const dA = new Date(desde), dB = new Date(hasta), dias = Math.round((dB - dA) / 86400000) + 1;
+    const pB = new Date(dA); pB.setDate(pB.getDate() - 1); const pA = new Date(pB); pA.setDate(pA.getDate() - dias + 1);
+    pDesde = isoDe(pA); pHasta = isoDe(pB);
+    label = 'Del ' + fmtFechaCorta(desde) + ' al ' + fmtFechaCorta(hasta); pLabel = 'periodo anterior';
+  } else { // mes (por defecto)
+    desde = isoDe(new Date(y, m, 1)); hasta = isoDe(new Date(y, m + 1, 0));
+    pDesde = isoDe(new Date(y, m - 1, 1)); pHasta = isoDe(new Date(y, m, 0));
+    label = mesLbl(new Date(y, m, 1)); pLabel = mesLbl(new Date(y, m - 1, 1));
+  }
+  return { desde, hasta, pDesde, pHasta, label, pLabel };
+}
+
+/* ---- Libro unificado: gastos legacy (captura rápida) + movimientos Finanzas ---- */
+function finLedger(desde, hasta, sid) {
+  const out = [];
+  gastosVivos().forEach(g => {
+    if (g.fecha < desde || g.fecha > hasta) return;
+    if (sid && sid !== 'global' && g.sucursalId !== sid) return;
+    out.push({
+      id: g.id, fecha: g.fecha, tipo: 'gasto', concepto: g.concepto, monto: Number(g.monto) || 0,
+      categoriaId: finCatId(g.categoria), sucursalId: g.sucursalId, cuentaId: finCuentaCajaDe(g.sucursalId),
+      metodo: 'efectivo', estado: 'pagado', afectaResultado: true, fechaFlujo: g.fecha,
+      personalId: g.personalId, nota: g.nota, foto: g.foto, fuente: 'gasto'
+    });
+  });
+  finMovVivos().forEach(mv => {
+    if (mv.fecha < desde || mv.fecha > hasta) return;
+    if (sid && sid !== 'global' && mv.sucursalId !== sid) return; // los 'all' solo cuentan en global
+    out.push(Object.assign({ fuente: 'fin' }, mv));
+  });
+  return out;
+}
+
+/* ---- ventas (cierres/Loyverse) y nómina (turnos) del periodo ---- */
+function finVentas(desde, hasta, sid) {
+  return cierresVivos().filter(c => c.fecha >= desde && c.fecha <= hasta && (!sid || sid === 'global' || c.sucursalId === sid))
+    .reduce((a, c) => a + (Number(c.ventas) || 0), 0);
+}
+function finNomina(desde, hasta, sid) {
+  return (db.turnos || []).filter(t => t.fecha >= desde && t.fecha <= hasta && (!sid || sid === 'global' || t.sucursalId === sid))
+    .reduce((a, t) => a + (Number(t.pago) || 0), 0);
+}
+const finCvPct = () => { const v = Number(db.config.finCvPct); return (v > 0 && v < 100) ? v : 48; };
+
+/* ---- MOTOR: Estado de resultados en cascada + flujo + punto de equilibrio ---- */
+function finResumen(desde, hasta, sid) {
+  const ventas = finVentas(desde, hasta, sid);
+  const cv = finCvPct() / 100;
+  const costoVenta = ventas * cv;               // COGS estimado (Resultado)
+  const utilBruta = ventas - costoVenta;
+  const led = finLedger(desde, hasta, sid);
+  let gastosOp = 0, gastosFin = 0, impuestos = 0, activos = 0, compras = 0, otrosIngresos = 0;
+  const porCat = {};
+  led.forEach(m => {
+    const monto = Number(m.monto) || 0;
+    if (m.tipo === 'transferencia') return;             // mover dinero entre cuentas: no toca la utilidad
+    if (m.tipo === 'ingreso') { otrosIngresos += monto; return; }
+    const niv = finNivel(m.categoriaId);
+    if (niv === 'costo' || m.tipo === 'compra_inv') { compras += monto; }   // compra de insumo → flujo, no doble en P&L
+    else if (niv === 'activo' || m.tipo === 'activo') { activos += monto; } // inversión → no resta a la utilidad
+    else if (niv === 'impuesto') { impuestos += monto; }
+    else if (niv === 'financiero') { gastosFin += monto; porCat[finCatId(m.categoriaId)] = (porCat[finCatId(m.categoriaId)] || 0) + monto; }
+    else { // operativo (la nómina base de turnos va aparte para no duplicar 'sueldos')
+      if (finCatId(m.categoriaId) === 'sueldos') return;
+      gastosOp += monto; porCat[finCatId(m.categoriaId)] = (porCat[finCatId(m.categoriaId)] || 0) + monto;
+    }
+  });
+  const nomina = finNomina(desde, hasta, sid);
+  const gastosOperTot = gastosOp + nomina;
+  const utilOperativa = utilBruta - gastosOperTot;
+  const utilAntesImp = utilOperativa + otrosIngresos - gastosFin;
+  const utilNeta = utilAntesImp - impuestos;
+  const margen = ventas ? utilNeta / ventas * 100 : 0;
+  const margenBruto = ventas ? utilBruta / ventas * 100 : 0;
+  const fijos = gastosOperTot + gastosFin;
+  const pe = (1 - cv) > 0 ? fijos / (1 - cv) : 0;      // punto de equilibrio
+  const entradas = ventas + otrosIngresos;
+  const salidas = led.filter(m => m.tipo !== 'transferencia' && m.tipo !== 'ingreso' && m.estado !== 'pendiente')
+    .reduce((a, m) => a + (Number(m.monto) || 0), 0) + nomina;
+  const flujo = entradas - salidas;
+  const pendientes = led.filter(m => m.tipo !== 'ingreso' && (m.estado === 'pendiente' || m.estado === 'parcial'))
+    .reduce((a, m) => a + (m.estado === 'parcial' ? ((Number(m.monto) || 0) - (Number(m.montoPagado) || 0)) : (Number(m.monto) || 0)), 0);
+  return { ventas, cv: cv * 100, costoVenta, utilBruta, margenBruto, gastosOp, nomina, gastosOperTot, utilOperativa, otrosIngresos, gastosFin, utilAntesImp, impuestos, utilNeta, margen, activos, compras, pe, flujo, salidas, pendientes, porCat };
+}
+
+/* ---- MENTOR CÍCLOPE FINANCIERO: interpreta, no solo muestra ---- */
+function finMentor(r) {
+  const g = finResumen(r.desde, r.hasta, finSuc === 'global' ? 'global' : finSuc);
+  const gPrev = finResumen(r.pDesde, r.pHasta, finSuc === 'global' ? 'global' : finSuc);
+  const sucs = db.sucursales.filter(s => s.activa && !s.del);
+  const hall = [];
+  if (finSuc === 'global') sucs.forEach(s => {
+    const rs = finResumen(r.desde, r.hasta, s.id);
+    if (rs.ventas > 0 && rs.utilOperativa < 0)
+      hall.push({ n: 'rojo', t: '🔴 ' + s.nombre + ' opera en PÉRDIDA (' + fmt$(rs.utilOperativa) + '). Su punto de equilibrio (~' + fmt$(rs.pe) + ') está por encima de lo que vendió (' + fmt$(rs.ventas) + ').' });
+  });
+  if (g.cv >= 42) hall.push({ n: 'rojo', t: '🔴 Tu costo de venta va en ' + Math.round(g.cv) + '% (sano 30-35%). Bajarlo aunque sea a 40% mueve tu punto de equilibrio sin vender un peso más — es la palanca #1.' });
+  if (g.ventas > 0) { const np = g.nomina / g.ventas * 100; if (np > 30) hall.push({ n: 'amar', t: '⚠️ La nómina es ' + Math.round(np) + '% de las ventas (objetivo ≈25%). Revisa horas y traslapes de turnos.' }); }
+  const vV = variacion(g.ventas, gPrev.ventas), vG = variacion(g.gastosOperTot + g.gastosFin, gPrev.gastosOperTot + gPrev.gastosFin);
+  if (vV !== null && vG !== null && vG > vV + 3)
+    hall.push({ n: 'amar', t: '⚠️ Ventas ' + (vV >= 0 ? '+' : '') + vV + '% pero gastos ' + (vG >= 0 ? '+' : '') + vG + '%. Estás creciendo, pero tu rentabilidad retrocede.' });
+  if (g.ventas > 0) {
+    if (g.margen < 0) hall.push({ n: 'rojo', t: '🔴 El periodo cierra en pérdida (' + fmt$(g.utilNeta) + ', margen ' + Math.round(g.margen) + '%).' });
+    else if (g.margen < 10) hall.push({ n: 'amar', t: '🟡 Margen neto de ' + Math.round(g.margen) + '%. Delgado: cualquier gasto extra te mete en rojos.' });
+    else hall.push({ n: 'verde', t: '🟢 Margen neto de ' + Math.round(g.margen) + '%. Sano — mantener el rumbo.' });
+  }
+  if (finSuc === 'global' && sucs.length >= 2) {
+    const rr = sucs.map(s => ({ s, r: finResumen(r.desde, r.hasta, s.id) })).filter(x => x.r.ventas > 0);
+    if (rr.length >= 2) {
+      const masVende = rr.slice().sort((a, b) => b.r.ventas - a.r.ventas)[0];
+      const masGana = rr.slice().sort((a, b) => b.r.utilOperativa - a.r.utilOperativa)[0];
+      if (masVende.s.id !== masGana.s.id)
+        hall.push({ n: 'amar', t: '👁️ ' + masVende.s.nombre + ' vende más, pero ' + masGana.s.nombre + ' gana más. Vender más no es ganar más: el problema de ' + masVende.s.nombre + ' está en costo y gastos, no en ventas.' });
+    }
+  }
+  const acc = [];
+  if (g.cv >= 42) acc.push('Bajar el costo de venta: recostear Cerebros/boneless y empujar Pociones y Brebajes (mejor margen).');
+  if (finSuc === 'global') sucs.forEach(s => { const rs = finResumen(r.desde, r.hasta, s.id); if (rs.ventas > 0 && rs.utilOperativa < 0) acc.push('Sacar a ' + s.nombre + ' de pérdida: le falta ~' + fmt$(rs.pe - rs.ventas) + ' de venta, o recortar ' + fmt$(-rs.utilOperativa) + ' de costo/gasto.'); });
+  if (g.ventas > 0 && g.nomina / g.ventas > 0.3) acc.push('Controlar nómina: cuadrar turnos a la demanda real por día.');
+  const extra = ['Registrar los gastos con cuenta y método para que el flujo sea exacto.', 'Definir metas de ventas y margen para medir contra objetivo.', 'Revisar los precios del menú con mayor food-cost.'];
+  let ei = 0; while (acc.length < 3) acc.push(extra[ei++ % extra.length]);
+  return { g, hall, acc: acc.slice(0, 3) };
+}
+
+/* ---- controles del dashboard ---- */
+function finSetPeriodo(sel) { if (sel === 'personalizado') return finPedirRango(); finPeriodoSel = sel; renderFinanzas(); }
+function finSetSuc(v) { finSuc = v; renderFinanzas(); }
+function finSetCv() {
+  const v = prompt('Costo de venta estimado (%). Tu medición real de Loyverse es 48%.', db.config.finCvPct || 48);
+  if (v === null) return; const n = Number(v);
+  if (!(n > 0 && n < 100)) return toast('Pon un porcentaje entre 1 y 99');
+  db.config.finCvPct = n; guardarDB(); renderFinanzas(); toast('Costo de venta al ' + n + '%');
+}
+function finPedirRango() {
+  const r = finRango('mes');
+  abrirModal('<h3>📅 Rango personalizado</h3>' +
+    '<div class="fila"><div style="flex:1"><label>Desde</label><input id="fin-d1" type="date" value="' + (finDesde || r.desde) + '"></div>' +
+    '<div style="flex:1"><label>Hasta</label><input id="fin-d2" type="date" value="' + (finHasta || r.hasta) + '"></div></div>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finAplicarRango()">Ver</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finAplicarRango() {
+  const a = $('fin-d1').value, b = $('fin-d2').value;
+  if (!a || !b) return toast('Elige ambas fechas');
+  finDesde = a; finHasta = b; finPeriodoSel = 'personalizado'; cerrarModal(); renderFinanzas();
+}
+
+/* ---- PANTALLA ---- */
+function pedirPinFinanzas() {
+  abrirPin('PIN de Finanzas', pin => {
+    if (pin === db.config.adminPin || pin === '0616') { esFin = true; ir('scr-fin'); }
+    else toast('⛔ PIN incorrecto');
+  });
+}
+function finTabIr(t) {
+  finTab = t;
+  document.querySelectorAll('#fin-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  renderFinanzas();
+}
+function renderFinanzas() {
+  pintarRed();
+  const c = $('fin-contenido'); if (!c) return;
+  if (finTab === 'movimientos') c.innerHTML = finMovimientosTab();
+  else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
+  else if (finTab === 'config') c.innerHTML = finConfigTab();
+  else c.innerHTML = finResumenTab();
+}
+
+/* ---- TAB 1: Resumen (dashboard ejecutivo) ---- */
+function finResumenTab() {
+  const r = finRango(finPeriodoSel);
+  const g = finResumen(r.desde, r.hasta, finSuc);
+  const gp = finResumen(r.pDesde, r.pHasta, finSuc);
+  const per = finPeriodoSel;
+  const chip = (s, txt) => '<button class="btn ' + (per === s ? 'p' : 's') + ' mini" onclick="finSetPeriodo(\'' + s + '\')">' + txt + '</button>';
+  const card = (cls, val, lbl, varPct, inv) => '<div class="stat' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' +
+    (varPct !== undefined ? '<div style="margin-top:4px">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
+  let h = '<div class="card"><div class="fila" style="flex-wrap:wrap;gap:6px">' +
+    chip('hoy', 'Hoy') + chip('semana', 'Semana') + chip('mes', 'Mes') + chip('mesant', 'Mes ant.') +
+    chip('anio', 'Año') + chip('anioant', 'Año ant.') + chip('personalizado', '📅 Rango') + '</div>' +
+    '<div class="fila" style="margin-top:10px"><select onchange="finSetSuc(this.value)" style="flex:1">' +
+    '<option value="global"' + (finSuc === 'global' ? ' selected' : '') + '>🏢 Global (ambas)</option>' +
+    db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '"' + (finSuc === s.id ? ' selected' : '') + '>🏬 ' + esc(s.nombre) + '</option>').join('') +
+    '</select></div>' +
+    '<p class="mini muted" style="margin-top:8px">' + esc(r.label) + ' · comparado con ' + esc(r.pLabel) + '</p></div>';
+  h += '<div class="grid c3">' +
+    card(' verde', fmt$(g.ventas), 'Ingresos', variacion(g.ventas, gp.ventas)) +
+    card(' rojo', fmt$(g.costoVenta), 'Costo de venta ' + Math.round(g.cv) + '%', variacion(g.costoVenta, gp.costoVenta), true) +
+    card('', fmt$(g.utilBruta), 'Utilidad bruta', variacion(g.utilBruta, gp.utilBruta)) + '</div>';
+  h += '<div class="grid c3">' +
+    card(' rojo', fmt$(g.gastosOperTot), 'Gastos operativos', variacion(g.gastosOperTot, gp.gastosOperTot), true) +
+    card(g.utilNeta >= 0 ? ' verde' : ' rojo', fmt$(g.utilNeta), 'Utilidad neta', variacion(g.utilNeta, gp.utilNeta)) +
+    card(g.margen >= 10 ? ' verde' : (g.margen >= 0 ? '' : ' rojo'), Math.round(g.margen) + '%', 'Margen neto') + '</div>';
+  h += '<div class="grid c2">' +
+    card('', fmt$(g.flujo), 'Flujo aprox. del periodo') +
+    card(g.pendientes > 0 ? ' rojo' : '', fmt$(g.pendientes), 'Por pagar (obligaciones)') + '</div>';
+  h += finMentorHTML(r);
+  h += finWaterfallHTML(g);
+  h += finPorCatHTML(g);
+  h += finPeHTML(g);
+  return h;
+}
+function finMentorHTML(r) {
+  const m = finMentor(r), col = { rojo: '--alerta', amar: '--aviso', verde: '--ok' };
+  let h = '<div class="card" style="border:1px solid var(--amarillo)"><h3 style="margin-top:0">🧿 Mentor Cíclope financiero</h3>' +
+    '<p class="mini muted" style="margin-top:-4px">Qué está pasando y qué hacer — no solo números.</p>';
+  h += m.hall.length ? m.hall.map(x => '<div class="item-linea" style="border-left:3px solid var(' + (col[x.n] || '--muted') + ');padding-left:8px">' +
+    '<div class="grow mini">' + esc(x.t) + '</div></div>').join('') : '<p class="mini muted">Sin datos suficientes en este periodo.</p>';
+  h += '<div class="sep"></div><b class="amar">🎯 Qué deberías revisar</b>' +
+    m.acc.map((a, i) => '<div class="item-linea"><div class="avatar">' + (i + 1) + '</div><div class="grow mini">' + esc(a) + '</div></div>').join('');
+  return h + '</div>';
+}
+function finWaterfallHTML(g) {
+  const row = (lbl, val, o) => { o = o || {}; return '<tr' + (o.tot ? ' style="font-weight:700"' : '') + '><td' + (o.ind ? ' style="padding-left:18px"' : '') + '>' + (o.neg ? '(−) ' : '') + esc(lbl) + '</td><td class="num' + (o.tot ? ' amar' : '') + '">' + fmt$(val) + '</td></tr>'; };
+  let h = '<div class="card"><h3>📄 Estado de resultados</h3><div class="tabla-wrap"><table>';
+  h += row('Ventas netas', g.ventas, { tot: 1 });
+  h += row('Costo de venta (' + Math.round(g.cv) + '%)', -g.costoVenta, { ind: 1, neg: 1 });
+  h += row('= Utilidad bruta', g.utilBruta, { tot: 1 });
+  h += row('Nómina (turnos)', -g.nomina, { ind: 1, neg: 1 });
+  h += row('Gastos operativos', -g.gastosOp, { ind: 1, neg: 1 });
+  h += row('= Utilidad operativa', g.utilOperativa, { tot: 1 });
+  if (g.otrosIngresos > 0) h += row('(+) Otros ingresos', g.otrosIngresos, { ind: 1 });
+  h += row('Gastos financieros', -g.gastosFin, { ind: 1, neg: 1 });
+  h += row('= Utilidad antes de impuestos', g.utilAntesImp, { tot: 1 });
+  h += row('Impuestos', -g.impuestos, { ind: 1, neg: 1 });
+  h += row('= UTILIDAD NETA', g.utilNeta, { tot: 1 });
+  h += '</table></div><p class="mini muted" style="margin-top:8px">Costo de venta estimado al ' + Math.round(g.cv) + '% de las ventas · <a href="#" onclick="event.preventDefault();finSetCv()">ajustar %</a>. ' +
+    'Las compras de insumo del periodo (' + fmt$(g.compras) + ') y las inversiones en activos (' + fmt$(g.activos) + ') no restan aquí: son flujo, no gasto del resultado.</p></div>';
+  return h;
+}
+function finPorCatHTML(g) {
+  const ents = Object.entries(g.porCat);
+  const filas = [['nomina', '🧑‍🍳 Nómina (turnos)', g.nomina]].concat(ents.map(([c, v]) => [c, finNombreCat(c), v])).filter(x => x[2] > 0).sort((a, b) => b[2] - a[2]);
+  const tot = filas.reduce((a, x) => a + x[2], 0);
+  let h = '<div class="card"><h3>🍩 En qué se va el dinero</h3>';
+  h += filas.length ? filas.map(([c, nom, v]) => '<div class="item-linea"><div class="grow"><b>' + esc(nom) + '</b>' +
+    '<div class="barra" style="margin-top:6px"><i style="width:' + (tot ? Math.round(v / tot * 100) : 0) + '%"></i></div></div>' +
+    '<div style="text-align:right"><b class="amar">' + fmt$(v) + '</b><div class="mini muted">' + (tot ? Math.round(v / tot * 100) : 0) + '%</div></div></div>').join('')
+    : '<p class="mini muted">Sin gastos en el periodo.</p>';
+  return h + '</div>';
+}
+function finPeHTML(g) {
+  const falta = g.pe - g.ventas;
+  return '<div class="card"><h3>⚖️ Punto de equilibrio</h3><div class="grid c3">' +
+    '<div class="stat"><div class="v">' + fmt$(g.pe) + '</div><div class="l">necesitas vender</div></div>' +
+    '<div class="stat"><div class="v">' + fmt$(g.ventas) + '</div><div class="l">llevas</div></div>' +
+    '<div class="stat' + (falta <= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(Math.abs(falta)) + '</div><div class="l">' + (falta <= 0 ? 'arriba del equilibrio' : 'te falta') + '</div></div></div>' +
+    '<p class="mini muted" style="margin-top:8px">Con un costo de venta del ' + Math.round(g.cv) + '%, cada $100 de venta dejan ' + fmt$(100 * (1 - g.cv / 100)) + ' para cubrir los gastos fijos (' + fmt$(g.gastosOperTot + g.gastosFin) + ').</p></div>';
+}
+
+/* ---- TAB 2: Movimientos (el Libro, con captura) ---- */
+function finMovimientosTab() {
+  const r = finRango(finPeriodoSel);
+  const led = finLedger(r.desde, r.hasta, finSuc).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  const pend = led.filter(m => m.tipo !== 'ingreso' && (m.estado === 'pendiente' || m.estado === 'parcial'));
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📒 Libro de movimientos</h3>' +
+    '<button class="btn p mini" onclick="finModalMov()">➕ Agregar</button></div>' +
+    '<p class="mini muted">' + esc(r.label) + ' · cada peso que entra o sale, con su cuenta, método y estado.</p>' +
+    (pend.length ? '<div class="mini" style="color:var(--alerta);margin-bottom:8px">🔴 ' + pend.length + ' movimiento(s) por pagar (' + fmt$(pend.reduce((a, m) => a + (Number(m.monto) || 0), 0)) + ')</div>' : '') +
+    '<div class="tabla-wrap"><table><tr><th>Fecha</th><th>Concepto</th><th>Cat. / Cuenta</th><th class="num">Monto</th><th>Estado</th><th></th></tr>' +
+    (led.length ? led.map(m => {
+      const ing = m.tipo === 'ingreso';
+      const badge = m.estado === 'pendiente' ? '<span class="badge comprar">pend.</span>' : m.estado === 'parcial' ? '<span class="badge comprar">parcial</span>' : '<span class="badge ok">pagado</span>';
+      const acc = m.fuente === 'fin'
+        ? '<button class="btn s mini" onclick="finModalMov(\'' + m.id + '\')">✏️</button>' + (m.estado !== 'pagado' && !ing ? '<button class="btn s mini" title="Marcar pagado" onclick="finPagarMov(\'' + m.id + '\')">✅</button>' : '')
+        : '<span class="mini muted" title="Se edita en 💸 Gastos">💸</span>';
+      const catCta = (m.tipo === 'transferencia' ? '🔁 Transferencia' : ing ? '💰 Otro ingreso' : esc(finNombreCat(m.categoriaId)));
+      return '<tr><td>' + fmtFechaCorta(m.fecha) + '</td><td>' + esc(m.concepto || '—') +
+        (m.foto ? ' <span onclick="verFoto2(fotoURL(\'' + esc(m.foto) + '\'))" style="cursor:pointer" title="Comprobante">📎</span>' : '') + '</td>' +
+        '<td class="mini">' + catCta + (finCuenta(m.cuentaId) ? '<br><span class="muted">' + esc(finCuenta(m.cuentaId).nombre) + '</span>' : '') + '</td>' +
+        '<td class="num"' + (ing ? ' style="color:var(--ok)"' : '') + '>' + (ing ? '+' : '') + fmt$(m.monto) + '</td>' +
+        '<td>' + badge + '</td><td>' + acc + '</td></tr>';
+    }).join('') : '<tr><td colspan="6" class="muted">Sin movimientos. Toca ➕ Agregar para registrar el primero.</td></tr>') +
+    '</table></div></div>';
+  return h;
+}
+let finMovFoto = '';
+function finModalMov(id) {
+  const m = id ? finMovVivos().find(x => x.id === id) : null;
+  const cats = finCatsVivas();
+  const catOpts = Object.keys(FIN_GRUPOS).map(gk => {
+    const list = cats.filter(c => c.grupo === gk).sort((a, b) => (a.orden || 0) - (b.orden || 0)); if (!list.length) return '';
+    return '<optgroup label="' + FIN_GRUPOS[gk].emoji + ' ' + FIN_GRUPOS[gk].nombre + '">' +
+      list.map(c => '<option value="' + c.id + '"' + ((m && finCatId(m.categoriaId) === c.id) ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') + '</optgroup>';
+  }).join('');
+  const ctaOpts = sel => finCuentasVivas().map(c => '<option value="' + c.id + '"' + (sel === c.id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('');
+  const tipos = [['gasto', '💸 Gasto'], ['compra_inv', '📦 Compra de inventario / insumos'], ['activo', '🪑 Activo (mobiliario / equipo)'], ['ingreso', '💰 Otro ingreso'], ['transferencia', '🔁 Transferencia entre cuentas']];
+  const metodos = [['efectivo', 'Efectivo'], ['debito', 'Tarjeta débito'], ['credito', 'Tarjeta crédito'], ['transferencia', 'Transferencia'], ['otro', 'Otro']];
+  const estados = [['pagado', 'Pagado'], ['pendiente', 'Pendiente'], ['parcial', 'Parcial']];
+  finMovFoto = m ? (m.foto || '') : '';
+  abrirModal('<h3>' + (m ? '✏️ Editar movimiento' : '➕ Nuevo movimiento') + '</h3>' +
+    '<div class="fila"><div style="flex:1"><label>Fecha</label><input id="mv-fecha" type="date" value="' + (m ? m.fecha : hoyISO()) + '"></div>' +
+    '<div style="flex:1"><label>Monto</label><input id="mv-monto" type="number" inputmode="decimal" value="' + (m ? m.monto : '') + '" placeholder="0.00"></div></div>' +
+    '<label style="margin-top:10px">Tipo</label><select id="mv-tipo" onchange="finMovTipoCambia()">' + tipos.map(t => '<option value="' + t[0] + '"' + ((m && m.tipo === t[0]) ? ' selected' : '') + '>' + t[1] + '</option>').join('') + '</select>' +
+    '<label style="margin-top:10px">Concepto</label><input id="mv-concepto" value="' + (m ? esc(m.concepto) : '') + '" placeholder="Ej. Renta de agosto">' +
+    '<div id="mv-cat-wrap"><label style="margin-top:10px">Categoría</label><select id="mv-cat">' + catOpts + '</select></div>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="mv-suc">' + sucOptions(m ? m.sucursalId : (finSuc !== 'global' ? finSuc : 'all')) + '</select>' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1" id="mv-cuenta-wrap"><label>Cuenta (de dónde sale)</label><select id="mv-cuenta">' + ctaOpts(m ? m.cuentaId : '') + '</select></div>' +
+    '<div style="flex:1" id="mv-metodo-wrap"><label>Método</label><select id="mv-metodo" onchange="finMovMetodoCambia()">' + metodos.map(x => '<option value="' + x[0] + '"' + ((m && m.metodo === x[0]) ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select></div></div>' +
+    '<div id="mv-cuenta2-wrap" style="display:none;margin-top:10px"><label>Cuenta destino</label><select id="mv-cuenta2">' + ctaOpts(m ? m.cuentaDestinoId : '') + '</select></div>' +
+    '<label style="margin-top:10px">Estado</label><select id="mv-estado">' + estados.map(x => '<option value="' + x[0] + '"' + ((m && m.estado === x[0]) ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
+    '<div id="mv-credito-nota" class="mini muted" style="margin-top:6px;display:none"></div>' +
+    '<label style="margin-top:10px">Proveedor / nota (opcional)</label><input id="mv-nota" value="' + (m ? esc(m.nota || '') : '') + '" placeholder="Proveedor, factura, quién autorizó…">' +
+    '<label style="margin-top:10px">Comprobante (opcional)</label>' +
+    '<div class="fila" style="align-items:center"><button class="btn s" onclick="$(\'mv-foto-input\').click()">📷 <span id="mv-foto-tx">' + (finMovFoto ? 'Cambiar' : 'Tomar foto') + '</span></button>' +
+    '<img id="mv-foto-prev" style="height:52px;border-radius:8px;' + (finMovFoto ? '' : 'display:none') + '" src="' + (finMovFoto ? fotoURL(finMovFoto) : '') + '" onclick="if(finMovFoto)verFoto2(fotoURL(finMovFoto))">' +
+    '<input id="mv-foto-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="finMovTomarFoto(this)"></div>' +
+    '<button class="btn p gigante" style="margin-top:14px" onclick="finGuardarMov(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (m ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarMov(\'' + id + '\')">🗑️ Anular</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+  finMovTipoCambia(); finMovMetodoCambia();
+}
+function finMovTipoCambia() {
+  const tipo = $('mv-tipo').value, esT = tipo === 'transferencia', esI = tipo === 'ingreso';
+  $('mv-cat-wrap').style.display = (esT || esI) ? 'none' : '';
+  $('mv-cuenta2-wrap').style.display = esT ? '' : 'none';
+  $('mv-cuenta-wrap').querySelector('label').textContent = esI ? 'Cuenta (a dónde entra)' : 'Cuenta (de dónde sale)';
+}
+function finMovMetodoCambia() {
+  const met = $('mv-metodo').value, nota = $('mv-credito-nota');
+  if (met === 'credito') { nota.style.display = ''; nota.textContent = '💳 A crédito: el gasto cuenta hoy, pero el efectivo sale cuando pagues la tarjeta. Se guarda como obligación (por pagar).'; if ($('mv-estado').value === 'pagado') $('mv-estado').value = 'pendiente'; }
+  else nota.style.display = 'none';
+}
+function finMovTomarFoto(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  comprimirFoto(f, d => { finMovFoto = d; const p = $('mv-foto-prev'); if (p) { p.src = fotoURL(d); p.style.display = ''; } const tx = $('mv-foto-tx'); if (tx) tx.textContent = 'Cambiar'; });
+  input.value = '';
+}
+async function finGuardarMov(id) {
+  const monto = Number($('mv-monto').value); if (!(monto > 0)) return toast('Pon el monto 💵');
+  const tipo = $('mv-tipo').value, esT = tipo === 'transferencia', esI = tipo === 'ingreso';
+  const concepto = $('mv-concepto').value.trim() || ({ gasto: 'Gasto', compra_inv: 'Compra', activo: 'Activo', ingreso: 'Otro ingreso', transferencia: 'Transferencia' })[tipo];
+  const categoriaId = (esT || esI) ? '' : $('mv-cat').value;
+  const estado = esI ? 'pagado' : $('mv-estado').value;
+  const metodo = $('mv-metodo').value;
+  const nivel = categoriaId ? finNivel(categoriaId) : '';
+  let afecta = true;
+  if (esT || tipo === 'activo') afecta = false;
+  if (nivel === 'costo' || nivel === 'activo') afecta = false;
+  if (esI) afecta = true;
+  const fechaFlujo = (estado === 'pagado') ? $('mv-fecha').value : null;
+  let foto = finMovFoto;
+  if (foto && foto.startsWith('data:')) { toast('⬆️ Subiendo comprobante…'); foto = await subirFotoDrive(foto, { tipo: 'finanzas', fecha: $('mv-fecha').value }); }
+  const datos = {
+    fecha: $('mv-fecha').value, tipo, concepto, monto, categoriaId, sucursalId: $('mv-suc').value,
+    cuentaId: $('mv-cuenta').value, cuentaDestinoId: esT ? $('mv-cuenta2').value : '', metodo, estado,
+    nota: $('mv-nota').value.trim(), foto, afectaResultado: afecta, fechaFlujo, t: Date.now()
+  };
+  if (id) {
+    const m = finMovVivos().find(x => x.id === id); if (!m) { cerrarModal(); return toast('Ya no existe'); }
+    Object.assign(m, datos); (m.auditoria = m.auditoria || []).push({ q: 'dir', c: Date.now(), campo: 'edición' });
+  } else {
+    db.finMovimientos.unshift(Object.assign({ id: 'mov-' + uid(), del: false, montoPagado: 0, auditoria: [{ q: 'dir', c: Date.now(), campo: 'alta' }] }, datos));
+  }
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('💾 Movimiento guardado');
+}
+function finPagarMov(id) {
+  const m = finMovVivos().find(x => x.id === id); if (!m) return;
+  m.estado = 'pagado'; m.fechaFlujo = hoyISO(); m.t = Date.now();
+  (m.auditoria = m.auditoria || []).push({ q: 'dir', c: Date.now(), campo: 'estado', antes: 'pendiente', despues: 'pagado' });
+  guardarDB(); renderFinanzas(); toast('✅ Marcado como pagado · salió el efectivo hoy');
+}
+function finBorrarMov(id) {
+  const m = finMovVivos().find(x => x.id === id); if (!m) return;
+  if (!confirm('¿Anular este movimiento de ' + fmt$(m.monto) + '?\nNo se borra: queda anulado para conservar la integridad financiera.')) return;
+  m.del = true; m.t = Date.now(); (m.auditoria = m.auditoria || []).push({ q: 'dir', c: Date.now(), campo: 'anulado' });
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Movimiento anulado');
+}
+
+/* ---- TAB 3: Cuentas (con editor) ---- */
+function finCuentasTab() {
+  const ico = { caja: '💵', banco: '🏦', digital: '📱', tarjeta: '💳' };
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏦 Cuentas</h3><button class="btn p mini" onclick="finModalCuenta()">➕ Nueva</button></div>' +
+    '<p class="mini muted">Dónde está y de dónde sale el dinero.</p>' +
+    finCuentasVivas().map(c => '<div class="item-linea"><div class="avatar">' + (ico[c.tipo] || '💼') + '</div>' +
+      '<div class="grow"><b>' + esc(c.nombre) + '</b><div class="mini muted">' + esc(c.tipo) + ' · ' + (c.sucursalId && c.sucursalId !== 'all' ? esc(suc(c.sucursalId)?.nombre || '') : 'ambas') + '</div></div>' +
+      '<button class="btn s mini" onclick="finModalCuenta(\'' + c.id + '\')">✏️</button></div>').join('');
+  return h + '</div>';
+}
+function finModalCuenta(id) {
+  const c = id ? finCuentasVivas().find(x => x.id === id) : null;
+  const tipos = [['caja', '💵 Caja'], ['banco', '🏦 Banco'], ['digital', '📱 Digital (Mercado Pago…)'], ['tarjeta', '💳 Tarjeta de crédito']];
+  abrirModal('<h3>' + (c ? '✏️ Editar cuenta' : '🏦 Nueva cuenta') + '</h3>' +
+    '<label>Nombre</label><input id="cta-nom" value="' + (c ? esc(c.nombre) : '') + '" placeholder="Ej. Caja Revolución">' +
+    '<label style="margin-top:10px">Tipo</label><select id="cta-tipo">' + tipos.map(t => '<option value="' + t[0] + '"' + ((c && c.tipo === t[0]) ? ' selected' : '') + '>' + t[1] + '</option>').join('') + '</select>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="cta-suc">' + sucOptions(c ? c.sucursalId : 'all') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarCuenta(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (c ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarCuenta(\'' + id + '\')">🗑️ Desactivar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarCuenta(id) {
+  const nom = $('cta-nom').value.trim(); if (!nom) return toast('Ponle nombre a la cuenta');
+  const datos = { nombre: nom, tipo: $('cta-tipo').value, sucursalId: $('cta-suc').value, t: Date.now() };
+  if (id) { const c = (db.finCuentas || []).find(x => x.id === id); if (c) Object.assign(c, datos); }
+  else db.finCuentas.unshift(Object.assign({ id: 'cta-' + uid(), saldoInicial: 0, activa: true, del: false, orden: 99 }, datos));
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('🏦 Cuenta guardada');
+}
+function finBorrarCuenta(id) {
+  const c = (db.finCuentas || []).find(x => x.id === id); if (!c) return;
+  if (!confirm('¿Desactivar la cuenta "' + c.nombre + '"?')) return;
+  c.del = true; c.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Cuenta desactivada');
+}
+
+/* ---- TAB 4: Configuración (parámetros + editor de categorías) ---- */
+function finConfigTab() {
+  const grupos = {};
+  finCatsVivas().forEach(c => { (grupos[c.grupo] = grupos[c.grupo] || []).push(c); });
+  let h = '<div class="card"><h3 style="margin-top:0">⚙️ Parámetros</h3>' +
+    '<div class="item-linea"><div class="grow"><b>Costo de venta estimado</b><div class="mini muted">Para el Estado de resultados. Tu medición real de Loyverse es 48%.</div></div>' +
+    '<button class="btn s mini" onclick="finSetCv()">' + (db.config.finCvPct || 48) + '%</button></div></div>';
+  h += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🏷️ Categorías de gasto</h3><button class="btn p mini" onclick="finModalCat()">➕ Nueva</button></div>' +
+    '<p class="mini muted">Tu taxonomía real. El <b>nivel</b> define a dónde pega en el Estado de resultados.</p>';
+  Object.keys(FIN_GRUPOS).forEach(gk => {
+    const list = grupos[gk]; if (!list || !list.length) return;
+    h += '<div class="sep"></div><b class="amar">' + FIN_GRUPOS[gk].emoji + ' ' + FIN_GRUPOS[gk].nombre + '</b>' +
+      list.map(c => '<div class="item-linea"><div class="grow mini">' + (c.emoji ? c.emoji + ' ' : '') + esc(c.nombre) + '</div><span class="mini muted">' + c.nivel + '</span>' +
+        '<button class="btn s mini" onclick="finModalCat(\'' + c.id + '\')">✏️</button></div>').join('');
+  });
+  return h + '</div>';
+}
+function finModalCat(id) {
+  const c = id ? finCatsVivas().find(x => x.id === id) : null;
+  const grupoOpts = Object.keys(FIN_GRUPOS).map(gk => '<option value="' + gk + '"' + ((c && c.grupo === gk) ? ' selected' : '') + '>' + FIN_GRUPOS[gk].emoji + ' ' + FIN_GRUPOS[gk].nombre + '</option>').join('');
+  const niveles = [['operativo', 'Gasto operativo'], ['costo', 'Costo de venta'], ['financiero', 'Gasto financiero'], ['activo', 'Activo (inversión)'], ['impuesto', 'Impuesto']];
+  abrirModal('<h3>' + (c ? '✏️ Editar categoría' : '🏷️ Nueva categoría') + '</h3>' +
+    '<div class="fila"><div style="flex:0 0 76px"><label>Emoji</label><input id="cat-emoji" value="' + (c ? esc(c.emoji || '') : '') + '" placeholder="📌"></div>' +
+    '<div style="flex:1"><label>Nombre</label><input id="cat-nom" value="' + (c ? esc(c.nombre) : '') + '" placeholder="Ej. Suscripciones"></div></div>' +
+    '<label style="margin-top:10px">Grupo</label><select id="cat-grupo">' + grupoOpts + '</select>' +
+    '<label style="margin-top:10px">Nivel (dónde pega en el P&L)</label><select id="cat-nivel">' + niveles.map(n => '<option value="' + n[0] + '"' + ((c && c.nivel === n[0]) ? ' selected' : '') + '>' + n[1] + '</option>').join('') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarCat(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (c ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarCat(\'' + id + '\')">🗑️ Desactivar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarCat(id) {
+  const nom = $('cat-nom').value.trim(); if (!nom) return toast('Ponle nombre a la categoría');
+  const datos = { nombre: nom, emoji: $('cat-emoji').value.trim(), grupo: $('cat-grupo').value, nivel: $('cat-nivel').value, t: Date.now() };
+  if (id) { const c = (db.finCategorias || []).find(x => x.id === id); if (c) Object.assign(c, datos); }
+  else db.finCategorias.push(Object.assign({ id: 'cat-' + uid(), activa: true, del: false, orden: 99 }, datos));
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('🏷️ Categoría guardada');
+}
+function finBorrarCat(id) {
+  const c = (db.finCategorias || []).find(x => x.id === id); if (!c) return;
+  if (!confirm('¿Desactivar "' + c.nombre + '"? Los movimientos que ya la usan la conservan.')) return;
+  c.del = true; c.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Categoría desactivada');
 }
 
 /* ---------- arranque ---------- */
