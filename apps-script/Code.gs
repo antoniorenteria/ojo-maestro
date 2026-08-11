@@ -227,6 +227,55 @@ function accionLoyverse(fecha, sucursalId) {
   }
 }
 
+/* Ventas por PRODUCTO en un rango [desde, hasta] (fechas yyyy-MM-dd, hora Mexico).
+   Agrega los line_items de todos los recibos por nombre de articulo.
+   Devuelve [{ nombre, cantidad, ventas }]. Si se pasa storeId, filtra esa tienda. */
+function loyverseProductosRango_(desde, hasta, storeId) {
+  var ini = Utilities.formatDate(
+    Utilities.parseDate(desde + ' 00:00:00', 'America/Mexico_City', 'yyyy-MM-dd HH:mm:ss'),
+    'UTC', "yyyy-MM-dd'T'HH:mm:ss.000'Z'");
+  var finD = new Date(Utilities.parseDate(hasta + ' 00:00:00', 'America/Mexico_City', 'yyyy-MM-dd HH:mm:ss').getTime() + 864e5);
+  var fin = Utilities.formatDate(finD, 'UTC', "yyyy-MM-dd'T'HH:mm:ss.000'Z'");
+  var acc = {}, cursor = null, vueltas = 0;
+  do {
+    var params = { created_at_min: ini, created_at_max: fin, limit: 250 };
+    if (storeId) params.store_id = storeId;
+    if (cursor) params.cursor = cursor;
+    var d = loyverseGet_('receipts', params);
+    (d.receipts || []).forEach(function (rec) {
+      if (storeId && rec.store_id !== storeId) return;
+      var signo = (rec.receipt_type === 'REFUND') ? -1 : 1;
+      (rec.line_items || []).forEach(function (li) {
+        var nom = (li.item_name || '').toString();
+        if (li.variant_name && li.variant_name !== 'Default') nom += ' ' + li.variant_name;
+        nom = nom.trim(); if (!nom) return;
+        var a = acc[nom] || (acc[nom] = { nombre: nom, cantidad: 0, ventas: 0 });
+        a.cantidad += Number(li.quantity || 0) * signo;
+        var monto = (li.total_money != null) ? li.total_money : (li.gross_total_money || 0);
+        a.ventas += Number(monto) * signo;
+      });
+    });
+    cursor = d.cursor; vueltas++;
+  } while (cursor && vueltas < 120);
+  return Object.keys(acc).map(function (k) { return acc[k]; });
+}
+
+/* La app lo llama desde Finanzas -> Productos para el CV ponderado por ventas reales.
+   Degradado: si Loyverse no esta configurado, responde disponible:false. */
+function accionLoyProductos(desde, hasta, sucursalId) {
+  if (!LOYVERSE_TOKEN || !Object.keys(LOYVERSE_TIENDAS).length) return { ok: true, disponible: false };
+  try {
+    var storeId = null;
+    if (sucursalId && sucursalId !== 'global') Object.keys(LOYVERSE_TIENDAS).forEach(function (sid) { if (LOYVERSE_TIENDAS[sid] === sucursalId) storeId = sid; });
+    var productos = loyverseProductosRango_(desde || fechaHoyMX(), hasta || fechaHoyMX(), storeId);
+    var r2 = function (n) { return Math.round(n * 100) / 100; };
+    productos.forEach(function (p) { p.ventas = r2(p.ventas); p.cantidad = Math.round(p.cantidad * 1000) / 1000; });
+    return { ok: true, disponible: true, desde: desde, hasta: hasta, sucursalId: sucursalId || 'global', productos: productos };
+  } catch (err) {
+    return { ok: true, disponible: false, error: String(err) };
+  }
+}
+
 /* Paso 9: programa la importacion automatica cada noche a las 23:15. */
 function loyverseActivarImportacion() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
@@ -253,6 +302,7 @@ function doPost(e) {
     if (accion === 'notify') return respuesta(accionNotificar(req.asunto, req.cuerpo));
     if (accion === 'backup') return respuesta(accionRespaldo(req.db));
     if (accion === 'loyverse') return respuesta(accionLoyverse(req.fecha, req.sucursalId));
+    if (accion === 'loyProductos') return respuesta(accionLoyProductos(req.desde, req.hasta, req.sucursalId));
     return respuesta({ ok: false, error: 'accion desconocida' });
   } catch (err) {
     return respuesta({ ok: false, error: String(err) });

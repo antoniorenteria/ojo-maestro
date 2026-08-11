@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.13';
+const VERSION = '5.14';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -6413,19 +6413,71 @@ function finPeHTML(g) {
     '<p class="mini muted" style="margin-top:8px">Con un costo de venta del ' + Math.round(g.cv) + '%, cada $100 de venta dejan ' + fmt$(100 * (1 - g.cv / 100)) + ' para cubrir los gastos fijos (' + fmt$(g.gastosOperTot + g.gastosFin) + ').</p></div>';
 }
 
-/* ---- TAB: Productos (Fase 5 — rentabilidad por producto, leída del Escandallo) ---- */
+/* ---- TAB: Productos (Fase 5 — rentabilidad por producto) ----
+   Con ventas por producto de Loyverse: CV PONDERADO real + margen con volumen.
+   Sin ellas (o sin backend): food-cost del escandallo (menu engineering). */
+let finVentasProdCache = {}, finVentasProdMsg = '';
+async function finCargarVentasProd() {
+  const r = finRango(finPeriodoSel), clave = r.desde + '|' + r.hasta + '|' + finSuc;
+  finVentasProdMsg = 'cargando'; renderFinanzas();
+  try {
+    const resp = await llamarBackend({ action: 'loyProductos', desde: r.desde, hasta: r.hasta, sucursalId: finSuc });
+    if (resp && resp.disponible && Array.isArray(resp.productos)) { finVentasProdCache[clave] = { ts: Date.now(), productos: resp.productos }; finVentasProdMsg = ''; }
+    else finVentasProdMsg = (resp && resp.error) ? 'error' : 'nodisp';
+  } catch (e) { finVentasProdMsg = 'error'; }
+  renderFinanzas();
+}
+function finUsarCvPond(v) { if (!(v > 0 && v < 100)) return; db.config.finCvPct = v; db.configTs = db.configTs || {}; db.configTs.finCvPct = Date.now(); guardarDB(); renderFinanzas(); toast('Costo de venta al ' + v + '% (ponderado por ventas)'); }
 function finProductosTab() {
   const recetas = (db.recetas || []).filter(r => r.activo !== false && !r.del);
   const data = recetas.map(r => ({ r, c: calcReceta(r) })).filter(x => x.c.precio > 0);
-  if (!data.length) return '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3><p class="mini muted">Aún no hay recetas costeadas en el Escandallo. Captúralas ahí y aquí verás qué producto deja más y cuál arrastra el costo.</p></div>';
-  const fcProm = data.reduce((a, x) => a + x.c.pctCosto, 0) / data.length, cvCfg = finCvPct();
-  const sem = fc => fc >= 45 ? '🔴' : fc >= 40 ? '🟡' : '🟢';
-  let h = '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3>' +
-    '<div class="fin-kpis"><div class="fin-kpi"><div class="v">' + Math.round(fcProm) + '%</div><div class="l">Food-cost menú</div></div>' +
-    '<div class="fin-kpi"><div class="v">' + cvCfg + '%</div><div class="l">CV usado</div></div>' +
-    '<div class="fin-kpi"><div class="v">' + data.length + '</div><div class="l">Productos</div></div>' +
-    '<div class="fin-kpi' + (data.filter(x => x.c.pctCosto >= 45).length ? ' rojo' : '') + '"><div class="v">' + data.filter(x => x.c.pctCosto >= 45).length + '</div><div class="l">Caros ≥45%</div></div></div>' +
-    '<div class="fin-sub" style="border-top:none;padding-top:6px">El food-cost sale de tu Escandallo (costo ÷ precio por receta). Es promedio simple del menú; con las ventas por producto de Loyverse se ponderaría por lo que más se vende. <a href="#" onclick="event.preventDefault();finSetCv()">ajustar CV</a></div></div>';
+  let h = finSelectorHTML();
+  if (!data.length) return h + '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3><p class="mini muted">Aún no hay recetas costeadas en el Escandallo. Captúralas ahí y aquí verás qué producto deja más y cuál arrastra el costo.</p></div>';
+  const cvCfg = finCvPct(), sem = fc => fc >= 45 ? '🔴' : fc >= 40 ? '🟡' : '🟢';
+  const r = finRango(finPeriodoSel), clave = r.desde + '|' + r.hasta + '|' + finSuc, vp = finVentasProdCache[clave];
+  const idx = {}; data.forEach(x => { idx[slug(x.r.nombre)] = x; });
+  if (vp) {
+    // ── CON ventas reales: CV ponderado + margen con volumen ──
+    let vtot = 0, ctot = 0, vtodo = 0; const filas = [];
+    vp.productos.forEach(p => {
+      vtodo += p.ventas;
+      const m = idx[slug(p.nombre)];
+      if (m && p.ventas > 0) { const costoT = p.cantidad * m.c.costoUnit; vtot += p.ventas; ctot += costoT; filas.push({ nombre: p.nombre, cant: p.cantidad, ventas: p.ventas, costoT, margen: p.ventas - costoT, fc: m.c.pctCosto }); }
+    });
+    const cvPond = vtot > 0 ? ctot / vtot * 100 : 0, covPct = vtodo > 0 ? vtot / vtodo * 100 : 0;
+    h += '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad real (Loyverse × escandallo)</h3>' +
+      '<div class="fin-kpis"><div class="fin-kpi' + (cvPond >= 45 ? ' rojo' : '') + '"><div class="v">' + Math.round(cvPond) + '%</div><div class="l">CV ponderado</div></div>' +
+      '<div class="fin-kpi"><div class="v">' + cvCfg + '%</div><div class="l">CV usado</div></div>' +
+      '<div class="fin-kpi"><div class="v">' + fmtK(vtot) + '</div><div class="l">Ventas casadas</div></div>' +
+      '<div class="fin-kpi"><div class="v">' + Math.round(covPct) + '%</div><div class="l">Cobertura</div></div></div>' +
+      '<div class="fin-sub" style="border-top:none;padding-top:6px">CV ponderado por lo que de verdad se vendió (' + esc(r.label) + '). ' +
+      (Math.abs(cvPond - cvCfg) >= 2 ? '<b style="color:var(--aviso)">Difiere del CV que usas (' + cvCfg + '%).</b> ' : '') +
+      '<a href="#" onclick="event.preventDefault();finUsarCvPond(' + Math.round(cvPond) + ')">usar ' + Math.round(cvPond) + '%</a> · <a href="#" onclick="event.preventDefault();finCargarVentasProd()">↻ recargar</a></div></div>';
+    const arrastran = filas.slice().sort((a, b) => b.costoT - a.costoT).slice(0, 10);
+    h += '<div class="card"><h3>🔴 Los que más pesan en el costo</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Uds</th><th class="num">Ventas</th><th class="num">Food-cost</th></tr>' +
+      (arrastran.length ? arrastran.map(f => '<tr><td class="mini">' + esc(f.nombre) + '</td><td class="num">' + Math.round(f.cant) + '</td><td class="num">' + fmt$(f.ventas) + '</td><td class="num">' + sem(f.fc) + ' ' + Math.round(f.fc) + '%</td></tr>').join('') : '<tr><td colspan="4" class="muted">Sin ventas casadas.</td></tr>') +
+      '</table></div></div>';
+    const ganan = filas.slice().sort((a, b) => b.margen - a.margen).slice(0, 10);
+    h += '<div class="card"><h3>🟢 Los que más ganan (margen total)</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Uds</th><th class="num">Margen</th><th class="num">Food-cost</th></tr>' +
+      (ganan.length ? ganan.map(f => '<tr><td class="mini">' + esc(f.nombre) + '</td><td class="num">' + Math.round(f.cant) + '</td><td class="num">' + fmt$(f.margen) + '</td><td class="num">' + Math.round(f.fc) + '%</td></tr>').join('') : '<tr><td colspan="4" class="muted">Sin ventas casadas.</td></tr>') +
+      '</table></div></div>';
+    if (covPct < 80) h += '<div class="card"><p class="mini muted">⚠️ Cobertura ' + Math.round(covPct) + '%: hay ventas de Loyverse sin receta casada (nombres distintos). Empareja los nombres en el Escandallo con los de Loyverse para que el CV ponderado sea completo.</p></div>';
+    return h;
+  }
+  // ── SIN ventas cargadas: botón de carga + food-cost del escandallo ──
+  const fcProm = data.reduce((a, x) => a + x.c.pctCosto, 0) / data.length;
+  h += '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3>';
+  if (finVentasProdMsg === 'cargando') h += '<p class="mini muted">⏳ Cargando ventas de Loyverse…</p>';
+  else if (!enLinea()) h += '<p class="mini muted">Conéctate a internet para traer las ventas por producto de Loyverse y ver el CV ponderado real. Mientras, abajo va el food-cost de tu menú (sin volumen).</p>';
+  else {
+    h += '<p class="mini muted">Trae las ventas por producto de Loyverse para el CV ponderado real (según lo que más se vende).</p>' +
+      '<button class="btn p" style="width:100%" onclick="finCargarVentasProd()">📥 Cargar ventas de Loyverse · ' + esc(r.label) + '</button>';
+    if (finVentasProdMsg === 'nodisp') h += '<p class="mini" style="color:var(--aviso);margin-top:8px">⚠️ El backend aún no tiene este endpoint. Redespliega Code.gs (acción <b>loyProductos</b>).</p>';
+    if (finVentasProdMsg === 'error') h += '<p class="mini" style="color:var(--alerta);margin-top:8px">No se pudo cargar. Revisa la conexión y que Code.gs esté redesplegado.</p>';
+  }
+  h += '</div>';
+  h += '<div class="card"><h3>Food-cost del menú (sin volumen)</h3>' +
+    '<div class="fin-sub" style="border-top:none;padding-top:0"><span>Promedio simple <b>' + Math.round(fcProm) + '%</b></span><span>CV usado <b>' + cvCfg + '%</b></span><span>Caros ≥45% <b>' + data.filter(x => x.c.pctCosto >= 45).length + '</b></span></div></div>';
   const porCat = {};
   data.forEach(x => { const k = x.r.categoria || 'Sin categoría'; (porCat[k] = porCat[k] || []).push(x); });
   h += '<div class="card"><h3>Food-cost por categoría</h3><div class="tabla-wrap"><table><tr><th>Categoría</th><th class="num">Prod.</th><th class="num">Food-cost</th><th></th></tr>' +
@@ -6434,10 +6486,6 @@ function finProductosTab() {
   const peores = data.slice().sort((a, b) => b.c.pctCosto - a.c.pctCosto).slice(0, 10);
   h += '<div class="card"><h3>🔴 Los que más cuestan (a revisar)</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Food-cost</th></tr>' +
     peores.map(x => '<tr><td class="mini">' + esc(x.r.nombre) + '</td><td class="num">' + fmt$(x.c.precio) + '</td><td class="num">' + fmt$(x.c.costoUnit) + '</td><td class="num">' + sem(x.c.pctCosto) + ' ' + Math.round(x.c.pctCosto) + '%</td></tr>').join('') +
-    '</table></div></div>';
-  const mejores = data.slice().sort((a, b) => a.c.pctCosto - b.c.pctCosto).slice(0, 8);
-  h += '<div class="card"><h3>🟢 Los más rentables (a empujar)</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Precio</th><th class="num">Utilidad</th><th class="num">Food-cost</th></tr>' +
-    mejores.map(x => '<tr><td class="mini">' + esc(x.r.nombre) + '</td><td class="num">' + fmt$(x.c.precio) + '</td><td class="num">' + fmt$(x.c.utilidad) + '</td><td class="num">' + Math.round(x.c.pctCosto) + '%</td></tr>').join('') +
     '</table></div></div>';
   return h;
 }
