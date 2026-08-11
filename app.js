@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.9';
+const VERSION = '5.10';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -388,7 +388,7 @@ function seedDB() {
     retroPreguntas: RETRO_PREGUNTAS_SEED.map(q => Object.assign({ del: false, t: 0 }, q)), retroPregSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
-    finMovimientos: [],
+    finMovimientos: [], finMetas: [], finPresupuesto: [],
     finCategorias: FIN_CATEGORIAS_SEED.map((c, i) => ({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false })),
     finCuentas: FIN_CUENTAS_SEED.map((a, i) => ({ id: a[0], nombre: a[1], tipo: a[2], sucursalId: a[3], saldoInicial: 0, activa: true, orden: i, t: 0, del: false })),
     finCatSembrado: 'v1', finCuentasSembrado: 'v1',
@@ -841,6 +841,8 @@ function migrarDB() {
   if (!db.finMovimientos) db.finMovimientos = [];
   if (!db.finCategorias) db.finCategorias = [];
   if (!db.finCuentas) db.finCuentas = [];
+  if (!db.finMetas) db.finMetas = [];
+  if (!db.finPresupuesto) db.finPresupuesto = [];
   if (db.finCatSembrado !== 'v1') {
     const idsFC = new Set(db.finCategorias.map(x => x.id));
     FIN_CATEGORIAS_SEED.forEach((c, i) => { if (!idsFC.has(c[0])) db.finCategorias.push({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false }); });
@@ -5844,6 +5846,7 @@ function renderFinanzas() {
   if (finTab === 'movimientos') c.innerHTML = finMovimientosTab();
   else if (finTab === 'flujo') c.innerHTML = finFlujoTab();
   else if (finTab === 'resultados') c.innerHTML = finResultadosTab();
+  else if (finTab === 'metas') c.innerHTML = finMetasTab();
   else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
   else if (finTab === 'config') c.innerHTML = finConfigTab();
   else c.innerHTML = finResumenTab();
@@ -5882,6 +5885,15 @@ function finResumenTab() {
   h += '<div class="grid c2">' +
     card('', fmt$(g.flujo), 'Flujo aprox. del periodo') +
     card(g.pendientes > 0 ? ' rojo' : '', fmt$(g.pendientes), 'Por pagar (obligaciones)') + '</div>';
+  // meta de ventas (si está definida): avance + proyección de cierre
+  const meta = finMeta(finSuc);
+  if (meta.ventas > 0) {
+    const proy = finProyeccion(finSuc), pct = Math.round(g.ventas / meta.ventas * 100);
+    h += '<div class="card" style="cursor:pointer" onclick="finTabIr(\'metas\')"><div class="fila" style="justify-content:space-between"><b>🎯 Meta de ventas</b>' +
+      '<span class="mini">' + fmt$(g.ventas) + ' / ' + fmt$(meta.ventas) + ' · ' + pct + '%</span></div>' +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>' +
+      (proy.esMesActual ? '<p class="mini muted" style="margin-top:6px">Proyección de cierre: <b>' + fmt$(proy.ventasProy) + '</b> · ' + (proy.ventasProy >= meta.ventas ? 'llegas a la meta ✅' : 'te quedas corto ⚠️') + '</p>' : '') + '</div>';
+  }
   h += finMentorHTML(r);
   h += finWaterfallHTML(g);
   h += finPorCatHTML(g);
@@ -6010,6 +6022,111 @@ function finFlujoTab() {
   if (g.pendientes > 0) h += '<div class="card" style="border:1px solid var(--alerta)"><h3>🔴 Obligaciones por pagar</h3>' +
     '<p class="mini">Tienes <b>' + fmt$(g.pendientes) + '</b> en compras/gastos a crédito sin liquidar. Cuando los pagues (Movimientos → ✅), saldrán del efectivo aquí sin volver a contar como gasto.</p></div>';
   return h;
+}
+
+/* ---- Proyección de cierre (solo mes en curso, lineal al ritmo actual) ---- */
+function finProyeccion(sid) {
+  const r = finRango(finPeriodoSel);
+  const hoy = new Date();
+  const esMesActual = finPeriodoSel === 'mes' && r.desde.slice(0, 7) === isoDe(hoy).slice(0, 7);
+  const g = finResumen(r.desde, r.hasta, sid);
+  if (!esMesActual) return { esMesActual: false, g, factor: 1, ventasProy: g.ventas, utilProy: g.utilNeta, diaHoy: 0, diasMes: 0 };
+  const diaHoy = hoy.getDate(), diasMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+  const factor = diaHoy > 0 ? diasMes / diaHoy : 1, cv = finCvPct() / 100;
+  // ventas, nómina y costo escalan con los días; los gastos fijos (renta, servicios…)
+  // se dejan en lo ya capturado — proyectarlos ×factor inflaría la renta 3 veces.
+  const ventasProy = g.ventas * factor, nominaProy = g.nomina * factor;
+  const gastosOpProy = g.gastosOp, gastosFinProy = g.gastosFin;
+  const costoProy = ventasProy * cv;
+  const utilProy = ventasProy - costoProy - nominaProy - gastosOpProy + g.otrosIngresos - gastosFinProy;
+  return { esMesActual: true, g, factor, diaHoy, diasMes, ventasProy, nominaProy, gastosOpProy, costoProy, utilProy };
+}
+
+/* ---- TAB: Metas y plan (metas vs actual vs proyección + presupuesto) ---- */
+function finMeta(sid) { return (db.finMetas || []).find(m => !m.del && m.sucursalId === sid) || { sucursalId: sid, ventas: 0, utilidad: 0, margenPct: 0, ticket: 0 }; }
+function finMetasTab() {
+  const r = finRango(finPeriodoSel);
+  const g = finResumen(r.desde, r.hasta, finSuc);
+  const meta = finMeta(finSuc), proy = finProyeccion(finSuc);
+  let h = finSelectorHTML();
+  h += '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🎯 Metas del periodo</h3><button class="btn s mini" onclick="finModalMetas()">✏️ Editar</button></div>';
+  if (meta.ventas > 0 || meta.utilidad > 0 || meta.margenPct > 0) {
+    if (meta.ventas > 0) h += finMetaFila('Ventas', g.ventas, meta.ventas, proy.esMesActual ? proy.ventasProy : null);
+    if (meta.utilidad > 0) h += finMetaFila('Utilidad', g.utilNeta, meta.utilidad, proy.esMesActual ? proy.utilProy : null);
+    if (meta.margenPct > 0) {
+      const ok = g.margen >= meta.margenPct;
+      h += '<div class="item-linea"><div class="grow"><b>Margen</b> <span class="mini muted">objetivo ' + Math.round(meta.margenPct) + '%</span></div><b style="color:var(--' + (ok ? 'ok' : 'alerta') + ')">' + Math.round(g.margen) + '%</b></div>';
+    }
+    if (proy.esMesActual && meta.ventas > 0) {
+      const dif = proy.ventasProy - meta.ventas;
+      h += '<div class="sep"></div><p class="mini" style="color:var(--' + (dif >= 0 ? 'ok' : 'alerta') + ')">📈 Al ritmo actual (día ' + proy.diaHoy + ' de ' + proy.diasMes + '), cerrarías en ventas <b>' + fmt$(proy.ventasProy) + '</b> — ' + fmt$(Math.abs(dif)) + (dif >= 0 ? ' por ENCIMA' : ' por DEBAJO') + ' de tu meta.</p>';
+      if (meta.utilidad > 0) { const du = proy.utilProy - meta.utilidad; h += '<p class="mini" style="color:var(--' + (du >= 0 ? 'ok' : 'alerta') + ')">💰 Utilidad proyectada: <b>' + fmt$(proy.utilProy) + '</b> — ' + fmt$(Math.abs(du)) + (du >= 0 ? ' por ENCIMA' : ' por DEBAJO') + ' de tu meta.</p>'; }
+    } else h += '<p class="mini muted" style="margin-top:6px">La proyección de cierre solo aplica al mes en curso.</p>';
+  } else h += '<p class="mini muted">Aún no defines metas. Toca ✏️ Editar para poner meta de ventas, utilidad y margen del mes.</p>';
+  h += '</div>';
+  h += finPresupuestoHTML(g);
+  return h;
+}
+function finMetaFila(lbl, actual, meta, proy) {
+  const pct = meta > 0 ? Math.round(actual / meta * 100) : 0;
+  return '<div class="item-linea"><div class="grow"><div class="fila" style="justify-content:space-between"><b>' + lbl + '</b>' +
+    '<span class="mini">' + fmt$(actual) + ' / ' + fmt$(meta) + ' · ' + pct + '%' + (proy != null ? ' · proy. ' + fmt$(proy) : '') + '</span></div>' +
+    '<div class="barra" style="margin-top:6px"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div></div></div>';
+}
+function finModalMetas() {
+  const meta = finMeta(finSuc), nom = finSuc === 'global' ? 'Global (ambas)' : (suc(finSuc)?.nombre || '');
+  abrirModal('<h3>🎯 Metas — ' + esc(nom) + '</h3><p class="mini muted">Objetivos mensuales. Deja en 0 lo que no apliques.</p>' +
+    '<label>Meta de ventas ($/mes)</label><input id="mt-ventas" type="number" inputmode="decimal" value="' + (meta.ventas || '') + '">' +
+    '<label style="margin-top:10px">Meta de utilidad ($/mes)</label><input id="mt-util" type="number" inputmode="decimal" value="' + (meta.utilidad || '') + '">' +
+    '<label style="margin-top:10px">Margen objetivo (%)</label><input id="mt-margen" type="number" inputmode="decimal" value="' + (meta.margenPct || '') + '">' +
+    '<label style="margin-top:10px">Ticket promedio objetivo ($)</label><input id="mt-ticket" type="number" inputmode="decimal" value="' + (meta.ticket || '') + '">' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarMetas()">💾 Guardar</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarMetas() {
+  const sid = finSuc;
+  const datos = { ventas: Number($('mt-ventas').value) || 0, utilidad: Number($('mt-util').value) || 0, margenPct: Number($('mt-margen').value) || 0, ticket: Number($('mt-ticket').value) || 0, t: Date.now() };
+  const m = (db.finMetas || []).find(x => x.sucursalId === sid);
+  if (m) Object.assign(m, datos, { del: false }); else db.finMetas.push(Object.assign({ id: 'meta-' + sid, sucursalId: sid, del: false }, datos));
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('🎯 Metas guardadas');
+}
+function finPresupuestoHTML(g) {
+  const pres = (db.finPresupuesto || []).filter(p => !p.del && p.monto > 0);
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📊 Presupuesto vs real</h3><button class="btn s mini" onclick="finModalPresupuesto()">➕ Agregar</button></div>';
+  if (!pres.length) return h + '<p class="mini muted">Sin presupuesto. Toca ➕ Agregar para poner un tope mensual por categoría (nómina, renta, marketing…).</p></div>';
+  const realDe = k => k === 'nomina' ? g.nomina : (g.porCat[k] || 0);
+  h += '<div class="tabla-wrap"><table><tr><th>Categoría</th><th class="num">Presup.</th><th class="num">Real</th><th class="num">%</th><th></th></tr>' +
+    pres.map(p => {
+      const real = realDe(p.categoriaId), pct = p.monto ? Math.round(real / p.monto * 100) : 0;
+      const sem = real > p.monto ? '🔴' : pct >= 85 ? '🟡' : '🟢';
+      const nom = p.categoriaId === 'nomina' ? '🧑‍🍳 Nómina' : finNombreCat(p.categoriaId);
+      return '<tr style="cursor:pointer" onclick="finModalPresupuesto(\'' + p.categoriaId + '\')"><td class="mini">' + esc(nom) + '</td><td class="num">' + fmt$(p.monto) + '</td><td class="num">' + fmt$(real) + '</td><td class="num">' + pct + '%</td><td>' + sem + '</td></tr>';
+    }).join('') +
+    '</table></div><p class="mini muted" style="margin-top:8px">Gasto del mes contra tu tope. 🟢 dentro · 🟡 cerca (≥85%) · 🔴 excedido. Toca una fila para editar.</p></div>';
+  return h;
+}
+function finModalPresupuesto(catKey) {
+  const existing = catKey ? (db.finPresupuesto || []).find(p => p.categoriaId === catKey && !p.del) : null;
+  const cats = finCatsVivas();
+  const opts = '<option value="nomina"' + (catKey === 'nomina' ? ' selected' : '') + '>🧑‍🍳 Nómina (turnos)</option>' +
+    Object.keys(FIN_GRUPOS).map(gk => { const l = cats.filter(c => c.grupo === gk); if (!l.length) return ''; return '<optgroup label="' + FIN_GRUPOS[gk].emoji + ' ' + FIN_GRUPOS[gk].nombre + '">' + l.map(c => '<option value="' + c.id + '"' + (catKey === c.id ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') + '</optgroup>'; }).join('');
+  abrirModal('<h3>📊 Presupuesto mensual</h3>' +
+    '<label>Categoría</label><select id="pr-cat"' + (catKey ? ' disabled' : '') + '>' + opts + '</select>' +
+    '<label style="margin-top:10px">Tope mensual ($)</label><input id="pr-monto" type="number" inputmode="decimal" value="' + (existing ? existing.monto : '') + '">' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarPresupuesto(\'' + (catKey || '') + '\')">💾 Guardar</button>' +
+    (existing ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarPresupuesto(\'' + catKey + '\')">🗑️ Quitar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarPresupuesto(catKey) {
+  const cat = catKey || $('pr-cat').value, monto = Number($('pr-monto').value) || 0;
+  if (!cat) return toast('Elige una categoría'); if (!(monto > 0)) return toast('Pon el tope mensual');
+  const p = (db.finPresupuesto || []).find(x => x.categoriaId === cat);
+  if (p) Object.assign(p, { monto, del: false, t: Date.now() }); else db.finPresupuesto.push({ id: 'pre-' + cat, categoriaId: cat, monto, del: false, t: Date.now() });
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('📊 Presupuesto guardado');
+}
+function finBorrarPresupuesto(catKey) {
+  const p = (db.finPresupuesto || []).find(x => x.categoriaId === catKey); if (!p) return;
+  p.del = true; p.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Presupuesto quitado');
 }
 function finPeHTML(g) {
   const falta = g.pe - g.ventas;
