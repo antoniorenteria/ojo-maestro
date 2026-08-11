@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.10';
+const VERSION = '5.11';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -388,7 +388,7 @@ function seedDB() {
     retroPreguntas: RETRO_PREGUNTAS_SEED.map(q => Object.assign({ del: false, t: 0 }, q)), retroPregSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
-    finMovimientos: [], finMetas: [], finPresupuesto: [],
+    finMovimientos: [], finMetas: [], finPresupuesto: [], finProveedores: [], finRecurrentes: [],
     finCategorias: FIN_CATEGORIAS_SEED.map((c, i) => ({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false })),
     finCuentas: FIN_CUENTAS_SEED.map((a, i) => ({ id: a[0], nombre: a[1], tipo: a[2], sucursalId: a[3], saldoInicial: 0, activa: true, orden: i, t: 0, del: false })),
     finCatSembrado: 'v1', finCuentasSembrado: 'v1',
@@ -843,6 +843,8 @@ function migrarDB() {
   if (!db.finCuentas) db.finCuentas = [];
   if (!db.finMetas) db.finMetas = [];
   if (!db.finPresupuesto) db.finPresupuesto = [];
+  if (!db.finProveedores) db.finProveedores = [];
+  if (!db.finRecurrentes) db.finRecurrentes = [];
   if (db.finCatSembrado !== 'v1') {
     const idsFC = new Set(db.finCategorias.map(x => x.id));
     FIN_CATEGORIAS_SEED.forEach((c, i) => { if (!idsFC.has(c[0])) db.finCategorias.push({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false }); });
@@ -977,6 +979,16 @@ function mantenimientoDiario() {
       id: uid(), ts: Date.now(), asunto: '⚠️ Cierres repetidos con montos distintos',
       cuerpo: dudosos + ' día(s) tienen más de un cierre con montos diferentes. No se tocaron: ' +
         'revísalos en Dirección → Cierre de mes y deja el correcto.'
+    });
+  }
+  /* 3) Genera las cuentas por pagar de los gastos recurrentes cuyo día ya llegó. */
+  const recCreados = finGenerarRecurrentes();
+  if (recCreados) {
+    cambios = true;
+    db.eventos.unshift({
+      id: uid(), ts: Date.now(), asunto: '🔁 Gastos recurrentes generados',
+      cuerpo: 'Se crearon ' + recCreados + ' cuenta(s) por pagar de gastos recurrentes de este mes. ' +
+        'Revísalas en 💰 Finanzas → Pagos.'
     });
   }
   return { cambios, cerrados, quitados, dudosos };
@@ -5847,6 +5859,7 @@ function renderFinanzas() {
   else if (finTab === 'flujo') c.innerHTML = finFlujoTab();
   else if (finTab === 'resultados') c.innerHTML = finResultadosTab();
   else if (finTab === 'metas') c.innerHTML = finMetasTab();
+  else if (finTab === 'pagos') c.innerHTML = finPagosTab();
   else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
   else if (finTab === 'config') c.innerHTML = finConfigTab();
   else c.innerHTML = finResumenTab();
@@ -5874,6 +5887,7 @@ function finResumenTab() {
   const card = (cls, val, lbl, varPct, inv) => '<div class="stat' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' +
     (varPct !== undefined ? '<div style="margin-top:4px">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
   let h = finSelectorHTML();
+  h += finAlertasHTML();
   h += '<div class="grid c3">' +
     card(' verde', fmt$(g.ventas), 'Ingresos', variacion(g.ventas, gp.ventas)) +
     card(' rojo', fmt$(g.costoVenta), 'Costo de venta ' + Math.round(g.cv) + '%', variacion(g.costoVenta, gp.costoVenta), true) +
@@ -6128,6 +6142,146 @@ function finBorrarPresupuesto(catKey) {
   const p = (db.finPresupuesto || []).find(x => x.categoriaId === catKey); if (!p) return;
   p.del = true; p.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Presupuesto quitado');
 }
+
+/* ---- Proveedores (helpers) ---- */
+const finProvVivos = () => (db.finProveedores || []).filter(p => !p.del);
+const finProveedor = id => (db.finProveedores || []).find(p => p.id === id);
+
+/* ---- ALERTAS automáticas (vencimientos + presupuesto) ---- */
+function finAlertas() {
+  const al = [], hoyI = hoyISO(), en3 = isoDe(new Date(Date.now() + 3 * 86400000));
+  const pend = finMovVivos().filter(m => m.tipo !== 'ingreso' && (m.estado === 'pendiente' || m.estado === 'parcial'));
+  const vencidas = pend.filter(m => m.vencimiento && m.vencimiento < hoyI);
+  const porVencer = pend.filter(m => m.vencimiento && m.vencimiento >= hoyI && m.vencimiento <= en3);
+  if (vencidas.length) al.push({ n: 'rojo', t: '🔴 ' + vencidas.length + ' pago(s) VENCIDO(S) por ' + fmt$(vencidas.reduce((a, m) => a + (Number(m.monto) || 0), 0)) + '.' });
+  if (porVencer.length) al.push({ n: 'amar', t: '⚠️ ' + porVencer.length + ' pago(s) vencen en 3 días (' + fmt$(porVencer.reduce((a, m) => a + (Number(m.monto) || 0), 0)) + ').' });
+  const r = finRango('mes'), g = finResumen(r.desde, r.hasta, 'global');
+  (db.finPresupuesto || []).filter(p => !p.del && p.monto > 0).forEach(p => {
+    const real = p.categoriaId === 'nomina' ? g.nomina : (g.porCat[p.categoriaId] || 0);
+    if (real > p.monto) al.push({ n: 'rojo', t: '🔴 ' + (p.categoriaId === 'nomina' ? 'Nómina' : finNombreCat(p.categoriaId)) + ' excedió su presupuesto (' + fmt$(real) + ' de ' + fmt$(p.monto) + ').' });
+  });
+  return al;
+}
+function finAlertasHTML() {
+  const al = finAlertas(); if (!al.length) return '';
+  const col = { rojo: '--alerta', amar: '--aviso' };
+  return '<div class="card" style="border:1px solid var(--alerta)"><h3 style="margin-top:0">🚨 Alertas</h3>' +
+    al.map(x => '<div class="item-linea" style="border-left:3px solid var(' + (col[x.n] || '--muted') + ');padding-left:8px"><div class="grow mini">' + esc(x.t) + '</div></div>').join('') + '</div>';
+}
+
+/* ---- TAB: Pagos (cuentas por pagar + recurrentes + proveedores) ---- */
+function finPagosTab() {
+  return finAlertasHTML() + finCxPHTML() + finRecurrentesHTML() + finProveedoresHTML();
+}
+function finCxPHTML() {
+  const hoyI = hoyISO();
+  const pend = finMovVivos().filter(m => m.tipo !== 'ingreso' && (m.estado === 'pendiente' || m.estado === 'parcial'))
+    .sort((a, b) => (a.vencimiento || '9999').localeCompare(b.vencimiento || '9999'));
+  let h = '<div class="card"><h3 style="margin-top:0">💳 Cuentas por pagar</h3>';
+  if (!pend.length) return h + '<p class="mini muted">Nada pendiente. Lo comprado a crédito o marcado como pendiente aparece aquí.</p></div>';
+  h += '<p class="mini muted">Total por pagar: <b class="amar">' + fmt$(pend.reduce((a, m) => a + (Number(m.monto) || 0), 0)) + '</b></p>' +
+    '<div class="tabla-wrap"><table><tr><th>Vence</th><th>Concepto</th><th>Proveedor</th><th class="num">Monto</th><th></th></tr>' +
+    pend.map(m => {
+      const vencido = m.vencimiento && m.vencimiento < hoyI;
+      const venc = m.vencimiento ? (vencido ? '<span style="color:var(--alerta)">🔴 ' + fmtFechaCorta(m.vencimiento) + '</span>' : fmtFechaCorta(m.vencimiento)) : '—';
+      return '<tr><td class="mini">' + venc + '</td><td>' + esc(m.concepto || '—') + '</td><td class="mini">' + esc(finProveedor(m.proveedorId)?.nombre || '—') + '</td><td class="num">' + fmt$(m.monto) + '</td>' +
+        '<td>' + (m.fuente !== 'gasto' ? '<button class="btn s mini" title="Marcar pagado" onclick="finPagarMov(\'' + m.id + '\')">✅</button>' : '') + '</td></tr>';
+    }).join('') + '</table></div></div>';
+  return h;
+}
+function finRecurrentesHTML() {
+  const recs = (db.finRecurrentes || []).filter(r => !r.del);
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🔁 Gastos recurrentes</h3><button class="btn s mini" onclick="finModalRecurrente()">➕ Nuevo</button></div>' +
+    '<p class="mini muted">Renta, internet, servicios… se generan solos como cuenta por pagar cada mes, en su día.</p>';
+  if (!recs.length) return h + '<p class="mini muted">Ninguno configurado.</p></div>';
+  h += recs.sort((a, b) => (a.diaMes || 0) - (b.diaMes || 0)).map(r => '<div class="item-linea"><div class="grow"><b>' + esc(r.concepto) + '</b> <span class="mini muted">día ' + r.diaMes + ' · ' + fmt$(r.monto) + ' · ' + (r.sucursalId === 'all' ? 'ambas' : (suc(r.sucursalId)?.nombre || '')) + '</span></div>' +
+    '<button class="btn s mini" onclick="finModalRecurrente(\'' + r.id + '\')">✏️</button></div>').join('');
+  return h + '</div>';
+}
+function finModalRecurrente(id) {
+  const r = id ? (db.finRecurrentes || []).find(x => x.id === id) : null;
+  const cats = finCatsVivas();
+  const catOpts = Object.keys(FIN_GRUPOS).map(gk => { const l = cats.filter(c => c.grupo === gk); if (!l.length) return ''; return '<optgroup label="' + FIN_GRUPOS[gk].emoji + ' ' + FIN_GRUPOS[gk].nombre + '">' + l.map(c => '<option value="' + c.id + '"' + ((r && r.categoriaId === c.id) ? ' selected' : '') + '>' + esc(c.nombre) + '</option>').join('') + '</optgroup>'; }).join('');
+  abrirModal('<h3>' + (r ? '✏️ Editar recurrente' : '🔁 Nuevo gasto recurrente') + '</h3>' +
+    '<label>Concepto</label><input id="rc-concepto" value="' + (r ? esc(r.concepto) : '') + '" placeholder="Ej. Renta Revolución">' +
+    '<div class="fila" style="margin-top:10px"><div style="flex:1"><label>Monto</label><input id="rc-monto" type="number" inputmode="decimal" value="' + (r ? r.monto : '') + '"></div>' +
+    '<div style="flex:1"><label>Día del mes</label><input id="rc-dia" type="number" inputmode="numeric" min="1" max="28" value="' + (r ? r.diaMes : 1) + '"></div></div>' +
+    '<label style="margin-top:10px">Categoría</label><select id="rc-cat">' + catOpts + '</select>' +
+    '<label style="margin-top:10px">Sucursal</label><select id="rc-suc">' + sucOptions(r ? r.sucursalId : 'all') + '</select>' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarRecurrente(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (r ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarRecurrente(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarRecurrente(id) {
+  const con = $('rc-concepto').value.trim(); if (!con) return toast('Ponle concepto');
+  const monto = Number($('rc-monto').value) || 0; if (!(monto > 0)) return toast('Pon el monto');
+  const dia = Math.max(1, Math.min(28, Number($('rc-dia').value) || 1));
+  const datos = { concepto: con, monto, diaMes: dia, categoriaId: $('rc-cat').value, sucursalId: $('rc-suc').value, activo: true, t: Date.now() };
+  if (id) { const r = (db.finRecurrentes || []).find(x => x.id === id); if (r) Object.assign(r, datos, { del: false }); }
+  else db.finRecurrentes.push(Object.assign({ id: 'recur-' + uid(), del: false }, datos));
+  guardarDB(); if (finGenerarRecurrentes()) guardarDB(); cerrarModal(); renderFinanzas(); toast('🔁 Recurrente guardado');
+}
+function finBorrarRecurrente(id) {
+  const r = (db.finRecurrentes || []).find(x => x.id === id); if (!r) return;
+  if (!confirm('¿Eliminar "' + r.concepto + '"? No borra los pagos ya generados.')) return;
+  r.del = true; r.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Recurrente eliminado');
+}
+/* genera las cuentas por pagar de los recurrentes del mes en curso.
+   id determinista rec|<recId>|YYYY-MM → no duplica entre toques ni dispositivos. */
+function finGenerarRecurrentes() {
+  if (!db.finRecurrentes || !db.finMovimientos) return 0;
+  const hoy = new Date(), mes = isoDe(hoy).slice(0, 7);
+  let creados = 0;
+  db.finRecurrentes.filter(r => !r.del && r.activo).forEach(r => {
+    if (hoy.getDate() < r.diaMes) return;
+    const id = 'rec|' + r.id + '|' + mes;
+    if (db.finMovimientos.some(m => m.id === id)) return;
+    const dd = mes + '-' + String(r.diaMes).padStart(2, '0'), niv = finNivel(r.categoriaId);
+    db.finMovimientos.unshift({
+      id, del: false, fecha: dd, tipo: 'gasto', concepto: r.concepto, monto: r.monto,
+      categoriaId: r.categoriaId, sucursalId: r.sucursalId, cuentaId: '', metodo: 'transferencia',
+      estado: 'pendiente', proveedorId: '', vencimiento: dd, nota: 'Gasto recurrente', foto: '',
+      afectaResultado: niv !== 'costo' && niv !== 'activo', fechaFlujo: null, montoPagado: 0,
+      t: Date.now(), auditoria: [{ q: 'sistema', c: Date.now(), campo: 'recurrente' }]
+    });
+    creados++;
+  });
+  return creados;
+}
+function finProveedoresHTML() {
+  const provs = finProvVivos();
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">🚚 Proveedores</h3><button class="btn s mini" onclick="finModalProveedor()">➕ Nuevo</button></div>';
+  if (!provs.length) return h + '<p class="mini muted">Ninguno. Agrégalos para saber cuánto gastas con cada uno.</p></div>';
+  const tot = {};
+  finMovVivos().forEach(m => { if (m.proveedorId) tot[m.proveedorId] = (tot[m.proveedorId] || 0) + (Number(m.monto) || 0); });
+  h += provs.sort((a, b) => (tot[b.id] || 0) - (tot[a.id] || 0)).map(p => '<div class="item-linea"><div class="grow"><b>' + esc(p.nombre) + '</b>' + (p.categoria ? ' <span class="mini muted">' + esc(p.categoria) + '</span>' : '') +
+    '<div class="mini muted">' + (tot[p.id] ? 'total: ' + fmt$(tot[p.id]) : 'sin compras') + (p.condiciones ? ' · ' + esc(p.condiciones) : '') + '</div></div>' +
+    '<button class="btn s mini" onclick="finModalProveedor(\'' + p.id + '\')">✏️</button></div>').join('');
+  return h + '</div>';
+}
+function finModalProveedor(id) {
+  const p = id ? finProvVivos().find(x => x.id === id) : null;
+  abrirModal('<h3>' + (p ? '✏️ Editar proveedor' : '🚚 Nuevo proveedor') + '</h3>' +
+    '<label>Nombre</label><input id="pv-nombre" value="' + (p ? esc(p.nombre) : '') + '" placeholder="Ej. Carnemart">' +
+    '<label style="margin-top:10px">Categoría / giro (opcional)</label><input id="pv-cat" value="' + (p ? esc(p.categoria || '') : '') + '" placeholder="Ej. Insumos, carnes…">' +
+    '<label style="margin-top:10px">Contacto (opcional)</label><input id="pv-contacto" value="' + (p ? esc(p.contacto || '') : '') + '" placeholder="Teléfono, WhatsApp…">' +
+    '<label style="margin-top:10px">Condiciones de pago (opcional)</label><input id="pv-cond" value="' + (p ? esc(p.condiciones || '') : '') + '" placeholder="Contado, 15 días…">' +
+    '<button class="btn p gigante" style="margin-top:12px" onclick="finGuardarProveedor(\'' + (id || '') + '\')">💾 Guardar</button>' +
+    (p ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarProveedor(\'' + id + '\')">🗑️ Eliminar</button>' : '') +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
+}
+function finGuardarProveedor(id) {
+  const nom = $('pv-nombre').value.trim(); if (!nom) return toast('Ponle nombre al proveedor');
+  const datos = { nombre: nom, categoria: $('pv-cat').value.trim(), contacto: $('pv-contacto').value.trim(), condiciones: $('pv-cond').value.trim(), t: Date.now() };
+  if (id) { const p = (db.finProveedores || []).find(x => x.id === id); if (p) Object.assign(p, datos, { del: false }); }
+  else db.finProveedores.push(Object.assign({ id: 'prov-' + uid(), del: false }, datos));
+  guardarDB(); cerrarModal(); renderFinanzas(); toast('🚚 Proveedor guardado');
+}
+function finBorrarProveedor(id) {
+  const p = (db.finProveedores || []).find(x => x.id === id); if (!p) return;
+  if (!confirm('¿Eliminar el proveedor "' + p.nombre + '"?')) return;
+  p.del = true; p.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Proveedor eliminado');
+}
 function finPeHTML(g) {
   const falta = g.pe - g.ventas;
   return '<div class="card"><h3>⚖️ Punto de equilibrio</h3><div class="grid c3">' +
@@ -6187,9 +6341,12 @@ function finModalMov(id) {
     '<div class="fila" style="margin-top:10px"><div style="flex:1" id="mv-cuenta-wrap"><label>Cuenta (de dónde sale)</label><select id="mv-cuenta">' + ctaOpts(m ? m.cuentaId : '') + '</select></div>' +
     '<div style="flex:1" id="mv-metodo-wrap"><label>Método</label><select id="mv-metodo" onchange="finMovMetodoCambia()">' + metodos.map(x => '<option value="' + x[0] + '"' + ((m && m.metodo === x[0]) ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select></div></div>' +
     '<div id="mv-cuenta2-wrap" style="display:none;margin-top:10px"><label>Cuenta destino</label><select id="mv-cuenta2">' + ctaOpts(m ? m.cuentaDestinoId : '') + '</select></div>' +
-    '<label style="margin-top:10px">Estado</label><select id="mv-estado">' + estados.map(x => '<option value="' + x[0] + '"' + ((m && m.estado === x[0]) ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
+    '<label style="margin-top:10px">Estado</label><select id="mv-estado" onchange="finMovVenc()">' + estados.map(x => '<option value="' + x[0] + '"' + ((m && m.estado === x[0]) ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>' +
     '<div id="mv-credito-nota" class="mini muted" style="margin-top:6px;display:none"></div>' +
-    '<label style="margin-top:10px">Proveedor / nota (opcional)</label><input id="mv-nota" value="' + (m ? esc(m.nota || '') : '') + '" placeholder="Proveedor, factura, quién autorizó…">' +
+    '<div id="mv-venc-wrap" style="margin-top:10px;display:none"><label>Vence (para cuentas por pagar)</label><input id="mv-venc" type="date" value="' + (m ? (m.vencimiento || '') : '') + '"></div>' +
+    '<label style="margin-top:10px">Proveedor</label><select id="mv-prov"><option value="">— sin proveedor —</option>' +
+    finProvVivos().map(pv => '<option value="' + pv.id + '"' + ((m && m.proveedorId === pv.id) ? ' selected' : '') + '>' + esc(pv.nombre) + '</option>').join('') + '</select>' +
+    '<label style="margin-top:10px">Nota (opcional)</label><input id="mv-nota" value="' + (m ? esc(m.nota || '') : '') + '" placeholder="Factura, quién autorizó…">' +
     '<label style="margin-top:10px">Comprobante (opcional)</label>' +
     '<div class="fila" style="align-items:center"><button class="btn s" onclick="$(\'mv-foto-input\').click()">📷 <span id="mv-foto-tx">' + (finMovFoto ? 'Cambiar' : 'Tomar foto') + '</span></button>' +
     '<img id="mv-foto-prev" style="height:52px;border-radius:8px;' + (finMovFoto ? '' : 'display:none') + '" src="' + (finMovFoto ? fotoURL(finMovFoto) : '') + '" onclick="if(finMovFoto)verFoto2(fotoURL(finMovFoto))">' +
@@ -6197,8 +6354,9 @@ function finModalMov(id) {
     '<button class="btn p gigante" style="margin-top:14px" onclick="finGuardarMov(\'' + (id || '') + '\')">💾 Guardar</button>' +
     (m ? '<button class="btn peligro" style="margin-top:8px" onclick="finBorrarMov(\'' + id + '\')">🗑️ Anular</button>' : '') +
     '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cancelar</button>');
-  finMovTipoCambia(); finMovMetodoCambia();
+  finMovTipoCambia(); finMovMetodoCambia(); finMovVenc();
 }
+function finMovVenc() { const e = $('mv-estado').value; const w = $('mv-venc-wrap'); if (w) w.style.display = (e === 'pendiente' || e === 'parcial') ? '' : 'none'; }
 function finMovTipoCambia() {
   const tipo = $('mv-tipo').value, esT = tipo === 'transferencia', esI = tipo === 'ingreso';
   $('mv-cat-wrap').style.display = (esT || esI) ? 'none' : '';
@@ -6209,6 +6367,7 @@ function finMovMetodoCambia() {
   const met = $('mv-metodo').value, nota = $('mv-credito-nota');
   if (met === 'credito') { nota.style.display = ''; nota.textContent = '💳 A crédito: el gasto cuenta hoy, pero el efectivo sale cuando pagues la tarjeta. Se guarda como obligación (por pagar).'; if ($('mv-estado').value === 'pagado') $('mv-estado').value = 'pendiente'; }
   else nota.style.display = 'none';
+  finMovVenc();
 }
 function finMovTomarFoto(input) {
   const f = input.files && input.files[0]; if (!f) return;
@@ -6230,10 +6389,12 @@ async function finGuardarMov(id) {
   const fechaFlujo = (estado === 'pagado') ? $('mv-fecha').value : null;
   let foto = finMovFoto;
   if (foto && foto.startsWith('data:')) { toast('⬆️ Subiendo comprobante…'); foto = await subirFotoDrive(foto, { tipo: 'finanzas', fecha: $('mv-fecha').value }); }
+  const proveedorId = $('mv-prov') ? $('mv-prov').value : '';
+  const vencimiento = (estado !== 'pagado' && $('mv-venc')) ? $('mv-venc').value : '';
   const datos = {
     fecha: $('mv-fecha').value, tipo, concepto, monto, categoriaId, sucursalId: $('mv-suc').value,
     cuentaId: $('mv-cuenta').value, cuentaDestinoId: esT ? $('mv-cuenta2').value : '', metodo, estado,
-    nota: $('mv-nota').value.trim(), foto, afectaResultado: afecta, fechaFlujo, t: Date.now()
+    proveedorId, vencimiento, nota: $('mv-nota').value.trim(), foto, afectaResultado: afecta, fechaFlujo, t: Date.now()
   };
   if (id) {
     const m = finMovVivos().find(x => x.id === id); if (!m) { cerrarModal(); return toast('Ya no existe'); }
