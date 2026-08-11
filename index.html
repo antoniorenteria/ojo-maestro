@@ -156,6 +156,24 @@ tr:last-child td{border-bottom:none}
 .stat .l{font-size:.7rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
 .stat.verde .v{color:var(--ok)} .stat.rojo .v{color:var(--alerta)}
 
+/* ── 💰 Finanzas: densidad compacta para que en el teléfono se vea lo esencial sin scrollear ── */
+#scr-fin .card{padding:13px;margin-bottom:10px}
+#scr-fin h3{font-size:.92rem}
+#scr-fin .stat{padding:10px 8px}
+#scr-fin .stat .v{font-size:1.25rem}
+#scr-fin .fin-chips{display:flex;gap:5px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:3px;margin-bottom:8px}
+#scr-fin .fin-chips button{flex:0 0 auto;white-space:nowrap}
+#scr-fin .fin-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+#scr-fin .fin-kpi{background:linear-gradient(160deg,var(--fondo-4),var(--fondo-2));border:1px solid rgba(147,51,234,.3);border-radius:12px;padding:8px 5px;text-align:center}
+#scr-fin .fin-kpi .v{font-size:1.02rem;font-weight:800;color:var(--amarillo);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap}
+#scr-fin .fin-kpi .l{font-size:.56rem;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:1px}
+#scr-fin .fin-kpi .d{font-size:.58rem;margin-top:2px}
+#scr-fin .fin-kpi.verde .v{color:var(--ok)} #scr-fin .fin-kpi.rojo .v{color:var(--alerta)}
+#scr-fin .fin-sub{display:flex;flex-wrap:wrap;gap:3px 14px;margin-top:9px;padding-top:8px;border-top:1px solid rgba(147,51,234,.2);font-size:.7rem;color:var(--muted)}
+#scr-fin .fin-sub b{color:var(--texto);font-variant-numeric:tabular-nums}
+@media(max-width:430px){#scr-fin .fin-kpi{padding:7px 3px}#scr-fin .fin-kpi .v{font-size:.9rem}#scr-fin .fin-kpi .l{font-size:.52rem;letter-spacing:.2px}}
+@media(max-width:330px){#scr-fin .fin-kpis{grid-template-columns:repeat(2,1fr)}}
+
 /* ---------- fotos ---------- */
 .foto-drop{border:2px dashed rgba(147,51,234,.5);border-radius:16px;padding:22px;text-align:center;cursor:pointer;color:var(--muted)}
 .foto-drop:hover{border-color:var(--amarillo)}
@@ -813,6 +831,7 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
         <button data-t="movimientos" onclick="finTabIr('movimientos')">📒 Movimientos</button>
         <button data-t="flujo" onclick="finTabIr('flujo')">💧 Flujo</button>
         <button data-t="resultados" onclick="finTabIr('resultados')">📄 Resultados</button>
+        <button data-t="productos" onclick="finTabIr('productos')">📦 Productos</button>
         <button data-t="metas" onclick="finTabIr('metas')">🎯 Metas</button>
         <button data-t="pagos" onclick="finTabIr('pagos')">💳 Pagos</button>
         <button data-t="cierre" onclick="finTabIr('cierre')">📋 Cierre</button>

@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.12';
+const VERSION = '5.13';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -5860,6 +5860,7 @@ function renderFinanzas() {
   else if (finTab === 'flujo') c.innerHTML = finFlujoTab();
   else if (finTab === 'resultados') c.innerHTML = finResultadosTab();
   else if (finTab === 'metas') c.innerHTML = finMetasTab();
+  else if (finTab === 'productos') c.innerHTML = finProductosTab();
   else if (finTab === 'pagos') c.innerHTML = finPagosTab();
   else if (finTab === 'cierre') c.innerHTML = finCierreTab();
   else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
@@ -5868,47 +5869,50 @@ function renderFinanzas() {
 }
 
 /* ---- selector de periodo + sucursal (compartido por varias pestañas) ---- */
+function fmtK(n) { n = Number(n) || 0; const a = Math.abs(n), s = n < 0 ? '-' : ''; return a >= 1000 ? s + '$' + (a / 1000).toLocaleString('es-MX', { maximumFractionDigits: 1 }) + 'k' : s + '$' + Math.round(a); }
 function finSelectorHTML() {
   const r = finRango(finPeriodoSel), per = finPeriodoSel;
   const chip = (s, txt) => '<button class="btn ' + (per === s ? 'p' : 's') + ' mini" onclick="finSetPeriodo(\'' + s + '\')">' + txt + '</button>';
-  return '<div class="card"><div class="fila" style="flex-wrap:wrap;gap:6px">' +
-    chip('hoy', 'Hoy') + chip('semana', 'Semana') + chip('mes', 'Mes') + chip('mesant', 'Mes ant.') +
-    chip('anio', 'Año') + chip('anioant', 'Año ant.') + chip('personalizado', '📅 Rango') + '</div>' +
-    '<div class="fila" style="margin-top:10px"><select onchange="finSetSuc(this.value)" style="flex:1">' +
-    '<option value="global"' + (finSuc === 'global' ? ' selected' : '') + '>🏢 Global (ambas)</option>' +
+  return '<div class="card"><div class="fin-chips">' +
+    chip('hoy', 'Hoy') + chip('semana', 'Sem') + chip('mes', 'Mes') + chip('mesant', 'Mes ant.') +
+    chip('anio', 'Año') + chip('anioant', 'Año ant.') + chip('personalizado', '📅') + '</div>' +
+    '<div class="fila" style="gap:8px"><select onchange="finSetSuc(this.value)" style="flex:1;margin:0">' +
+    '<option value="global"' + (finSuc === 'global' ? ' selected' : '') + '>🏢 Global</option>' +
     db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '"' + (finSuc === s.id ? ' selected' : '') + '>🏬 ' + esc(s.nombre) + '</option>').join('') +
-    '</select></div>' +
-    '<p class="mini muted" style="margin-top:8px">' + esc(r.label) + ' · comparado con ' + esc(r.pLabel) + '</p></div>';
+    '</select><span class="mini muted" style="align-self:center;white-space:nowrap">' + esc(r.label) + '</span></div></div>';
 }
 
 /* ---- TAB 1: Resumen (dashboard ejecutivo) ---- */
 function finResumenTab() {
-  const r = finRango(finPeriodoSel);
-  const g = finResumen(r.desde, r.hasta, finSuc);
-  const gp = finResumen(r.pDesde, r.pHasta, finSuc);
-  const card = (cls, val, lbl, varPct, inv) => '<div class="stat' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' +
-    (varPct !== undefined ? '<div style="margin-top:4px">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
-  let h = finSelectorHTML();
+  const r = finRango(finPeriodoSel), g = finResumen(r.desde, r.hasta, finSuc), gp = finResumen(r.pDesde, r.pHasta, finSuc), per = finPeriodoSel;
+  const chip = (s, txt) => '<button class="btn ' + (per === s ? 'p' : 's') + ' mini" onclick="finSetPeriodo(\'' + s + '\')">' + txt + '</button>';
+  const kpi = (cls, val, lbl, varPct, inv) => '<div class="fin-kpi' + cls + '"><div class="v">' + val + '</div><div class="l">' + lbl + '</div>' + (varPct !== undefined ? '<div class="d">' + pintaVar(varPct, inv) + '</div>' : '') + '</div>';
+  // ── BLOQUE SUPERIOR compacto: todo lo esencial de un vistazo, sin scrollear ──
+  let h = '<div class="card">' +
+    '<div class="fin-chips">' + chip('hoy', 'Hoy') + chip('semana', 'Sem') + chip('mes', 'Mes') + chip('mesant', 'Mes ant.') + chip('anio', 'Año') + chip('anioant', 'Año ant.') + chip('personalizado', '📅') + '</div>' +
+    '<div class="fila" style="gap:8px"><select onchange="finSetSuc(this.value)" style="flex:1;margin:0">' +
+    '<option value="global"' + (finSuc === 'global' ? ' selected' : '') + '>🏢 Global</option>' +
+    db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '"' + (finSuc === s.id ? ' selected' : '') + '>🏬 ' + esc(s.nombre) + '</option>').join('') +
+    '</select><span class="mini muted" style="align-self:center;white-space:nowrap">' + esc(r.label) + '</span></div>' +
+    '<div class="fin-kpis" style="margin-top:10px">' +
+    kpi(' verde', fmtK(g.ventas), 'Ventas', variacion(g.ventas, gp.ventas)) +
+    kpi(' rojo', fmtK(g.gastosOperTot), 'Gastos', variacion(g.gastosOperTot, gp.gastosOperTot), true) +
+    kpi(g.utilNeta >= 0 ? ' verde' : ' rojo', fmtK(g.utilNeta), 'Utilidad', variacion(g.utilNeta, gp.utilNeta)) +
+    kpi(g.margen >= 10 ? ' verde' : (g.margen >= 0 ? '' : ' rojo'), Math.round(g.margen) + '%', 'Margen') +
+    '</div>' +
+    '<div class="fin-sub">' +
+    '<span>Costo venta <b>' + fmtK(g.costoVenta) + '</b> · ' + Math.round(g.cv) + '%</span>' +
+    '<span>Ut. bruta <b>' + fmtK(g.utilBruta) + '</b></span>' +
+    '<span>Flujo <b>' + fmtK(g.flujo) + '</b></span>' +
+    '<span>Por pagar <b' + (g.pendientes > 0 ? ' style="color:var(--alerta)"' : '') + '>' + fmtK(g.pendientes) + '</b></span>' +
+    '</div></div>';
   h += finAlertasHTML();
-  h += '<div class="grid c3">' +
-    card(' verde', fmt$(g.ventas), 'Ingresos', variacion(g.ventas, gp.ventas)) +
-    card(' rojo', fmt$(g.costoVenta), 'Costo de venta ' + Math.round(g.cv) + '%', variacion(g.costoVenta, gp.costoVenta), true) +
-    card('', fmt$(g.utilBruta), 'Utilidad bruta', variacion(g.utilBruta, gp.utilBruta)) + '</div>';
-  h += '<div class="grid c3">' +
-    card(' rojo', fmt$(g.gastosOperTot), 'Gastos operativos', variacion(g.gastosOperTot, gp.gastosOperTot), true) +
-    card(g.utilNeta >= 0 ? ' verde' : ' rojo', fmt$(g.utilNeta), 'Utilidad neta', variacion(g.utilNeta, gp.utilNeta)) +
-    card(g.margen >= 10 ? ' verde' : (g.margen >= 0 ? '' : ' rojo'), Math.round(g.margen) + '%', 'Margen neto') + '</div>';
-  h += '<div class="grid c2">' +
-    card('', fmt$(g.flujo), 'Flujo aprox. del periodo') +
-    card(g.pendientes > 0 ? ' rojo' : '', fmt$(g.pendientes), 'Por pagar (obligaciones)') + '</div>';
-  // meta de ventas (si está definida): avance + proyección de cierre
   const meta = finMeta(finSuc);
   if (meta.ventas > 0) {
     const proy = finProyeccion(finSuc), pct = Math.round(g.ventas / meta.ventas * 100);
-    h += '<div class="card" style="cursor:pointer" onclick="finTabIr(\'metas\')"><div class="fila" style="justify-content:space-between"><b>🎯 Meta de ventas</b>' +
-      '<span class="mini">' + fmt$(g.ventas) + ' / ' + fmt$(meta.ventas) + ' · ' + pct + '%</span></div>' +
-      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div>' +
-      (proy.esMesActual ? '<p class="mini muted" style="margin-top:6px">Proyección de cierre: <b>' + fmt$(proy.ventasProy) + '</b> · ' + (proy.ventasProy >= meta.ventas ? 'llegas a la meta ✅' : 'te quedas corto ⚠️') + '</p>' : '') + '</div>';
+    h += '<div class="card" style="cursor:pointer" onclick="finTabIr(\'metas\')"><div class="fila" style="justify-content:space-between"><b class="mini">🎯 Meta de ventas</b>' +
+      '<span class="mini">' + fmtK(g.ventas) + ' / ' + fmtK(meta.ventas) + ' · ' + pct + '%' + (proy.esMesActual ? ' · proy ' + fmtK(proy.ventasProy) : '') + '</span></div>' +
+      '<div class="barra" style="margin-top:6px"><i style="width:' + Math.max(0, Math.min(100, pct)) + '%"></i></div></div>';
   }
   h += finMentorHTML(r);
   h += finWaterfallHTML(g);
@@ -6407,6 +6411,35 @@ function finPeHTML(g) {
     '<div class="stat"><div class="v">' + fmt$(g.ventas) + '</div><div class="l">llevas</div></div>' +
     '<div class="stat' + (falta <= 0 ? ' verde' : ' rojo') + '"><div class="v">' + fmt$(Math.abs(falta)) + '</div><div class="l">' + (falta <= 0 ? 'arriba del equilibrio' : 'te falta') + '</div></div></div>' +
     '<p class="mini muted" style="margin-top:8px">Con un costo de venta del ' + Math.round(g.cv) + '%, cada $100 de venta dejan ' + fmt$(100 * (1 - g.cv / 100)) + ' para cubrir los gastos fijos (' + fmt$(g.gastosOperTot + g.gastosFin) + ').</p></div>';
+}
+
+/* ---- TAB: Productos (Fase 5 — rentabilidad por producto, leída del Escandallo) ---- */
+function finProductosTab() {
+  const recetas = (db.recetas || []).filter(r => r.activo !== false && !r.del);
+  const data = recetas.map(r => ({ r, c: calcReceta(r) })).filter(x => x.c.precio > 0);
+  if (!data.length) return '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3><p class="mini muted">Aún no hay recetas costeadas en el Escandallo. Captúralas ahí y aquí verás qué producto deja más y cuál arrastra el costo.</p></div>';
+  const fcProm = data.reduce((a, x) => a + x.c.pctCosto, 0) / data.length, cvCfg = finCvPct();
+  const sem = fc => fc >= 45 ? '🔴' : fc >= 40 ? '🟡' : '🟢';
+  let h = '<div class="card"><h3 style="margin-top:0">📦 Rentabilidad por producto</h3>' +
+    '<div class="fin-kpis"><div class="fin-kpi"><div class="v">' + Math.round(fcProm) + '%</div><div class="l">Food-cost menú</div></div>' +
+    '<div class="fin-kpi"><div class="v">' + cvCfg + '%</div><div class="l">CV usado</div></div>' +
+    '<div class="fin-kpi"><div class="v">' + data.length + '</div><div class="l">Productos</div></div>' +
+    '<div class="fin-kpi' + (data.filter(x => x.c.pctCosto >= 45).length ? ' rojo' : '') + '"><div class="v">' + data.filter(x => x.c.pctCosto >= 45).length + '</div><div class="l">Caros ≥45%</div></div></div>' +
+    '<div class="fin-sub" style="border-top:none;padding-top:6px">El food-cost sale de tu Escandallo (costo ÷ precio por receta). Es promedio simple del menú; con las ventas por producto de Loyverse se ponderaría por lo que más se vende. <a href="#" onclick="event.preventDefault();finSetCv()">ajustar CV</a></div></div>';
+  const porCat = {};
+  data.forEach(x => { const k = x.r.categoria || 'Sin categoría'; (porCat[k] = porCat[k] || []).push(x); });
+  h += '<div class="card"><h3>Food-cost por categoría</h3><div class="tabla-wrap"><table><tr><th>Categoría</th><th class="num">Prod.</th><th class="num">Food-cost</th><th></th></tr>' +
+    Object.entries(porCat).sort((a, b) => (b[1].reduce((s, x) => s + x.c.pctCosto, 0) / b[1].length) - (a[1].reduce((s, x) => s + x.c.pctCosto, 0) / a[1].length)).map(([k, arr]) => { const fc = arr.reduce((a, x) => a + x.c.pctCosto, 0) / arr.length; return '<tr><td class="mini">' + esc(k) + '</td><td class="num">' + arr.length + '</td><td class="num">' + Math.round(fc) + '%</td><td>' + sem(fc) + '</td></tr>'; }).join('') +
+    '</table></div></div>';
+  const peores = data.slice().sort((a, b) => b.c.pctCosto - a.c.pctCosto).slice(0, 10);
+  h += '<div class="card"><h3>🔴 Los que más cuestan (a revisar)</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Food-cost</th></tr>' +
+    peores.map(x => '<tr><td class="mini">' + esc(x.r.nombre) + '</td><td class="num">' + fmt$(x.c.precio) + '</td><td class="num">' + fmt$(x.c.costoUnit) + '</td><td class="num">' + sem(x.c.pctCosto) + ' ' + Math.round(x.c.pctCosto) + '%</td></tr>').join('') +
+    '</table></div></div>';
+  const mejores = data.slice().sort((a, b) => a.c.pctCosto - b.c.pctCosto).slice(0, 8);
+  h += '<div class="card"><h3>🟢 Los más rentables (a empujar)</h3><div class="tabla-wrap"><table><tr><th>Producto</th><th class="num">Precio</th><th class="num">Utilidad</th><th class="num">Food-cost</th></tr>' +
+    mejores.map(x => '<tr><td class="mini">' + esc(x.r.nombre) + '</td><td class="num">' + fmt$(x.c.precio) + '</td><td class="num">' + fmt$(x.c.utilidad) + '</td><td class="num">' + Math.round(x.c.pctCosto) + '%</td></tr>').join('') +
+    '</table></div></div>';
+  return h;
 }
 
 /* ---- TAB 2: Movimientos (el Libro, con captura) ---- */

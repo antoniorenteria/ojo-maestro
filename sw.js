@@ -7,7 +7,7 @@
      versión nueva queda lista para la siguiente apertura.
    - Imágenes y fuentes: caché primero → las 70 fotos del inventario y la
      tipografía solo se descargan una vez. */
-const CACHE = 'ojo-maestro-v12';
+const CACHE = 'ojo-maestro-v13';
 const SHELL = ['./', 'index.html', 'app.js', 'assets.js', 'fotos-productos.js',
   'manifest.json', 'img/icono.png', 'img/icono-180.png', 'img/logo-negro.png'];
 
