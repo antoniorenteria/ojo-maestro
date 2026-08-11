@@ -330,7 +330,7 @@ function mezclar(a, b) {
      servidor). Las eliminaciones son marcas (del) y tambien se sincronizan. */
   // catalogos + colecciones de Finanzas: union por id, gana la marca t mas reciente
   // (finMovimientos es el Libro; se une por id igual que un catalogo, del:true = anulado)
-  ['personal', 'productos', 'sucursales', 'insumos', 'recetas', 'finCategorias', 'finCuentas', 'finMovimientos', 'finMetas', 'finPresupuesto', 'finProveedores', 'finRecurrentes'].forEach(function (k) {
+  ['personal', 'productos', 'sucursales', 'insumos', 'recetas', 'finCategorias', 'finCuentas', 'finMovimientos', 'finMetas', 'finPresupuesto', 'finProveedores', 'finRecurrentes', 'finCierres'].forEach(function (k) {
     var mapa = {};
     (a[k] || []).forEach(function (x) { mapa[x.id] = x; });
     (b[k] || []).forEach(function (x) {

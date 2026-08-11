@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.11';
+const VERSION = '5.12';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -388,7 +388,7 @@ function seedDB() {
     retroPreguntas: RETRO_PREGUNTAS_SEED.map(q => Object.assign({ del: false, t: 0 }, q)), retroPregSembrado: true,
     insumos: SEED_INSUMOS.map(i => ({ id: 'ins-' + slug(i[0]), nombre: i[0], prov: i[1], marca: i[2], cant: i[3], unidad: i[4], envio: i[6] || 0, precio: i[5], t: 0 })),
     recetas: SEED_RECETAS.map(r => ({ id: 'rec-' + slug(r.nombre), nombre: r.nombre, categoria: r.categoria, porciones: r.porciones || 1, precio: r.precio, iva: r.iva ?? 16, ing: r.ing.map(x => ({ insumoId: 'ins-' + slug(x[0]), c: x[1] })), activo: true, t: 0 })),
-    finMovimientos: [], finMetas: [], finPresupuesto: [], finProveedores: [], finRecurrentes: [],
+    finMovimientos: [], finMetas: [], finPresupuesto: [], finProveedores: [], finRecurrentes: [], finCierres: [],
     finCategorias: FIN_CATEGORIAS_SEED.map((c, i) => ({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false })),
     finCuentas: FIN_CUENTAS_SEED.map((a, i) => ({ id: a[0], nombre: a[1], tipo: a[2], sucursalId: a[3], saldoInicial: 0, activa: true, orden: i, t: 0, del: false })),
     finCatSembrado: 'v1', finCuentasSembrado: 'v1',
@@ -845,6 +845,7 @@ function migrarDB() {
   if (!db.finPresupuesto) db.finPresupuesto = [];
   if (!db.finProveedores) db.finProveedores = [];
   if (!db.finRecurrentes) db.finRecurrentes = [];
+  if (!db.finCierres) db.finCierres = [];
   if (db.finCatSembrado !== 'v1') {
     const idsFC = new Set(db.finCategorias.map(x => x.id));
     FIN_CATEGORIAS_SEED.forEach((c, i) => { if (!idsFC.has(c[0])) db.finCategorias.push({ id: c[0], nombre: c[1], grupo: c[2], nivel: c[3], emoji: c[4] || '', activa: true, orden: i, t: 0, del: false }); });
@@ -5860,6 +5861,7 @@ function renderFinanzas() {
   else if (finTab === 'resultados') c.innerHTML = finResultadosTab();
   else if (finTab === 'metas') c.innerHTML = finMetasTab();
   else if (finTab === 'pagos') c.innerHTML = finPagosTab();
+  else if (finTab === 'cierre') c.innerHTML = finCierreTab();
   else if (finTab === 'cuentas') c.innerHTML = finCuentasTab();
   else if (finTab === 'config') c.innerHTML = finConfigTab();
   else c.innerHTML = finResumenTab();
@@ -6282,6 +6284,122 @@ function finBorrarProveedor(id) {
   if (!confirm('¿Eliminar el proveedor "' + p.nombre + '"?')) return;
   p.del = true; p.t = Date.now(); guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Proveedor eliminado');
 }
+
+/* ---- TAB: Cierre mensual + Auditoría + Reportes ---- */
+const CIERRE_CHECKLIST = [
+  ['ventas', '📊 Ventas conciliadas (Loyverse vs cierres)'],
+  ['efectivo', '💵 Efectivo conciliado'],
+  ['tarjetas', '💳 Tarjetas conciliadas'],
+  ['transferencias', '🔁 Transferencias conciliadas'],
+  ['plataformas', '🛵 Plataformas conciliadas'],
+  ['gastos', '💸 Gastos registrados'],
+  ['comprobantes', '📎 Comprobantes cargados'],
+  ['nomina', '🧑‍🍳 Nómina registrada'],
+  ['proveedores', '🚚 Proveedores revisados'],
+  ['tarjetasCredito', '🏦 Tarjetas de crédito revisadas'],
+  ['impuestos', '🧾 Impuestos revisados'],
+  ['edr', '📄 Estado de resultados generado']
+];
+let finCierreMes = mesISO();
+function finCierreDe(mes) { return (db.finCierres || []).find(c => !c.del && c.mes === mes) || { mes, checklist: {}, cerrado: false }; }
+function finMesCerrado(fecha) { if (!fecha) return false; const c = (db.finCierres || []).find(x => !x.del && x.mes === fecha.slice(0, 7)); return !!(c && c.cerrado); }
+function finCierreMesCambia(d) { finCierreMes = mesMas(finCierreMes, d); renderFinanzas(); }
+function finCierreTab() {
+  const mes = finCierreMes, ci = finCierreDe(mes), [y, m] = mes.split('-').map(Number);
+  const hechos = CIERRE_CHECKLIST.filter(([k]) => ci.checklist && ci.checklist[k]).length;
+  let h = '<div class="card"><div class="encabezado-seccion"><h3 style="margin:0">📋 Cierre de ' + MESES[m - 1] + ' ' + y + '</h3>' +
+    '<div class="fila" style="flex:0"><button class="btn s mini" onclick="finCierreMesCambia(-1)">←</button><button class="btn s mini" onclick="finCierreMesCambia(1)">→</button></div></div>';
+  if (ci.cerrado) {
+    h += '<div class="fila" style="align-items:center;gap:8px"><span class="badge ok">🔒 Mes cerrado</span><span class="mini muted">' + (ci.cerradoEn ? new Date(ci.cerradoEn).toLocaleDateString('es-MX') : '') + '</span></div>';
+    if (ci.snapshot) h += '<p class="mini muted" style="margin-top:8px">Al cerrar: ventas ' + fmt$(ci.snapshot.ventas) + ' · utilidad ' + fmt$(ci.snapshot.utilNeta) + ' · margen ' + Math.round(ci.snapshot.margen) + '%.</p>';
+    h += '<button class="btn s" style="margin-top:10px" onclick="finReabrirMes()">🔓 Reabrir mes</button>';
+  } else {
+    h += '<p class="mini muted">Marca lo que ya revisaste. Al cerrar, el mes queda bloqueado contra cambios accidentales (se puede reabrir).</p>' +
+      '<div class="barra" style="margin:8px 0"><i style="width:' + Math.round(hechos / CIERRE_CHECKLIST.length * 100) + '%"></i></div>' +
+      CIERRE_CHECKLIST.map(([k, l]) => '<div class="item-linea" style="cursor:pointer" onclick="finCierreToggle(\'' + k + '\')"><span style="flex:0 0 26px;font-size:1.1rem">' + (ci.checklist && ci.checklist[k] ? '✅' : '⬜') + '</span><div class="grow mini">' + l + '</div></div>').join('') +
+      '<button class="btn p gigante" style="margin-top:12px" onclick="finCerrarMes()">🔒 Cerrar ' + MESES[m - 1] + '</button>';
+  }
+  h += '</div>';
+  return h + finReportesHTML() + finAuditoriaHTML();
+}
+function finCierreToggle(k) {
+  let ci = (db.finCierres || []).find(c => c.mes === finCierreMes && !c.del);
+  if (!ci) { ci = { id: 'fincie-' + finCierreMes, mes: finCierreMes, checklist: {}, cerrado: false, del: false }; db.finCierres.push(ci); }
+  ci.checklist = ci.checklist || {}; ci.checklist[k] = !ci.checklist[k]; ci.t = Date.now();
+  guardarDB(); renderFinanzas();
+}
+function finCerrarMes() {
+  const mes = finCierreMes, g = finResumen(mes + '-01', mes + '-31', 'global');
+  if (!confirm('¿Cerrar ' + mes + '? El mes queda bloqueado contra cambios accidentales (se puede reabrir).')) return;
+  let ci = (db.finCierres || []).find(c => c.mes === mes && !c.del);
+  if (!ci) { ci = { id: 'fincie-' + mes, mes, checklist: {}, del: false }; db.finCierres.push(ci); }
+  ci.cerrado = true; ci.cerradoEn = Date.now(); ci.snapshot = { ventas: g.ventas, costoVenta: g.costoVenta, utilNeta: g.utilNeta, margen: g.margen }; ci.t = Date.now();
+  guardarDB(); renderFinanzas(); toast('🔒 ' + mes + ' cerrado');
+}
+function finReabrirMes() {
+  const ci = (db.finCierres || []).find(c => c.mes === finCierreMes && !c.del); if (!ci) return;
+  if (!confirm('¿Reabrir ' + finCierreMes + '? Podrás volver a editar sus movimientos.')) return;
+  ci.cerrado = false; ci.t = Date.now(); guardarDB(); renderFinanzas(); toast('🔓 Mes reabierto');
+}
+function finReportesHTML() {
+  return '<div class="card"><h3>📤 Reportes (' + finCierreMes + ')</h3><p class="mini muted">Se descargan en CSV (se abren en Excel). Usa el mes de arriba.</p>' +
+    '<button class="btn s" style="width:100%;margin-bottom:8px" onclick="finExportCSV(\'edr\')">📄 Estado de resultados</button>' +
+    '<button class="btn s" style="width:100%;margin-bottom:8px" onclick="finExportCSV(\'movs\')">📒 Movimientos</button>' +
+    '<button class="btn s" style="width:100%;margin-bottom:8px" onclick="finExportCSV(\'cat\')">🍩 Gastos por categoría</button>' +
+    '<button class="btn s" style="width:100%;margin-bottom:8px" onclick="finExportCSV(\'sucursales\')">⚔️ Comparativo de sucursales</button>' +
+    '<button class="btn s" style="width:100%;margin-bottom:8px" onclick="finExportCSV(\'cxp\')">💳 Cuentas por pagar</button>' +
+    '<button class="btn s" style="width:100%" onclick="finImprimirEdR()">🖨️ Imprimir estado de resultados</button></div>';
+}
+function finExportCSV(tipo) {
+  const mes = finCierreMes, r = { desde: mes + '-01', hasta: mes + '-31' };
+  const q = s => '"' + String(s == null ? '' : s).replace(/"/g, "'") + '"';
+  const limpio = s => finNombreCat(s).replace(/[^\x20-\x7EÁÉÍÓÚáéíóúÑñ]/g, '').trim();
+  let csv = '', nombre = '';
+  if (tipo === 'edr') {
+    const g = finResumen(r.desde, r.hasta, 'global');
+    csv = 'Concepto,Monto\n' + [['Ventas netas', g.ventas], ['Costo de venta', -g.costoVenta], ['Utilidad bruta', g.utilBruta], ['Nomina', -g.nomina], ['Gastos operativos', -g.gastosOp], ['Utilidad operativa', g.utilOperativa], ['Otros ingresos', g.otrosIngresos], ['Gastos financieros', -g.gastosFin], ['Utilidad antes de impuestos', g.utilAntesImp], ['Impuestos', -g.impuestos], ['Utilidad neta', g.utilNeta]].map(x => q(x[0]) + ',' + Math.round(x[1])).join('\n');
+    nombre = 'estado-resultados-' + mes + '.csv';
+  } else if (tipo === 'movs') {
+    const led = finLedger(r.desde, r.hasta, 'global').sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+    csv = 'Fecha,Tipo,Concepto,Categoria,Sucursal,Cuenta,Metodo,Estado,Proveedor,Monto\n' + led.map(m => [m.fecha, m.tipo, m.concepto, limpio(m.categoriaId), suc(m.sucursalId)?.nombre || m.sucursalId, finCuenta(m.cuentaId)?.nombre || '', m.metodo || '', m.estado || '', finProveedor(m.proveedorId)?.nombre || '', m.monto].map(q).join(',')).join('\n');
+    nombre = 'movimientos-' + mes + '.csv';
+  } else if (tipo === 'cat') {
+    const g = finResumen(r.desde, r.hasta, 'global');
+    csv = 'Categoria,Monto\n' + q('Nomina') + ',' + Math.round(g.nomina) + '\n' + Object.entries(g.porCat).map(([c, v]) => q(limpio(c)) + ',' + Math.round(v)).join('\n');
+    nombre = 'gastos-categoria-' + mes + '.csv';
+  } else if (tipo === 'sucursales') {
+    const sucs = db.sucursales.filter(s => s.activa && !s.del), cols = ['global'].concat(sucs.map(s => s.id));
+    const gg = cols.map(id => finResumen(r.desde, r.hasta, id));
+    const rows = [['Ventas', 'ventas'], ['Costo de venta', 'costoVenta'], ['Utilidad bruta', 'utilBruta'], ['Nomina', 'nomina'], ['Gastos op', 'gastosOp'], ['Utilidad operativa', 'utilOperativa'], ['Margen %', 'margen'], ['Punto de equilibrio', 'pe']];
+    csv = 'Concepto,' + ['Global'].concat(sucs.map(s => s.nombre)).map(q).join(',') + '\n' + rows.map(row => q(row[0]) + ',' + gg.map(x => Math.round(x[row[1]])).join(',')).join('\n');
+    nombre = 'comparativo-sucursales-' + mes + '.csv';
+  } else if (tipo === 'cxp') {
+    const pend = finMovVivos().filter(m => m.tipo !== 'ingreso' && (m.estado === 'pendiente' || m.estado === 'parcial'));
+    csv = 'Vence,Concepto,Proveedor,Sucursal,Monto,Estado\n' + pend.map(m => [m.vencimiento || '', m.concepto, finProveedor(m.proveedorId)?.nombre || '', suc(m.sucursalId)?.nombre || '', m.monto, m.estado].map(q).join(',')).join('\n');
+    nombre = 'cuentas-por-pagar.csv';
+  }
+  descargar(nombre, csv); toast('⬇️ ' + nombre);
+}
+function finImprimirEdR() {
+  const mes = finCierreMes, g = finResumen(mes + '-01', mes + '-31', 'global'), [y, m] = mes.split('-').map(Number);
+  const row = (l, v, b) => '<tr' + (b ? ' style="font-weight:700"' : '') + '><td>' + l + '</td><td style="text-align:right">' + fmt$(v) + '</td></tr>';
+  const win = window.open('', '_blank'); if (!win) return toast('Permite las ventanas emergentes para imprimir');
+  win.document.write('<html><head><title>Estado de resultados ' + mes + '</title><meta charset="utf-8"><style>body{font-family:Arial;padding:24px;color:#111}h1{font-size:18px;margin:0}h2{font-size:14px;color:#351c75}table{width:100%;border-collapse:collapse;margin-top:12px}td{padding:5px 8px;border-bottom:1px solid #eee}</style></head><body>' +
+    '<h1>El Anillo del Cíclope</h1><h2>Estado de resultados — ' + MESES[m - 1] + ' ' + y + '</h2><table>' +
+    row('Ventas netas', g.ventas, 1) + row('(−) Costo de venta (' + Math.round(g.cv) + '%)', -g.costoVenta) + row('= Utilidad bruta', g.utilBruta, 1) +
+    row('(−) Nómina', -g.nomina) + row('(−) Gastos operativos', -g.gastosOp) + row('= Utilidad operativa', g.utilOperativa, 1) +
+    (g.otrosIngresos > 0 ? row('(+) Otros ingresos', g.otrosIngresos) : '') + row('(−) Gastos financieros', -g.gastosFin) + row('= Utilidad antes de impuestos', g.utilAntesImp, 1) +
+    row('(−) Impuestos', -g.impuestos) + row('= UTILIDAD NETA', g.utilNeta, 1) +
+    '</table><p style="margin-top:16px;font-size:11px;color:#777">Costo de venta estimado al ' + Math.round(g.cv) + '%. Generado por El Ojo Maestro.</p></body></html>');
+  win.document.close(); setTimeout(() => { try { win.print(); } catch (e) { } }, 300);
+}
+function finAuditoriaHTML() {
+  const movs = (db.finMovimientos || []).filter(m => (m.auditoria && m.auditoria.length > 1) || m.del).sort((a, b) => (b.t || 0) - (a.t || 0)).slice(0, 20);
+  let h = '<div class="card"><h3>🔍 Auditoría</h3><p class="mini muted">Cambios recientes en los movimientos. Nada se borra: lo eliminado queda como anulado.</p>';
+  if (!movs.length) return h + '<p class="mini muted">Sin cambios registrados aún.</p></div>';
+  h += movs.map(m => { const ult = (m.auditoria || []).slice(-1)[0]; return '<div class="item-linea"><div class="grow mini"><b>' + esc(m.concepto || '—') + '</b> ' + fmt$(m.monto) + (m.del ? ' <span style="color:var(--alerta)">· ANULADO</span>' : '') + '<div class="muted">' + (ult ? esc(ult.campo) + ' · ' + new Date(ult.c).toLocaleString('es-MX') : '') + '</div></div></div>'; }).join('');
+  return h + '</div>';
+}
 function finPeHTML(g) {
   const falta = g.pe - g.ventas;
   return '<div class="card"><h3>⚖️ Punto de equilibrio</h3><div class="grid c3">' +
@@ -6376,6 +6494,7 @@ function finMovTomarFoto(input) {
 }
 async function finGuardarMov(id) {
   const monto = Number($('mv-monto').value); if (!(monto > 0)) return toast('Pon el monto 💵');
+  if (finMesCerrado($('mv-fecha').value) && !confirm('El mes de este movimiento está cerrado. ¿Registrar el cambio de todas formas? Quedará en la auditoría.')) return;
   const tipo = $('mv-tipo').value, esT = tipo === 'transferencia', esI = tipo === 'ingreso';
   const concepto = $('mv-concepto').value.trim() || ({ gasto: 'Gasto', compra_inv: 'Compra', activo: 'Activo', ingreso: 'Otro ingreso', transferencia: 'Transferencia' })[tipo];
   const categoriaId = (esT || esI) ? '' : $('mv-cat').value;
@@ -6406,12 +6525,14 @@ async function finGuardarMov(id) {
 }
 function finPagarMov(id) {
   const m = finMovVivos().find(x => x.id === id); if (!m) return;
+  if (finMesCerrado(m.fecha) && !confirm('Ese mes está cerrado. ¿Marcar pagado de todas formas?')) return;
   m.estado = 'pagado'; m.fechaFlujo = hoyISO(); m.t = Date.now();
   (m.auditoria = m.auditoria || []).push({ q: 'dir', c: Date.now(), campo: 'estado', antes: 'pendiente', despues: 'pagado' });
   guardarDB(); renderFinanzas(); toast('✅ Marcado como pagado · salió el efectivo hoy');
 }
 function finBorrarMov(id) {
   const m = finMovVivos().find(x => x.id === id); if (!m) return;
+  if (finMesCerrado(m.fecha) && !confirm('Ese mes está cerrado. ¿Anular de todas formas?')) return;
   if (!confirm('¿Anular este movimiento de ' + fmt$(m.monto) + '?\nNo se borra: queda anulado para conservar la integridad financiera.')) return;
   m.del = true; m.t = Date.now(); (m.auditoria = m.auditoria || []).push({ q: 'dir', c: Date.now(), campo: 'anulado' });
   guardarDB(); cerrarModal(); renderFinanzas(); toast('🗑️ Movimiento anulado');
