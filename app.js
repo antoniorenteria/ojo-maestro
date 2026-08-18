@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.16';
+const VERSION = '5.17';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1628,9 +1628,15 @@ function renderAvance() {
 /* ═══════════ ASISTENCIA (entrada y salida en un solo botón) ═══════════ */
 let asisAjuste = 0;
 function irAsistencia() {
-  opcionesPersonal($('asis-persona'), false);
-  const abierto = turnosAbiertos(sucursalActual)[0];
-  if (abierto) $('asis-persona').value = abierto.personalId;
+  /* Solo ENTRADA: la lista muestra a quien PUEDE entrar. Se excluye a quien ya
+     tiene un turno abierto (aquí o en la otra sucursal) — esa persona registra
+     su salida tocando su nombre en el panel, no desde este botón. */
+  const enTurno = new Set(turnosAbiertos().map(t => t.personalId));
+  const disponibles = db.personal.filter(p => p.activo && !p.del && !enTurno.has(p.id));
+  const sel = $('asis-persona');
+  sel.innerHTML = disponibles.length
+    ? disponibles.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('')
+    : '<option value="">— todos ya están en turno —</option>';
   $('asis-resumen').innerHTML = '';
   ir('scr-asis');
 }
