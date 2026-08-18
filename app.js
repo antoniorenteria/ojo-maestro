@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.14';
+const VERSION = '5.15';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1384,12 +1384,12 @@ function renderSucursal() {
     : '<span class="badge aviso">🌙 cierre pendiente</span>';
   const abiertos = turnosAbiertos(sucursalActual);
   $('suc-en-turno').innerHTML = abiertos.length
-    ? '<div class="mini muted" style="margin-bottom:6px">EN TURNO AHORA</div>' + abiertos.map(t => {
+    ? '<div class="mini muted" style="margin-bottom:6px">EN TURNO AHORA · toca a alguien para propinas, horas extra o cerrar su turno</div>' + abiertos.map(t => {
       const p = per(t.personalId);
-      return '<div class="item-linea" style="padding:6px 2px">' + avatarPersona(t.personalId, p?.nombre) +
+      return '<div class="item-linea" style="padding:8px 2px;cursor:pointer" onclick="gestionarTurno(\'' + t.personalId + '\')">' + avatarPersona(t.personalId, p?.nombre) +
         '<div class="grow"><b>' + esc(p?.nombre || '¿?') + '</b> <span class="mini muted">' +
         (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') + ' · entró ' + fmtHora(t.entrada) + '</span></div>' +
-        '<span class="badge mor">activo</span></div>';
+        '<span class="badge mor">activo ›</span></div>';
     }).join('')
     : '<span class="muted mini">Nadie en turno todavía 🕐</span>';
   const f = faltantes(sucursalActual).length;
@@ -1717,6 +1717,106 @@ function marcarAsistencia() {
     '<div class="stat verde"><div class="v">' + fmt$(c.pago) + '</div><div class="l">pago del día</div></div></div>' +
     '<p class="mini muted">Se paga el turno completo; los ajustes de ' + BLOQUE_MIN + ' min suman o restan sobre esa base. ¡Gracias por tu aventura de hoy! 🌌</p></div>';
   renderAsistencia();
+  toast('👋 ¡Hasta pronto, ' + p.nombre + '! Pago del día: ' + fmt$(c.pago));
+}
+
+/* ═══════════ GESTIONAR TURNO (desde el panel de la sucursal) ═══════════
+   Se toca a la persona en turno y en una sola ventana se agregan propinas,
+   se ajustan las horas extra (que suben el pago) y se cierra su turno.
+   Reemplaza los botones sueltos de Propinas y de salida individual. */
+let gtPid = null, gtAjuste = 0;
+function gestionarTurno(pid) {
+  const t = turnoAbiertoDe(pid);
+  if (!t) { renderSucursal(); return toast('Esa persona ya no tiene turno abierto'); }
+  gtPid = pid; gtAjuste = Number(t.ajuste || 0);
+  const p = per(pid); if (!p) return;
+  const trans = ((Date.now() - t.entrada) / 36e5).toFixed(1);
+  abrirModal(
+    '<div class="fila" style="align-items:center;gap:10px;margin-bottom:2px">' + avatarPersona(pid, p.nombre) +
+    '<h3 style="margin:0">' + esc(p.nombre) + '</h3></div>' +
+    '<p class="mini muted" style="margin:0 0 12px">' + (t.tipo === 'matutino' ? '☀️ Matutino' : '🌙 Vespertino') +
+    ' · entró ' + fmtHora(t.entrada) + ' · lleva ' + trans + ' h</p>' +
+    // ── propinas ──
+    '<div class="card"><label>💳 Agregar propina (tarjeta / terminal)</label>' +
+    '<div class="fila"><div><label class="mini muted">Monto ($)</label>' +
+    '<input id="gt-prop-monto" type="number" inputmode="decimal" placeholder="0.00"></div>' +
+    '<div><label class="mini muted">Nota (opcional)</label>' +
+    '<input id="gt-prop-nota" placeholder="mesa 4, pedido Didi…"></div></div>' +
+    '<button class="btn s" style="margin-top:10px" onclick="gtAgregarPropina()"><span class="ico">💳</span> Registrar propina</button>' +
+    '<div class="mini muted" id="gt-prop-hoy" style="margin-top:8px"></div></div>' +
+    // ── horas extra ──
+    '<div class="card"><label>⏱️ Horas extra · bloques de ' + BLOQUE_MIN + ' min</label>' +
+    '<div class="fila" style="align-items:center;text-align:center">' +
+    '<button class="btn s" onclick="gtAjustar(-1)">− ' + BLOQUE_MIN + ' min</button>' +
+    '<div id="gt-ajuste-tx" style="flex:1.4"></div>' +
+    '<button class="btn s" onclick="gtAjustar(1)">+ ' + BLOQUE_MIN + ' min</button></div>' +
+    '<input id="gt-motivo" placeholder="Motivo del ajuste (opcional)" style="margin-top:10px" value="' + esc(t.motivoAjuste || '') + '">' +
+    '<div class="stat" style="margin-top:12px"><div class="v" id="gt-pago">$0.00</div><div class="l">pago del día con ajuste</div></div></div>' +
+    // ── cerrar ──
+    '<button class="btn p gigante" style="margin-top:4px" onclick="gtCerrarTurno()"><span class="ico">👋</span> Registrar salida y cerrar turno</button>' +
+    '<button class="btn s" style="margin-top:8px" onclick="cerrarModal()">Cerrar ventana</button>');
+  gtPintarPropHoy();
+  pintarGtAjuste();
+}
+function gtPintarPropHoy() {
+  const tot = propinasDe(hoyISO(), sucursalActual, gtPid).reduce((a, x) => a + x.monto, 0);
+  const l = $('gt-prop-hoy'); if (l) l.innerHTML = tot ? 'Propinas de hoy: <b>' + fmt$(tot) + '</b>' : 'Sin propinas registradas hoy.';
+}
+function gtAjustar(d) {
+  gtAjuste = Math.max(-18, Math.min(18, gtAjuste + d)); // ±6 h como tope
+  const t = turnoAbiertoDe(gtPid);
+  if (t) { t.ajuste = gtAjuste; guardarDB(); } // el ajuste se guarda al momento: sube el pago aunque aún no cierre
+  pintarGtAjuste();
+}
+function pintarGtAjuste() {
+  const p = per(gtPid); if (!p) return;
+  const extra = gtAjuste * tarifaBloque(p);
+  const el = $('gt-ajuste-tx');
+  if (el) el.innerHTML = txtAjuste(gtAjuste) +
+    (gtAjuste ? '<div class="mini muted">' + (extra >= 0 ? '+' : '−') + fmt$(Math.abs(extra)) + ' sobre el turno</div>' : '');
+  const st = $('gt-pago'); if (st) st.textContent = fmt$(Math.max(0, (p.pagoTurno || 0) + extra));
+}
+function gtAgregarPropina() {
+  const monto = Number($('gt-prop-monto').value);
+  if (!monto || monto <= 0) return toast('Captura el monto de la propina 💳');
+  const p = per(gtPid); if (!p) return;
+  const repe = db.propinas.find(x => x.personalId === p.id && x.monto === monto &&
+    x.sucursalId === sucursalActual && Date.now() - x.ts < 120000);
+  if (repe && !confirm('Hace un momento ya registraste ' + fmt$(monto) + ' para ' + p.nombre +
+    '.\n¿Es otra propina distinta?')) return;
+  db.propinas.unshift({
+    id: uid(), ts: Date.now(), fecha: hoyISO(), sucursalId: sucursalActual,
+    personalId: p.id, monto, nota: ($('gt-prop-nota').value || '').trim()
+  });
+  guardarDB();
+  toast('💳 Propina de ' + fmt$(monto) + ' registrada para ' + p.nombre);
+  $('gt-prop-monto').value = ''; $('gt-prop-nota').value = '';
+  gtPintarPropHoy();
+}
+function gtCerrarTurno() { return unaVez('gt-salida', gtSalidaReal); }
+function gtSalidaReal() {
+  const t = turnoAbiertoDe(gtPid);
+  if (!t) { cerrarModal(); renderSucursal(); return toast('Esa persona ya no tiene turno abierto'); }
+  const p = per(gtPid); const s = suc(sucursalActual);
+  t.salida = Date.now();
+  t.ajuste = gtAjuste;
+  t.motivoAjuste = ($('gt-motivo')?.value || '').trim();
+  const c = calcularPago(t); t.horas = c.horas; t.pago = c.pago;
+  guardarDB();
+  notificar('🚪 Salida — ' + p.nombre + ' (' + s.nombre + ')',
+    p.nombre + ' registró SALIDA en ' + s.nombre + '\nEntrada: ' + fmtHora(t.entrada) + ' · Salida: ' + fmtHora(t.salida) +
+    '\nEn piso: ' + c.horas + ' h\nAjuste: ' + txtAjuste(c.bloques) + (t.motivoAjuste ? ' (' + t.motivoAjuste + ')' : '') +
+    '\nPago del día: ' + fmt$(c.pago), 'salida');
+  const propTot = propinasDe(hoyISO(), sucursalActual, gtPid).reduce((a, x) => a + x.monto, 0);
+  cerrarModal();
+  renderSucursal();
+  abrirModal('<h3>👋 Turno cerrado — ' + esc(p.nombre) + '</h3>' +
+    '<div class="grid c3"><div class="stat"><div class="v">' + c.horas + ' h</div><div class="l">en piso</div></div>' +
+    '<div class="stat"><div class="v">' + txtAjuste(c.bloques) + '</div><div class="l">ajuste</div></div>' +
+    '<div class="stat verde"><div class="v">' + fmt$(c.pago) + '</div><div class="l">pago del día</div></div></div>' +
+    (propTot ? '<div class="stat" style="margin-top:10px"><div class="v">' + fmt$(propTot) + '</div><div class="l">💳 propinas del día</div></div>' : '') +
+    '<p class="mini muted" style="margin-top:10px">Se paga el turno completo; los ajustes de ' + BLOQUE_MIN + ' min suman o restan sobre esa base. ¡Gracias por tu aventura de hoy! 🌌</p>' +
+    '<button class="btn s" style="margin-top:6px" onclick="cerrarModal()">Terminar</button>');
   toast('👋 ¡Hasta pronto, ' + p.nombre + '! Pago del día: ' + fmt$(c.pago));
 }
 
