@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.15';
+const VERSION = '5.16';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -6839,13 +6839,27 @@ function finBorrarCat(id) {
   ir('scr-portada');
   pintarRed();
   if (enLinea()) sync();
+  /* Sincroniza en cuanto la app se abre o se vuelve a ella (cambiar de app en
+     el teléfono, desbloquear, volver a la pestaña). Sin esto había que esperar
+     al latido para ver quién está en turno: era la espera de ~20 s que reportó
+     Toño. El guard syncEnCurso evita que se encimen dos. */
+  let ultimoSyncVis = 0;
+  const syncSiVisible = () => {
+    if (document.visibilityState !== 'visible' || !enLinea()) return;
+    if (Date.now() - ultimoSyncVis < 3000) return;   // anti-rebote de eventos duplicados
+    ultimoSyncVis = Date.now(); sync();
+  };
+  document.addEventListener('visibilitychange', syncSiVisible);
+  window.addEventListener('focus', syncSiVisible);
+  window.addEventListener('pageshow', syncSiVisible);   // volver desde el historial / PWA reanudada
   /* latido inteligente: sube cambios pendientes cada minuto; si no hay nada
-     que subir, solo consulta la nube cada 5 min (antes subía TODO cada 60 s) */
+     que subir, consulta la nube cada 2 min para que los cambios de otra tablet
+     aparezcan pronto (antes eran 5 min; y antes de eso subía TODO cada 60 s) */
   let latido = 0;
   setInterval(() => {
     if (!enLinea()) return;
     latido++;
-    if (syncPendiente || latido % 5 === 0) sync();
+    if (syncPendiente || latido % 2 === 0) sync();
   }, 60000);
   // caché de la app: abre al instante desde la 2ª visita, incluso sin internet
   if ('serviceWorker' in navigator && location.protocol === 'https:') {

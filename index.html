@@ -2,6 +2,12 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<script>
+  /* tema ANTES del primer pintado: sin esto la página nace en oscuro y salta
+     a claro cuando corre el JS (el parpadeo que se veía al abrir). Claro es el
+     default; solo queda oscuro si el dispositivo lo eligió. */
+  try { if (localStorage.getItem('ojo_tema') !== 'oscuro') document.documentElement.dataset.tema = 'claro'; } catch (e) {}
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0D0015">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -512,9 +518,9 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
 <div id="app">
 
   <!-- ══════════ PORTADA ══════════ -->
-  <section class="screen" id="scr-portada">
+  <section class="screen active" id="scr-portada">
     <div class="centrado" style="padding-top:7vh">
-      <img id="logo-portada" alt="El Anillo del Cíclope" class="ojo-pulso" style="max-width:290px;width:75%">
+      <img id="logo-portada" alt="El Anillo del Cíclope" class="ojo-pulso" src="img/logo-negro.png" style="max-width:290px;width:75%">
       <h1 class="amar" style="margin-top:26px;font-size:2rem">EL OJO MAESTRO</h1>
       <p class="muted" style="letter-spacing:3px;text-transform:uppercase;font-size:.72rem">Centro de operaciones · Universo Cíclope</p>
       <div style="max-width:420px;margin:34px auto 0" id="portada-sucursales"></div>
@@ -555,10 +561,10 @@ html[data-tema="claro"] .sec-tit .n{background:#6B21A8;color:#fff}
       </div>
       <div id="suc-en-turno" style="margin-top:8px"></div>
     </div>
+    <button class="btn p gigante" style="margin-bottom:14px" onclick="irAsistencia()">Entrada/Salida</button>
     <div id="suc-objetivos"></div>
     <div id="suc-avisos"></div>
     <div class="menu-grid">
-      <div class="menu-item" onclick="irAsistencia()"><span class="em" style="--tint:#4ADE80">🕐</span><span class="t">Entrada</span><div class="d">Marca tu entrada · la salida se hace desde el panel</div></div>
       <div class="menu-item" onclick="irChecklist()"><span class="em" style="--tint:#FFD523">📋</span><span class="t">Checklist del día</span><div class="d">Cierre, evidencias y acciones</div></div>
       <div class="menu-item" onclick="ir('scr-inv')"><span class="em" style="--tint:#A78BFA">📦</span><span class="t">Inventario</span><div class="d">Existencias en tiempo real</div></div>
       <div class="menu-item" onclick="irGastos()"><span class="em" style="--tint:#F87171">💸</span><span class="t">Gastos y compras</span><div class="d">Lo que sale de la caja</div></div>
