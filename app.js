@@ -5,7 +5,7 @@
 'use strict';
 
 /* versión visible: sirve para confirmar que un dispositivo ya trae lo último */
-const VERSION = '5.17';
+const VERSION = '5.18';
 
 /* ---------- utilidades ---------- */
 const $ = id => document.getElementById(id);
@@ -1232,11 +1232,21 @@ function opcionesPersonal(sel, soloEnTurno) {
 }
 
 /* ---------- navegación ---------- */
-function ir(id) {
+/* recuerda hasta dónde habías bajado en cada pantalla: así "← Volver" regresa
+   al mismo punto donde estabas mirando, en vez de saltar hasta arriba. Las
+   ENTRADAS a una sección pasan `arriba=true` para abrir siempre desde el inicio. */
+const _scrollY = {};
+function ir(id, arriba) {
+  const actual = document.querySelector('.screen.active');
+  if (actual) _scrollY[actual.id] = window.scrollY;   // guarda dónde ibas
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   $(id).classList.add('active');
-  window.scrollTo(0, 0);
   renderPantalla(id);
+  const y = arriba ? 0 : (_scrollY[id] || 0);
+  window.scrollTo(0, y);
+  // el render acaba de reconstruir el contenido; reafirma la posición tras el
+  // acomodo para que la restauración sea exacta aunque cambie algo de alto
+  if (y) requestAnimationFrame(() => window.scrollTo(0, y));
 }
 function salirASucursales() { sucursalActual = null; esAdmin = false; esSupervisor = false; esEscandallo = false; esTrip = false; esFin = false; ir('scr-portada'); }
 function renderPantalla(id) {
@@ -1303,7 +1313,7 @@ function pintarPinDots() {
 function cerrarPin() { $('modal-pin').classList.remove('ver'); }
 function pedirPinAdmin() {
   abrirPin('PIN de Dirección', pin => {
-    if (pin === db.config.adminPin) { esAdmin = true; ir('scr-dir'); }
+    if (pin === db.config.adminPin) { esAdmin = true; ir('scr-dir', true); }
     else toast('⛔ PIN incorrecto');
   });
 }
@@ -1369,7 +1379,7 @@ function renderPortada() {
     '<a href="#" onclick="event.preventDefault();forzarActualizacion()">🔄 Buscar actualización</a>';
   pintarRed();
 }
-function entrarSucursal(id) { sucursalActual = id; ir('scr-suc'); }
+function entrarSucursal(id) { sucursalActual = id; ir('scr-suc', true); }
 
 /* ═══════════ HOME SUCURSAL ═══════════ */
 function renderSucursal() {
@@ -1638,7 +1648,7 @@ function irAsistencia() {
     ? disponibles.map(p => '<option value="' + p.id + '">' + esc(p.nombre) + '</option>').join('')
     : '<option value="">— todos ya están en turno —</option>';
   $('asis-resumen').innerHTML = '';
-  ir('scr-asis');
+  ir('scr-asis', true);
 }
 const turnoAbiertoDe = pid => db.turnos.find(t => !t.salida && t.personalId === pid && t.sucursalId === sucursalActual);
 function renderAsistencia() {
@@ -1924,7 +1934,7 @@ function irChecklist() {
   opcionesPersonal($('chk-persona'), true);
   if (!$('chk-persona').value) opcionesPersonal($('chk-persona'), false);
   cierreFotos = { 'r-ventas': '', 'r-caja': '' };
-  ir('scr-chk');
+  ir('scr-chk', true);
   // se recupera lo que se haya dejado a medias hoy en esta sucursal
   if (cargarBorradorCierre() && !cierreDelDia()) toast('📝 Se recuperó lo que llevabas capturado');
   // el cierre se pinta en automático de inmediato (sin el parpadeo manual→Loyverse):
@@ -2215,7 +2225,7 @@ function irPropinas() {
   opcionesPersonal($('prop-persona'), true);
   if (!$('prop-persona').value) opcionesPersonal($('prop-persona'), false);
   $('prop-monto').value = ''; $('prop-nota').value = '';
-  ir('scr-prop');
+  ir('scr-prop', true);
 }
 function renderPropinas() {
   const hoy = hoyISO();
@@ -2373,7 +2383,7 @@ function renderProtocolos() {
 
 /* ═══════════ RECETARIO ═══════════ (solo consulta) */
 let recCat = 0;
-function irPreparaciones() { recCat = 0; ir('scr-prep'); }
+function irPreparaciones() { recCat = 0; ir('scr-prep', true); }
 function renderPreparaciones() {
   $('prep-rec-tabs').innerHTML = RECETAS.map(([cat], i) =>
     '<button class="' + (recCat === i ? 'on' : '') + '" onclick="recCat=' + i + ';renderPreparaciones()">' + esc(cat) + '</button>').join('');
@@ -2394,7 +2404,7 @@ function pedirPinSupervision() {
       esSupervisor = true;
       $('rev-suc').innerHTML = db.sucursales.filter(s => s.activa && !s.del).map(s => '<option value="' + s.id + '">' + esc(s.nombre) + '</option>').join('');
       $('rev-fecha').value = hoyISO();
-      ir('scr-rev');
+      ir('scr-rev', true);
     } else toast('⛔ PIN incorrecto');
   });
 }
@@ -2500,7 +2510,7 @@ const gastosDe = (desde, hasta, sid) => gastosVivos().filter(g =>
 
 let gastoEditando = null;   // id del gasto en edición
 let gastoFoto = '';         // foto del ticket en captura (data: o URL de Drive)
-function irGastos() { gastoEditando = null; gastoFoto = ''; ir('scr-gastos'); }
+function irGastos() { gastoEditando = null; gastoFoto = ''; ir('scr-gastos', true); }
 function renderGastos() {
   // TODAS las personas del panel de trabajadores, no solo las que están en turno
   const sel = $('gas-persona'), prev = sel.value;
@@ -2877,7 +2887,7 @@ const rangoCorto = t => hCorta(t.ini) + '-' + hCorta(t.fin);
 
 function irCalendario() {
   if (!calSuc) calSuc = sucursalActual || (db.sucursales.filter(s => s.activa && !s.del)[0] || {}).id;
-  ir('scr-cal');
+  ir('scr-cal', true);
 }
 /* ---------- nadie puede estar dos veces el mismo día ----------
    Ni con otro horario en la misma sucursal, ni en la otra: una persona no
@@ -3786,7 +3796,7 @@ async function calendarioPNG() {
    Evaluación semanal + plan de trabajo + capacitación + auditoría.
    Detrás del PIN 0616. Steph y Toño llevan evaluaciones y seguimiento. */
 const TRIP_EJES = [
-  { key: 'servicio', nombre: 'Servicio', emoji: '🛎️', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · atención' }, subs: [
+  { key: 'servicio', nombre: 'Servicio', emoji: '🛎️', capa: { fn: "ir('scr-proto', true)", txt: 'Protocolos · atención' }, subs: [
     ['Atiende con actitud positiva', 'Buena cara y buen trato todo el turno; sin quejas.'],
     ['Explica claramente el menú', 'Describe platillos y recomienda sin dudar.'],
     ['Responde con seguridad', 'Resuelve dudas del cliente sin depender de otro.'],
@@ -3812,13 +3822,13 @@ const TRIP_EJES = [
     ['Mantiene energía en turno', 'Mantiene ritmo y disposición todo el turno.'],
     ['Resuelve sin que se le diga', 'Toma iniciativa ante problemas.'],
     ['Acepta responsabilidades', 'Asume sus tareas y sus errores sin evadir.'] ] },
-  { key: 'resultados', nombre: 'Resultados', emoji: '🎯', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · venta' }, subs: [
+  { key: 'resultados', nombre: 'Resultados', emoji: '🎯', capa: { fn: "ir('scr-proto', true)", txt: 'Protocolos · venta' }, subs: [
     ['Sugiere productos (venta adicional)', 'Ofrece extras/upselling de forma habitual.'],
     ['Reduce errores', 'Sin errores repetidos ni retrabajos.'],
     ['Cumple tiempos', 'Los platillos salen en el tiempo esperado.'],
     ['Cuida producto', 'Sin desperdicio evitable ni mermas por descuido.'],
     ['Cuidado de experiencia', 'Procura un ambiente familiar y alineado al concepto.'] ] },
-  { key: 'desempeno', nombre: 'Desempeño', emoji: '📈', capa: { fn: "ir('scr-proto')", txt: 'Protocolos · cierre y puntualidad' }, subs: [
+  { key: 'desempeno', nombre: 'Desempeño', emoji: '📈', capa: { fn: "ir('scr-proto', true)", txt: 'Protocolos · cierre y puntualidad' }, subs: [
     ['Puntualidad', 'Llega a tiempo (o avisa justificando).'],
     ['No se distrae', 'Se mantiene en la operación.'],
     ['Mantiene ritmo de trabajo', 'Capacidad de producción continua.'],
@@ -3847,7 +3857,7 @@ let esTrip = false, tripTab = 'tripulantes', tripBorrador = null, tripCapSemana 
 
 function pedirPinTripulacion() {
   abrirPin('PIN de Tripulación', pin => {
-    if (pin === db.config.adminPin || pin === '0616') { esTrip = true; tripTab = 'tripulantes'; ir('scr-trip'); }
+    if (pin === db.config.adminPin || pin === '0616') { esTrip = true; tripTab = 'tripulantes'; ir('scr-trip', true); }
     else toast('⛔ PIN incorrecto');
   });
 }
@@ -4294,7 +4304,7 @@ const fmtPct = n => (Math.round(n * 10) / 10).toLocaleString('es-MX') + '%';
 let escTab = 'menu', escCatAbierta = {}, insumoBuscar = '', recetaEditId = null;
 function pedirPinEscandallo() {
   abrirPin('PIN de Escandallo', pin => {
-    if (pin === db.config.adminPin || pin === '0616') { esEscandallo = true; ir('scr-esc'); }
+    if (pin === db.config.adminPin || pin === '0616') { esEscandallo = true; ir('scr-esc', true); }
     else toast('⛔ PIN incorrecto');
   });
 }
@@ -5950,7 +5960,7 @@ function finAplicarRango() {
 /* ---- PANTALLA ---- */
 function pedirPinFinanzas() {
   abrirPin('PIN de Finanzas', pin => {
-    if (pin === db.config.adminPin || pin === '0616') { esFin = true; ir('scr-fin'); }
+    if (pin === db.config.adminPin || pin === '0616') { esFin = true; ir('scr-fin', true); }
     else toast('⛔ PIN incorrecto');
   });
 }
